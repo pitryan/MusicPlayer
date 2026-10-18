@@ -1,6 +1,6 @@
 using NAudio.Wave;
 
-namespace MusicPlayer.AudioLab;
+namespace MusicPlayer.Audio;
 
 /// <summary>
 /// Format PCM integer yang dikirim ke perangkat.

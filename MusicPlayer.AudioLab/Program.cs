@@ -1,5 +1,5 @@
 using System.Text;
-using MusicPlayer.AudioLab;
+using MusicPlayer.Audio;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 

@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace MusicPlayer.AudioLab;
+namespace MusicPlayer.Audio;
 
 /// <summary>
 /// Engine pemutar audio: decode file lewat Media Foundation, lalu putar lewat WASAPI.
@@ -165,5 +165,13 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
-    private void OnPlaybackStopped(object? sender, StoppedEventArgs e) => PlaybackStopped?.Invoke(this, e);
+    private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        // Di aplikasi UI, event ini dikirim lewat antrean UI thread, jadi bisa datang terlambat
+        // dari player lama yang sudah diganti lagu lain. Event seperti itu diabaikan.
+        if (!ReferenceEquals(sender, _player))
+            return;
+
+        PlaybackStopped?.Invoke(this, e);
+    }
 }

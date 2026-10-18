@@ -1,31 +1,64 @@
+using System;
+using System.Linq;
+using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
+using MusicPlayer.Pages;
+using MusicPlayer.Services;
 
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
+namespace MusicPlayer;
 
-namespace MusicPlayer
+public sealed partial class MainWindow : Window
 {
-    /// <summary>
-    /// An empty window that can be used on its own or navigated to within a Frame.
-    /// </summary>
-    public sealed partial class MainWindow : Window
+    /// <summary>Dipakai oleh x:Bind di MainWindow.xaml.</summary>
+    public PlaybackService Playback { get; } = App.Playback;
+
+    public MainWindow()
     {
-        public MainWindow()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
+
+        // Bar pemutar menyatu dengan title bar, seperti Apple Music
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
+        AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+        AppWindow.TitleBar.ButtonForegroundColor = Colors.White;
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1400, 900));
+
+        // Buka halaman pertama (Songs)
+        NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
+
+        Closed += (_, _) => Playback.Dispose();
+    }
+
+    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        Type page = args.IsSettingsSelected
+            ? typeof(SettingsPage)
+            : (args.SelectedItem as NavigationViewItem)?.Tag switch
+            {
+                "songs" => typeof(SongsPage),
+                _ => typeof(SongsPage),
+            };
+
+        if (ContentFrame.CurrentSourcePageType != page)
+            ContentFrame.Navigate(page);
+    }
+
+    private void Previous_Click(object sender, RoutedEventArgs e) => Playback.Previous();
+
+    private void PlayPause_Click(object sender, RoutedEventArgs e) => Playback.TogglePlayPause();
+
+    private void Next_Click(object sender, RoutedEventArgs e) => Playback.Next();
+
+    private void SeekBar_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        // Klik di garis progres: lompat ke posisi itu
+        var bar = (FrameworkElement)sender;
+        if (bar.ActualWidth > 0)
+            Playback.SeekToFraction(e.GetCurrentPoint(bar).Position.X / bar.ActualWidth);
     }
 }

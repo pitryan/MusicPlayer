@@ -3,7 +3,7 @@ using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 
-namespace MusicPlayer.AudioLab;
+namespace MusicPlayer.Audio;
 
 /// <summary>
 /// Mencari format yang diterima perangkat dalam WASAPI exclusive mode, tanpa mengubah

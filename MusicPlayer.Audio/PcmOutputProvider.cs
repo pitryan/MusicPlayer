@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using NAudio.Wave;
 
-namespace MusicPlayer.AudioLab;
+namespace MusicPlayer.Audio;
 
 /// <summary>
 /// Penghubung antara decoder dan WASAPI. Tugasnya:
