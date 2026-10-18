@@ -16,6 +16,12 @@ public static class Formatters
             : $"{(int)time.TotalMinutes}:{time.Seconds:00}";
     }
 
+    /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
+    public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    /// <summary>Contoh: "YOASOBI — THE BOOK 3".</summary>
+    public static string ArtistAndAlbum(string artist, string album) => $"{artist} — {album}";
+
     /// <summary>Nomor track, atau kosong kalau tag-nya tidak ada.</summary>
     public static string TrackNumber(int? number) => number?.ToString() ?? "";
 }

@@ -256,6 +256,30 @@ public sealed class LibraryDatabase
         return albums;
     }
 
+    /// <summary>
+    /// Semua artis, diambil dari artis album (tanpa bagian "feat."), urut nama.
+    /// Album yang artisnya sama setelah "feat." dibuang akan tergabung di satu artis.
+    /// </summary>
+    public IReadOnlyList<ArtistSummary> GetArtists() =>
+        GetAlbums()
+            .GroupBy(a => ArtistNames.Primary(a.Artist), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ArtistSummary(
+                Name: g.Key,
+                AlbumCount: g.Count(),
+                TrackCount: g.Sum(a => a.TrackCount),
+                CoverTrackPath: g.OrderByDescending(a => a.Year ?? 0).First().CoverTrackPath))
+            .OrderBy(a => a.Name.Length == 0) // "Unknown Artist" di paling bawah
+            .ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+    /// <summary>Album-album milik satu artis (lihat <see cref="GetArtists"/>), yang terbaru lebih dulu.</summary>
+    public IReadOnlyList<AlbumSummary> GetArtistAlbums(string artistName) =>
+        GetAlbums()
+            .Where(a => string.Equals(ArtistNames.Primary(a.Artist), artistName, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(a => a.Year ?? 0)
+            .ThenBy(a => a.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
     /// <summary>Lagu-lagu sebuah album, urut disc lalu nomor track.</summary>
     public IReadOnlyList<Track> GetAlbumTracks(string artist, string album)
     {

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="MusicPlayer.Pages.SearchPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:lib="using:MusicPlayer.Library"
+    xmlns:vm="using:MusicPlayer.ViewModels"
+    xmlns:helpers="using:MusicPlayer.Helpers">
+
+    <Page.Resources>
+        <Style x:Key="CellStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="MaxLines" Value="1" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer>
+        <StackPanel Padding="24,20,24,40" Spacing="8">
+            <TextBlock x:Name="HeaderText" Style="{StaticResource TitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+            <TextBlock
+                x:Name="NoResultsText"
+                Text="No results. Try another title, artist, or album."
+                Foreground="{StaticResource SecondaryTextBrush}"
+                Visibility="Collapsed" />
+
+            <!-- Artis -->
+            <StackPanel x:Name="ArtistsSection" Spacing="8" Margin="0,16,0,0">
+                <TextBlock Text="Artists" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <GridView
+                    x:Name="ArtistResults"
+                    SelectionMode="None"
+                    IsItemClickEnabled="True"
+                    ItemClick="ArtistResults_ItemClick">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ArtistItem">
+                            <StackPanel Width="120" Spacing="8" Margin="0,0,0,8">
+                                <Grid Width="120" Height="120">
+                                    <Ellipse Fill="{StaticResource CoverPlaceholderBrush}" />
+                                    <Ellipse>
+                                        <Ellipse.Fill>
+                                            <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                </Grid>
+                                <TextBlock
+                                    Text="{x:Bind Name}"
+                                    FontSize="13"
+                                    HorizontalAlignment="Center"
+                                    TextTrimming="CharacterEllipsis"
+                                    MaxLines="1" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+            </StackPanel>
+
+            <!-- Album -->
+            <StackPanel x:Name="AlbumsSection" Spacing="8" Margin="0,16,0,0">
+                <TextBlock Text="Albums" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <GridView
+                    x:Name="AlbumResults"
+                    SelectionMode="None"
+                    IsItemClickEnabled="True"
+                    ItemClick="AlbumResults_ItemClick">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AlbumItem">
+                            <StackPanel Width="160" Margin="0,0,0,8">
+                                <Grid
+                                    Width="160"
+                                    Height="160"
+                                    CornerRadius="6"
+                                    Background="{StaticResource CoverPlaceholderBrush}">
+                                    <FontIcon Glyph="&#xE93C;" FontSize="36" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <Border CornerRadius="6">
+                                        <Border.Background>
+                                            <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                        </Border.Background>
+                                    </Border>
+                                </Grid>
+                                <TextBlock
+                                    Text="{x:Bind Title}"
+                                    FontSize="13"
+                                    Margin="0,8,0,0"
+                                    TextTrimming="CharacterEllipsis"
+                                    MaxLines="1" />
+                                <TextBlock
+                                    Text="{x:Bind Artist}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    TextTrimming="CharacterEllipsis"
+                                    MaxLines="1" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+            </StackPanel>
+
+            <!-- Lagu -->
+            <StackPanel x:Name="SongsSection" Spacing="8" Margin="0,16,0,0">
+                <TextBlock Text="Songs" Style="{StaticResource SubtitleTextBlockStyle}" />
+                <ListView
+                    x:Name="SongResults"
+                    SelectionMode="Single"
+                    DoubleTapped="SongResults_DoubleTapped">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="MinHeight" Value="40" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="lib:Track">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2*" />
+                                    <ColumnDefinition Width="3*" />
+                                    <ColumnDefinition Width="56" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{x:Bind DisplayTitle}" Style="{StaticResource CellStyle}" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Text="{x:Bind helpers:Formatters.ArtistAndAlbum(DisplayArtist, DisplayAlbum)}"
+                                    Style="{StaticResource CellStyle}"
+                                    Foreground="{StaticResource SecondaryTextBrush}" />
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{x:Bind helpers:Formatters.Time(Duration)}"
+                                    Style="{StaticResource CellStyle}"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    HorizontalAlignment="Right" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -37,11 +37,25 @@
             </StackPanel>
         </NavigationView.PaneHeader>
 
+        <NavigationView.AutoSuggestBox>
+            <AutoSuggestBox
+                x:Name="SearchBox"
+                PlaceholderText="Search"
+                QueryIcon="Find"
+                TextChanged="SearchBox_TextChanged"
+                QuerySubmitted="SearchBox_QuerySubmitted" />
+        </NavigationView.AutoSuggestBox>
+
         <NavigationView.MenuItems>
             <NavigationViewItemHeader Content="Library" />
             <NavigationViewItem Content="Recently Added" Tag="recent">
                 <NavigationViewItem.Icon>
                     <FontIcon Glyph="&#xE823;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Artists" Tag="artists">
+                <NavigationViewItem.Icon>
+                    <SymbolIcon Symbol="Contact" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
             <NavigationViewItem Content="Albums" Tag="albums">

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -17,6 +18,9 @@ public sealed partial class MainWindow : Window
 {
     /// <summary>Dipakai oleh x:Bind di MainWindow.xaml.</summary>
     public PlaybackService Playback { get; } = App.Playback;
+
+    // Pencarian dijalankan sebentar setelah pengguna berhenti mengetik, bukan di setiap huruf
+    private readonly DispatcherQueueTimer _searchTimer;
 
     public MainWindow()
     {
@@ -41,6 +45,11 @@ public sealed partial class MainWindow : Window
 
         // Tombol back hanya aktif kalau ada halaman untuk kembali, misalnya dari detail album ke Albums
         ContentFrame.Navigated += (_, _) => NavView.IsBackEnabled = ContentFrame.CanGoBack;
+
+        _searchTimer = DispatcherQueue.CreateTimer();
+        _searchTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _searchTimer.IsRepeating = false;
+        _searchTimer.Tick += (_, _) => ShowSearch(SearchBox.Text);
 
         // Halaman pertama: Recently Added
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
@@ -151,6 +160,9 @@ public sealed partial class MainWindow : Window
             case "albums":
                 ContentFrame.Navigate(typeof(AlbumsPage), "albums");
                 break;
+            case "artists":
+                ContentFrame.Navigate(typeof(ArtistsPage));
+                break;
             case "settings":
                 ContentFrame.Navigate(typeof(SettingsPage));
                 break;
@@ -160,6 +172,44 @@ public sealed partial class MainWindow : Window
         }
 
         // Pindah lewat sidebar memulai "riwayat" baru, jadi tombol back tidak lompat antar menu
+        ContentFrame.BackStack.Clear();
+        NavView.IsBackEnabled = false;
+    }
+
+    // ── Pencarian ────────────────────────────────────────────
+
+    private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        // Hanya bereaksi pada ketikan pengguna, bukan perubahan teks dari kode
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            return;
+
+        _searchTimer.Stop();
+        _searchTimer.Start();
+    }
+
+    private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        _searchTimer.Stop();
+        ShowSearch(args.QueryText);
+    }
+
+    private void ShowSearch(string text)
+    {
+        string query = text.Trim();
+        if (query.Length == 0)
+            return;
+
+        // Halaman hasil sudah terbuka: cukup perbarui isinya
+        if (ContentFrame.Content is SearchPage searchPage)
+        {
+            searchPage.ShowResults(query);
+            return;
+        }
+
+        _currentSection = "search";
+        NavView.SelectedItem = null; // tidak ada menu sidebar yang aktif saat melihat hasil pencarian
+        ContentFrame.Navigate(typeof(SearchPage), query);
         ContentFrame.BackStack.Clear();
         NavView.IsBackEnabled = false;
     }
