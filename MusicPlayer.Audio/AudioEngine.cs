@@ -24,6 +24,9 @@ public sealed class AudioEngine : IDisposable
     public bool IsExclusive { get; private set; }
     public string? FallbackReason { get; private set; }
 
+    /// <summary>Format yang dikirim ke perangkat dalam exclusive mode; null kalau memakai shared mode.</summary>
+    public PcmFormat? ExclusiveFormat { get; private set; }
+
     public TimeSpan Position => _output?.CurrentTime ?? TimeSpan.Zero;
     public TimeSpan Duration => _output?.TotalTime ?? TimeSpan.Zero;
 
@@ -42,6 +45,7 @@ public sealed class AudioEngine : IDisposable
         Close();
         _reader = new MediaFoundationReader(path);
         FallbackReason = null;
+        ExclusiveFormat = null;
 
         if (preferExclusive && TryOpenExclusive(device))
             return;
@@ -49,7 +53,7 @@ public sealed class AudioEngine : IDisposable
         // Shared mode: mixer Windows yang mengurus konversi format
         CreatePlayer(device, exclusive: false, _reader.WaveFormat);
         IsExclusive = false;
-        OutputDescription = "Mixer Windows (shared mode)";
+        OutputDescription = "Windows mixer (shared mode)";
     }
 
     private bool TryOpenExclusive(MMDevice device)
@@ -65,6 +69,7 @@ public sealed class AudioEngine : IDisposable
         {
             CreatePlayer(device, exclusive: true, format.ToWaveFormat());
             IsExclusive = true;
+            ExclusiveFormat = format;
             OutputDescription = format.ToString();
             return true;
         }

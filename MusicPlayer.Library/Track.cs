@@ -33,8 +33,8 @@ public sealed record Track
     public bool HasLyrics { get; init; }
 
     public string DisplayTitle => Title ?? Path.GetFileNameWithoutExtension(FilePath);
-    public string DisplayArtist => Artist ?? AlbumArtist ?? "Artis tidak diketahui";
-    public string DisplayAlbum => Album ?? "Album tidak diketahui";
+    public string DisplayArtist => Artist ?? AlbumArtist ?? "Unknown Artist";
+    public string DisplayAlbum => Album ?? "Unknown Album";
 
     /// <summary>Di atas kualitas CD: lebih dari 16-bit atau lebih dari 48 kHz.</summary>
     public bool IsHiRes => BitsPerSample > 16 || SampleRate > 48000;

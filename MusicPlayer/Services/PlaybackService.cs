@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using MusicPlayer.Audio;
@@ -37,6 +38,13 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private double _positionSeconds;
     private double _durationSeconds = 1;
     private Symbol _playPauseSymbol = Symbol.Play;
+    private string _qualityBadgeText = "";
+    private string _qualityShortText = "";
+    private string _qualityDetailText = "";
+    private string _outputModeText = "";
+    private string _outputDetailText = "";
+    private string _deviceText = "";
+    private Visibility _qualityVisibility = Visibility.Collapsed;
 
     public PlaybackService(DispatcherQueue dispatcherQueue)
     {
@@ -108,6 +116,55 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         get => _playPauseSymbol;
         private set => SetProperty(ref _playPauseSymbol, value);
+    }
+
+    /// <summary>Contoh: "Hi-Res Lossless", "Lossless", atau "MP3 320 kbps".</summary>
+    public string QualityBadgeText
+    {
+        get => _qualityBadgeText;
+        private set => SetProperty(ref _qualityBadgeText, value);
+    }
+
+    /// <summary>Versi pendek untuk LCD: "Hi-Res", "Lossless", "MP3", atau "AAC".</summary>
+    public string QualityShortText
+    {
+        get => _qualityShortText;
+        private set => SetProperty(ref _qualityShortText, value);
+    }
+
+    /// <summary>Format file, misalnya "24-bit 96 kHz FLAC".</summary>
+    public string QualityDetailText
+    {
+        get => _qualityDetailText;
+        private set => SetProperty(ref _qualityDetailText, value);
+    }
+
+    /// <summary>"Exclusive mode · bit-perfect" atau "Shared mode".</summary>
+    public string OutputModeText
+    {
+        get => _outputModeText;
+        private set => SetProperty(ref _outputModeText, value);
+    }
+
+    /// <summary>Format yang benar-benar dikirim ke perangkat, atau alasan memakai shared mode.</summary>
+    public string OutputDetailText
+    {
+        get => _outputDetailText;
+        private set => SetProperty(ref _outputDetailText, value);
+    }
+
+    /// <summary>Nama perangkat output, misalnya "Headset (HiBy FC5)".</summary>
+    public string DeviceText
+    {
+        get => _deviceText;
+        private set => SetProperty(ref _deviceText, value);
+    }
+
+    /// <summary>Badge kualitas hanya tampil saat ada lagu yang diputar.</summary>
+    public Visibility QualityVisibility
+    {
+        get => _qualityVisibility;
+        private set => SetProperty(ref _qualityVisibility, value);
     }
 
     /// <summary>Memutar daftar lagu mulai dari lagu ke-startIndex; daftar itu jadi antreannya.</summary>
@@ -189,9 +246,8 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             CurrentTrack = track;
             TitleText = track.DisplayTitle;
             SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
-            StatusText = _engine.IsExclusive
-                ? $"EXCLUSIVE · {_engine.OutputDescription}"
-                : "SHARED · Windows mixer";
+            StatusText = "";
+            UpdateQualityInfo(track, device);
             _ = LoadCoverAsync(track);
         }
         catch (Exception ex)
@@ -213,7 +269,48 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         TitleText = IdleTitle;
         SubtitleText = IdleSubtitle;
         StatusText = "";
+        QualityVisibility = Visibility.Collapsed;
         RefreshPosition();
+    }
+
+    private void UpdateQualityInfo(Track track, MMDevice device)
+    {
+        var quality = AudioQuality.Describe(track);
+        QualityBadgeText = quality.Badge;
+        QualityShortText = quality.ShortBadge;
+        QualityDetailText = quality.Detail;
+        DeviceText = device.FriendlyName;
+
+        if (_engine.ExclusiveFormat is { } format)
+        {
+            string rate = AudioQuality.FormatSampleRate(format.SampleRate);
+            OutputModeText = "Exclusive mode · bit-perfect";
+            OutputDetailText = format.ContainerBits == format.ValidBits
+                ? $"Sent to the device as {format.ValidBits}-bit {rate}"
+                : $"Sent to the device as {format.ValidBits}-bit {rate} in a {format.ContainerBits}-bit container";
+        }
+        else
+        {
+            OutputModeText = "Shared mode";
+            string mixed = $"Windows mixes the audio at {DescribeMixRate(device)}.";
+            OutputDetailText = _engine.FallbackReason is { } reason ? $"{reason} {mixed}" : mixed;
+        }
+
+        QualityVisibility = Visibility.Visible;
+    }
+
+    /// <summary>Sample rate mixer Windows untuk perangkat ini (diatur di Sound settings).</summary>
+    private static string DescribeMixRate(MMDevice device)
+    {
+        try
+        {
+            using var client = device.CreateAudioClient();
+            return AudioQuality.FormatSampleRate(client.MixFormat.SampleRate);
+        }
+        catch (Exception)
+        {
+            return "its default sample rate";
+        }
     }
 
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)

@@ -3,6 +3,7 @@
     x:Class="MusicPlayer.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -12,11 +13,22 @@
         x:Name="NavView"
         PaneDisplayMode="Left"
         OpenPaneLength="260"
-        IsBackButtonVisible="Collapsed"
+        IsBackButtonVisible="Auto"
+        IsBackEnabled="False"
         IsPaneToggleButtonVisible="False"
         IsSettingsVisible="True"
         IsTitleBarAutoPaddingEnabled="False"
-        SelectionChanged="NavView_SelectionChanged">
+        SelectionChanged="NavView_SelectionChanged"
+        BackRequested="NavView_BackRequested">
+
+        <!-- Warna NavigationView diganti langsung di kontrolnya (lightweight styling) -->
+        <NavigationView.Resources>
+            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#FF242424" />
+            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#FF242424" />
+            <SolidColorBrush x:Key="NavigationViewContentBackground" Color="#FF1E1E1E" />
+            <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="#FFFA2D48" />
+        </NavigationView.Resources>
 
         <NavigationView.PaneHeader>
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,16,0,8">
@@ -27,6 +39,16 @@
 
         <NavigationView.MenuItems>
             <NavigationViewItemHeader Content="Library" />
+            <NavigationViewItem Content="Recently Added" Tag="recent">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE823;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Albums" Tag="albums">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE93C;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <NavigationViewItem Content="Songs" Tag="songs">
                 <NavigationViewItem.Icon>
                     <SymbolIcon Symbol="Audio" />
@@ -40,116 +62,181 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <!-- Bar atas yang menyatu dengan title bar, seperti Apple Music -->
-            <TitleBar
-                x:Name="AppTitleBar"
-                Height="64"
+            <!--
+                Bar atas yang menyatu dengan title bar. Area kosongnya dipakai untuk menggeser jendela;
+                area yang bisa diklik (tombol dan LCD) dikecualikan lewat kode di MainWindow.xaml.cs.
+                Kolom tengah (LCD) maksimal 600 px dan selalu di tengah; kalau jendela sempit, LCD ikut menyusut.
+            -->
+            <Grid
+                x:Name="TopBar"
                 Background="{StaticResource TopBarBackgroundBrush}"
-                IsBackButtonVisible="False"
-                IsPaneToggleButtonVisible="False">
+                SizeChanged="TopBar_SizeChanged">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="160" />
+                    <ColumnDefinition Width="3*" MaxWidth="600" />
+                    <ColumnDefinition Width="*" MinWidth="160" />
+                    <ColumnDefinition x:Name="CaptionButtonsColumn" Width="138" />
+                </Grid.ColumnDefinitions>
 
-                <TitleBar.LeftHeader>
-                    <StackPanel Orientation="Horizontal" Spacing="4" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <Button Style="{StaticResource TransportButtonStyle}" Click="Previous_Click" ToolTipService.ToolTip="Previous">
-                            <SymbolIcon Symbol="Previous" />
-                        </Button>
-                        <Button Style="{StaticResource TransportButtonStyle}" Click="PlayPause_Click" ToolTipService.ToolTip="Play / Pause">
-                            <SymbolIcon Symbol="{x:Bind Playback.PlayPauseSymbol, Mode=OneWay}" />
-                        </Button>
-                        <Button Style="{StaticResource TransportButtonStyle}" Click="Next_Click" ToolTipService.ToolTip="Next">
-                            <SymbolIcon Symbol="Next" />
-                        </Button>
-                    </StackPanel>
-                </TitleBar.LeftHeader>
+                <StackPanel
+                    x:Name="TransportPanel"
+                    Orientation="Horizontal"
+                    Spacing="4"
+                    Margin="16,0,0,0"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center">
+                    <Button Style="{StaticResource TransportButtonStyle}" Click="Previous_Click" ToolTipService.ToolTip="Previous">
+                        <SymbolIcon Symbol="Previous" />
+                    </Button>
+                    <Button Style="{StaticResource TransportButtonStyle}" Click="PlayPause_Click" ToolTipService.ToolTip="Play / Pause">
+                        <SymbolIcon Symbol="{x:Bind Playback.PlayPauseSymbol, Mode=OneWay}" />
+                    </Button>
+                    <Button Style="{StaticResource TransportButtonStyle}" Click="Next_Click" ToolTipService.ToolTip="Next">
+                        <SymbolIcon Symbol="Next" />
+                    </Button>
+                </StackPanel>
 
-                <!-- "LCD": cover, judul, artis, dan progres lagu yang sedang diputar -->
-                <TitleBar.Content>
-                    <Border
-                        MinWidth="320"
-                        MaxWidth="620"
-                        Height="52"
-                        HorizontalAlignment="Stretch"
-                        CornerRadius="6"
-                        Background="{StaticResource LcdBackgroundBrush}">
-                        <Grid>
+                <!-- "LCD": cover, badge kualitas, judul dan artis (bergeser kalau kepanjangan), progres -->
+                <Border
+                    x:Name="LcdBorder"
+                    Grid.Column="1"
+                    Height="52"
+                    VerticalAlignment="Center"
+                    CornerRadius="6"
+                    Background="{StaticResource LcdBackgroundBrush}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="52" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Grid Background="{StaticResource CoverPlaceholderBrush}" CornerRadius="6,0,0,6">
+                            <FontIcon Glyph="&#xE8D6;" FontSize="20" Foreground="{StaticResource SecondaryTextBrush}" />
+                            <Border CornerRadius="6,0,0,6">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                        </Grid>
+
+                        <Grid Grid.Column="1" Padding="8,4,8,3">
+                            <!-- Kolom kiri (badge) dan kanan sama lebar, supaya judul tetap di tengah -->
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="52" />
+                                <ColumnDefinition Width="64" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="64" />
                             </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
 
-                            <Grid Background="{StaticResource CoverPlaceholderBrush}">
-                                <FontIcon Glyph="&#xE8D6;" FontSize="20" Foreground="{StaticResource SecondaryTextBrush}" />
-                                <Image Source="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill" />
-                            </Grid>
+                            <!-- Badge kualitas; diklik untuk melihat detail format dan jalur output -->
+                            <Button
+                                Style="{StaticResource QualityBadgeButtonStyle}"
+                                Content="{x:Bind Playback.QualityShortText, Mode=OneWay}"
+                                Visibility="{x:Bind Playback.QualityVisibility, Mode=OneWay}"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center">
+                                <Button.Flyout>
+                                    <Flyout x:Name="QualityFlyout" Placement="Bottom">
+                                        <StackPanel Width="280" Spacing="4">
+                                            <TextBlock
+                                                Text="{x:Bind Playback.QualityBadgeText, Mode=OneWay}"
+                                                FontWeight="SemiBold"
+                                                HorizontalAlignment="Center" />
+                                            <TextBlock
+                                                Text="{x:Bind Playback.QualityDetailText, Mode=OneWay}"
+                                                HorizontalAlignment="Center" />
 
-                            <Grid Grid.Column="1" Padding="10,5,10,3">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="*" />
-                                </Grid.RowDefinitions>
+                                            <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,8" />
+
+                                            <TextBlock
+                                                Text="{x:Bind Playback.OutputModeText, Mode=OneWay}"
+                                                FontWeight="SemiBold"
+                                                Foreground="{StaticResource AccentRedBrush}"
+                                                HorizontalAlignment="Center" />
+                                            <TextBlock
+                                                Text="{x:Bind Playback.OutputDetailText, Mode=OneWay}"
+                                                TextWrapping="Wrap"
+                                                TextAlignment="Center"
+                                                HorizontalAlignment="Center" />
+                                            <TextBlock
+                                                Text="{x:Bind Playback.DeviceText, Mode=OneWay}"
+                                                Foreground="{StaticResource SecondaryTextBrush}"
+                                                HorizontalAlignment="Center" />
+
+                                            <Button
+                                                Content="Audio settings"
+                                                HorizontalAlignment="Stretch"
+                                                Margin="0,10,0,0"
+                                                Click="AudioSettings_Click" />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+
+                            <controls:MarqueeText
+                                Grid.Column="1"
+                                Text="{x:Bind Playback.TitleText, Mode=OneWay}"
+                                FontSize="12"
+                                FontWeight="SemiBold" />
+
+                            <controls:MarqueeText
+                                Grid.Row="1"
+                                Grid.ColumnSpan="3"
+                                Text="{x:Bind Playback.SubtitleText, Mode=OneWay}"
+                                FontSize="11"
+                                Foreground="{StaticResource SecondaryTextBrush}" />
+
+                            <Grid Grid.Row="2" Grid.ColumnSpan="3" ColumnSpacing="8" VerticalAlignment="Bottom">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
                                 <TextBlock
-                                    Text="{x:Bind Playback.TitleText, Mode=OneWay}"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    HorizontalAlignment="Center"
-                                    TextTrimming="CharacterEllipsis" />
-                                <TextBlock
-                                    Grid.Row="1"
-                                    Text="{x:Bind Playback.SubtitleText, Mode=OneWay}"
-                                    FontSize="11"
-                                    Foreground="{StaticResource SecondaryTextBrush}"
-                                    HorizontalAlignment="Center"
-                                    TextTrimming="CharacterEllipsis" />
+                                    Text="{x:Bind Playback.ElapsedText, Mode=OneWay}"
+                                    FontSize="10"
+                                    Foreground="{StaticResource SecondaryTextBrush}" />
 
-                                <Grid Grid.Row="2" ColumnSpacing="8" VerticalAlignment="Bottom">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <TextBlock
-                                        Text="{x:Bind Playback.ElapsedText, Mode=OneWay}"
-                                        FontSize="10"
-                                        Foreground="{StaticResource SecondaryTextBrush}" />
-
-                                    <!-- Area transparen yang lebih tinggi dari garis progres, supaya mudah diklik -->
-                                    <Grid
-                                        Grid.Column="1"
-                                        Height="12"
-                                        Background="Transparent"
-                                        PointerPressed="SeekBar_PointerPressed">
-                                        <ProgressBar
-                                            Minimum="0"
-                                            Maximum="{x:Bind Playback.DurationSeconds, Mode=OneWay}"
-                                            Value="{x:Bind Playback.PositionSeconds, Mode=OneWay}"
-                                            Foreground="#CCFFFFFF"
-                                            VerticalAlignment="Center" />
-                                    </Grid>
-
-                                    <TextBlock
-                                        Grid.Column="2"
-                                        Text="{x:Bind Playback.RemainingText, Mode=OneWay}"
-                                        FontSize="10"
-                                        Foreground="{StaticResource SecondaryTextBrush}" />
+                                <!-- Area transparan yang lebih tinggi dari garis progres, supaya mudah diklik -->
+                                <Grid
+                                    Grid.Column="1"
+                                    Height="12"
+                                    Background="Transparent"
+                                    PointerPressed="SeekBar_PointerPressed">
+                                    <ProgressBar
+                                        Minimum="0"
+                                        Maximum="{x:Bind Playback.DurationSeconds, Mode=OneWay}"
+                                        Value="{x:Bind Playback.PositionSeconds, Mode=OneWay}"
+                                        Foreground="#CCFFFFFF"
+                                        VerticalAlignment="Center" />
                                 </Grid>
+
+                                <TextBlock
+                                    Grid.Column="2"
+                                    Text="{x:Bind Playback.RemainingText, Mode=OneWay}"
+                                    FontSize="10"
+                                    Foreground="{StaticResource SecondaryTextBrush}" />
                             </Grid>
                         </Grid>
-                    </Border>
-                </TitleBar.Content>
+                    </Grid>
+                </Border>
 
-                <!-- Mode output: EXCLUSIVE (bit-perfect) atau SHARED -->
-                <TitleBar.RightHeader>
-                    <TextBlock
-                        Text="{x:Bind Playback.StatusText, Mode=OneWay}"
-                        FontSize="11"
-                        Foreground="{StaticResource AccentRedBrush}"
-                        VerticalAlignment="Center"
-                        Margin="0,0,12,0" />
-                </TitleBar.RightHeader>
-            </TitleBar>
+                <!-- Pesan error (kalau ada). Nanti di sini ada tombol volume, lirik, dan antrean -->
+                <TextBlock
+                    Grid.Column="2"
+                    Text="{x:Bind Playback.StatusText, Mode=OneWay}"
+                    FontSize="11"
+                    Foreground="{StaticResource AccentRedBrush}"
+                    TextTrimming="CharacterEllipsis"
+                    TextAlignment="Right"
+                    VerticalAlignment="Center"
+                    Margin="16,0,12,0" />
+            </Grid>
 
             <Frame x:Name="ContentFrame" Grid.Row="1" />
         </Grid>

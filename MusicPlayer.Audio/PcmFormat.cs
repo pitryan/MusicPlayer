@@ -19,7 +19,7 @@ public sealed record PcmFormat(int SampleRate, int Channels, int ContainerBits, 
     {
         string bits = ContainerBits == ValidBits
             ? $"{ValidBits}-bit"
-            : $"{ValidBits}-bit dalam wadah {ContainerBits}-bit";
+            : $"{ValidBits}-bit in a {ContainerBits}-bit container";
         return $"{SampleRate / 1000.0:0.#} kHz / {bits} / {Channels} ch";
     }
 

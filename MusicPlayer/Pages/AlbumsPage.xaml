@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="MusicPlayer.Pages.AlbumsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels"
+    NavigationCacheMode="Enabled">
+
+    <Grid Padding="24,20,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+            <TextBlock x:Name="PageTitle" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock
+                x:Name="CountText"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,4"
+                Foreground="{StaticResource SecondaryTextBrush}" />
+        </StackPanel>
+
+        <!-- Dipakai untuk dua halaman: Albums (tanpa kelompok) dan Recently Added (berkelompok) -->
+        <GridView
+            x:Name="AlbumGrid"
+            Grid.Row="1"
+            Padding="0,0,24,24"
+            SelectionMode="None"
+            IsItemClickEnabled="True"
+            ItemClick="AlbumGrid_ItemClick"
+            ContainerContentChanging="AlbumGrid_ContainerContentChanging">
+
+            <GridView.GroupStyle>
+                <GroupStyle HidesIfEmpty="True">
+                    <GroupStyle.HeaderTemplate>
+                        <DataTemplate x:DataType="vm:AlbumGroup">
+                            <TextBlock Text="{x:Bind Title}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+            </GridView.GroupStyle>
+
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="vm:AlbumItem">
+                    <StackPanel Width="180" Margin="0,0,0,12">
+                        <!-- Placeholder abu-abu dengan ikon, tertutup cover saat sudah dimuat -->
+                        <Grid
+                            Width="180"
+                            Height="180"
+                            CornerRadius="6"
+                            Background="{StaticResource CoverPlaceholderBrush}">
+                            <FontIcon Glyph="&#xE93C;" FontSize="40" Foreground="{StaticResource SecondaryTextBrush}" />
+                            <Border CornerRadius="6">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                        </Grid>
+                        <TextBlock
+                            Text="{x:Bind Title}"
+                            FontSize="13"
+                            Margin="0,8,0,0"
+                            TextTrimming="CharacterEllipsis"
+                            MaxLines="1" />
+                        <TextBlock
+                            Text="{x:Bind Artist}"
+                            FontSize="12"
+                            Foreground="{StaticResource SecondaryTextBrush}"
+                            TextTrimming="CharacterEllipsis"
+                            MaxLines="1" />
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <StackPanel
+            x:Name="EmptyState"
+            Grid.Row="1"
+            Visibility="Collapsed"
+            Spacing="8"
+            Margin="0,48,24,0"
+            HorizontalAlignment="Center">
+            <TextBlock
+                Text="No albums yet"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                HorizontalAlignment="Center" />
+            <TextBlock
+                Text="Add a music folder in Settings (the gear icon at the bottom left)."
+                Foreground="{StaticResource SecondaryTextBrush}" />
+        </StackPanel>
+    </Grid>
+</Page>

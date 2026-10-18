@@ -15,4 +15,7 @@ public static class Formatters
             ? $"{(int)time.TotalHours}:{time.Minutes:00}:{time.Seconds:00}"
             : $"{(int)time.TotalMinutes}:{time.Seconds:00}";
     }
+
+    /// <summary>Nomor track, atau kosong kalau tag-nya tidak ada.</summary>
+    public static string TrackNumber(int? number) => number?.ToString() ?? "";
 }

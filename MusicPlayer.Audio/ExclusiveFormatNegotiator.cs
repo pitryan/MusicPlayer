@@ -21,7 +21,7 @@ public static class ExclusiveFormatNegotiator
     {
         int bits = source.BitsPerSample;
         if (source.Encoding != WaveFormatEncoding.Pcm || bits is not (16 or 24 or 32))
-            return (null, $"Hasil decode berformat {source.Encoding} {bits}-bit, belum didukung untuk exclusive mode.");
+            return (null, $"The decoded format ({source.Encoding}, {bits}-bit) isn't supported in exclusive mode yet.");
 
         using var client = device.CreateAudioClient();
 
@@ -43,7 +43,7 @@ public static class ExclusiveFormatNegotiator
             }
         }
 
-        return (null, $"Perangkat tidak mendukung {source.SampleRate / 1000.0:0.#} kHz / {source.Channels} ch dalam exclusive mode.");
+        return (null, $"The device doesn't support {source.SampleRate / 1000.0:0.#} kHz / {source.Channels} ch in exclusive mode.");
     }
 
     /// <summary>
@@ -60,8 +60,8 @@ public static class ExclusiveFormatNegotiator
 
     public static string DescribeError(COMException ex) => ex.HResult switch
     {
-        AudioClientErrorCode.DeviceInUse => "Perangkat sedang dipakai aplikasi lain dalam exclusive mode.",
-        AudioClientErrorCode.ExclusiveModeNotAllowed => "Exclusive mode dimatikan di pengaturan perangkat Windows.",
-        _ => $"Error WASAPI 0x{ex.HResult:X8}: {ex.Message}",
+        AudioClientErrorCode.DeviceInUse => "Another app is using the device in exclusive mode.",
+        AudioClientErrorCode.ExclusiveModeNotAllowed => "Exclusive mode is turned off in the Windows sound settings for this device.",
+        _ => $"WASAPI error 0x{ex.HResult:X8}: {ex.Message}",
     };
 }

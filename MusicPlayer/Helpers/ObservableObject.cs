@@ -18,7 +18,11 @@ public abstract class ObservableObject : INotifyPropertyChanged
             return false;
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        OnPropertyChanged(propertyName);
         return true;
     }
+
+    /// <summary>Memberi tahu tampilan bahwa sebuah properti berubah, misalnya properti yang dihitung dari properti lain.</summary>
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }

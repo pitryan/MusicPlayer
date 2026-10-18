@@ -156,7 +156,6 @@ public sealed class LibraryDatabase
         foreach (string name in names)
             command.Parameters.AddWithValue(name, DBNull.Value);
 
-        long now = DateTime.UtcNow.Ticks;
         foreach (var t in tracks)
         {
             Set(command, "$path", t.FilePath);
@@ -181,7 +180,9 @@ public sealed class LibraryDatabase
             Set(command, "$bitrate_kbps", t.BitrateKbps);
             Set(command, "$has_cover", t.HasCover);
             Set(command, "$has_lyrics", t.HasLyrics);
-            Set(command, "$added_utc", now);
+            // "Tanggal ditambahkan" = waktu ubah file saat pertama kali masuk library. Kolom ini tidak
+            // ikut diperbarui saat scan ulang, jadi mengedit tag nanti tidak membuat lagu terlihat "baru".
+            Set(command, "$added_utc", t.ModifiedUtcTicks);
             command.ExecuteNonQuery();
         }
 
@@ -206,6 +207,70 @@ public sealed class LibraryDatabase
     }
 
     // ── Query untuk tampilan ─────────────────────────────────
+
+    /// <summary>Semua album, diurutkan per artis lalu tahun. Lagu tanpa nama album tidak ikut.</summary>
+    public IReadOnlyList<AlbumSummary> GetAlbums()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        // Judul, artis, dan cover album diambil dari lagu pertamanya (disc dan nomor track terkecil).
+        // "rn = 1" menandai lagu pertama itu di setiap album.
+        command.CommandText = """
+            WITH ranked AS (
+                SELECT *,
+                       coalesce(album_artist, artist, '') AS album_key,
+                       row_number() OVER (
+                           PARTITION BY coalesce(album_artist, artist, '') COLLATE NOCASE, album COLLATE NOCASE
+                           ORDER BY coalesce(disc_number, 1), coalesce(track_number, 999999), path
+                       ) AS rn
+                FROM tracks
+                WHERE album IS NOT NULL
+            )
+            SELECT max(CASE WHEN rn = 1 THEN album END),
+                   max(CASE WHEN rn = 1 THEN album_key END),
+                   max(year),
+                   count(*),
+                   sum(duration_ms),
+                   max(genre),
+                   max(CASE WHEN rn = 1 THEN path END),
+                   max(added_utc)
+            FROM ranked
+            GROUP BY album_key COLLATE NOCASE, album COLLATE NOCASE
+            ORDER BY album_key COLLATE NOCASE, max(year), album COLLATE NOCASE
+            """;
+        using var r = command.ExecuteReader();
+
+        var albums = new List<AlbumSummary>();
+        while (r.Read())
+        {
+            albums.Add(new AlbumSummary(
+                Title: r.GetString(0),
+                Artist: r.GetString(1),
+                Year: Number(r, 2),
+                TrackCount: r.GetInt32(3),
+                Duration: TimeSpan.FromMilliseconds(r.GetInt64(4)),
+                Genre: Text(r, 5),
+                CoverTrackPath: r.GetString(6),
+                AddedUtc: new DateTime(r.GetInt64(7), DateTimeKind.Utc)));
+        }
+        return albums;
+    }
+
+    /// <summary>Lagu-lagu sebuah album, urut disc lalu nomor track.</summary>
+    public IReadOnlyList<Track> GetAlbumTracks(string artist, string album)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {TrackColumns} FROM tracks
+            WHERE album = $album COLLATE NOCASE
+              AND coalesce(album_artist, artist, '') = $artist COLLATE NOCASE
+            {AlbumOrder}
+            """;
+        command.Parameters.AddWithValue("$album", album);
+        command.Parameters.AddWithValue("$artist", artist);
+        return ReadTracks(command);
+    }
 
     /// <summary>Lagu di dalam sebuah folder, termasuk subfolder-nya. Folder null berarti seluruh library.</summary>
     public IReadOnlyList<Track> GetTracks(string? folder = null, int limit = int.MaxValue)
@@ -328,6 +393,17 @@ public sealed class LibraryDatabase
             CREATE INDEX IF NOT EXISTS ix_tracks_album  ON tracks(album_artist, album);
             CREATE INDEX IF NOT EXISTS ix_tracks_artist ON tracks(artist);
             """);
+
+        // Migrasi: setiap perubahan skema menaikkan user_version satu angka
+        using var versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version";
+        long version = (long)versionCommand.ExecuteScalar()!;
+
+        if (version < 1)
+        {
+            // Versi 1: added_utc dulu berisi waktu scan; sekarang waktu ubah file (lihat UpsertTracks)
+            Execute(connection, "UPDATE tracks SET added_utc = modified_utc; PRAGMA user_version = 1;");
+        }
     }
 
     private static int Execute(SqliteConnection connection, string sql, params (string Name, object? Value)[] parameters)

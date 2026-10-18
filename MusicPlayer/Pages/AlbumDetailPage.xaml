@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="MusicPlayer.Pages.AlbumDetailPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels">
+
+    <Page.Resources>
+        <Style x:Key="CellStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="MaxLines" Value="1" />
+        </Style>
+    </Page.Resources>
+
+    <!-- Kepala halaman ikut ter-scroll bersama daftar lagu, seperti di Apple Music -->
+    <ListView
+        x:Name="TrackList"
+        Padding="32,0,32,0"
+        SelectionMode="Single"
+        DoubleTapped="TrackList_DoubleTapped"
+        ContainerContentChanging="TrackList_ContainerContentChanging">
+
+        <ListView.Header>
+            <Grid ColumnSpacing="32" Margin="0,32,0,24" Height="260">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="260" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Grid CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                    <FontIcon Glyph="&#xE93C;" FontSize="64" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <Border CornerRadius="8">
+                        <Border.Background>
+                            <ImageBrush x:Name="CoverBrush" Stretch="UniformToFill" />
+                        </Border.Background>
+                    </Border>
+                </Grid>
+
+                <Grid Grid.Column="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock
+                        x:Name="AlbumTitleText"
+                        Grid.Row="1"
+                        FontSize="28"
+                        FontWeight="SemiBold"
+                        TextWrapping="Wrap"
+                        MaxLines="2"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        x:Name="ArtistText"
+                        Grid.Row="2"
+                        FontSize="28"
+                        Foreground="{StaticResource AccentRedBrush}"
+                        TextTrimming="CharacterEllipsis" />
+
+                    <!-- Contoh: "Pop · 2022" lalu badge kualitas -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                        <TextBlock
+                            x:Name="MetaText"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Foreground="{StaticResource SecondaryTextBrush}"
+                            VerticalAlignment="Center" />
+                        <Border
+                            x:Name="QualityBadge"
+                            BorderBrush="#66FFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="3"
+                            Padding="5,0,5,1"
+                            VerticalAlignment="Center">
+                            <TextBlock x:Name="QualityBadgeText" FontSize="10" Foreground="#CCFFFFFF" />
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="12">
+                        <Button Style="{StaticResource AccentButtonStyle}" Padding="20,6" Click="Play_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Play" />
+                                <TextBlock Text="Play" />
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource AccentButtonStyle}" Padding="20,6" Click="Shuffle_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <SymbolIcon Symbol="Shuffle" />
+                                <TextBlock Text="Shuffle" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </ListView.Header>
+
+        <ListView.ItemContainerStyle>
+            <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="CornerRadius" Value="4" />
+            </Style>
+        </ListView.ItemContainerStyle>
+
+        <ListView.ItemTemplate>
+            <DataTemplate x:DataType="vm:TrackRow">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="48" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Nomor track, atau ikon play merah kalau lagu ini sedang diputar -->
+                    <TextBlock
+                        Text="{x:Bind NumberText}"
+                        Visibility="{x:Bind NumberVisibility, Mode=OneWay}"
+                        Style="{StaticResource CellStyle}"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        HorizontalAlignment="Right" />
+                    <FontIcon
+                        Glyph="&#xE768;"
+                        FontSize="12"
+                        Foreground="{StaticResource AccentRedBrush}"
+                        Visibility="{x:Bind PlayingVisibility, Mode=OneWay}"
+                        HorizontalAlignment="Right" />
+
+                    <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
+                    <TextBlock
+                        Grid.Column="2"
+                        Text="{x:Bind ArtistText}"
+                        Style="{StaticResource CellStyle}"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        MaxWidth="420" />
+                    <TextBlock
+                        Grid.Column="3"
+                        Text="{x:Bind DurationText}"
+                        Style="{StaticResource CellStyle}"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        HorizontalAlignment="Right" />
+                </Grid>
+            </DataTemplate>
+        </ListView.ItemTemplate>
+
+        <!-- Kaki halaman: tahun rilis, jumlah lagu, dan total durasi -->
+        <ListView.Footer>
+            <StackPanel Margin="12,20,0,40" Spacing="2">
+                <TextBlock x:Name="FooterYearText" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock x:Name="FooterCountText" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+            </StackPanel>
+        </ListView.Footer>
+    </ListView>
+</Page>

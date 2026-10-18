@@ -11,20 +11,22 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Mengganti warna bawaan NavigationView (lightweight styling) -->
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="#FF242424" />
-                    <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="#FF242424" />
-                    <SolidColorBrush x:Key="NavigationViewContentBackground" Color="#FF1E1E1E" />
-                    <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
-                    <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="#FFFA2D48" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
+            <!--
+                Warna aksen seluruh aplikasi diganti dari biru bawaan Windows ke merah ala Apple Music.
+                Di tema gelap, kontrol memakai varian "Light2" sebagai warna aksen utamanya.
+            -->
+            <Color x:Key="SystemAccentColorDark3">#FF7A0E1F</Color>
+            <Color x:Key="SystemAccentColorDark2">#FF9C1427</Color>
+            <Color x:Key="SystemAccentColorDark1">#FFC21B33</Color>
+            <Color x:Key="SystemAccentColor">#FFE0233D</Color>
+            <Color x:Key="SystemAccentColorLight1">#FFEF2943</Color>
+            <Color x:Key="SystemAccentColorLight2">#FFFA2D48</Color>
+            <Color x:Key="SystemAccentColorLight3">#FFFC5A6F</Color>
 
             <!-- Palet warna ala Apple Music -->
-            <Color x:Key="AccentRedColor">#FFFA2D48</Color>
-            <SolidColorBrush x:Key="AccentRedBrush" Color="{StaticResource AccentRedColor}" />
+            <SolidColorBrush x:Key="AccentRedBrush" Color="#FFFA2D48" />
+            <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#FF242424" />
+            <SolidColorBrush x:Key="ContentBackgroundBrush" Color="#FF1E1E1E" />
             <SolidColorBrush x:Key="TopBarBackgroundBrush" Color="#FF2B2B2B" />
             <SolidColorBrush x:Key="LcdBackgroundBrush" Color="#FF3A3A3A" />
             <SolidColorBrush x:Key="CoverPlaceholderBrush" Color="#FF4A4A4A" />
@@ -37,6 +39,19 @@
                 <Setter Property="Padding" Value="8" />
                 <Setter Property="MinWidth" Value="40" />
                 <Setter Property="MinHeight" Value="40" />
+            </Style>
+
+            <!-- Badge kualitas kecil di LCD, misalnya "Hi-Res Lossless" -->
+            <Style x:Key="QualityBadgeButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="#66FFFFFF" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="3" />
+                <Setter Property="Padding" Value="5,0,5,1" />
+                <Setter Property="FontSize" Value="10" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="Foreground" Value="#CCFFFFFF" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
