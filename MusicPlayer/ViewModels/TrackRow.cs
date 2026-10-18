@@ -1,4 +1,6 @@
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 
@@ -10,11 +12,16 @@ namespace MusicPlayer.ViewModels;
 /// </summary>
 public sealed class TrackRow : ObservableObject
 {
+    // Baris ke-1, 3, 5, ... sedikit lebih terang, supaya baris mudah diikuti mata
+    private static readonly Brush StripeBrush = new SolidColorBrush(ColorHelper.FromArgb(0x0D, 0xFF, 0xFF, 0xFF));
+    private static readonly Brush ClearBrush = new SolidColorBrush(Colors.Transparent);
+
     private bool _isPlaying;
 
-    public TrackRow(Track track)
+    public TrackRow(Track track, int index)
     {
         Track = track;
+        RowBackground = index % 2 == 0 ? StripeBrush : ClearBrush;
         NumberText = Formatters.TrackNumber(track.TrackNumber);
         ArtistText = track.DisplayArtist;
         DurationText = Formatters.Time(track.Duration);
@@ -33,6 +40,12 @@ public sealed class TrackRow : ObservableObject
     public string ArtistText { get; }
 
     public string DurationText { get; }
+
+    /// <summary>
+    /// Latar belang dipasang di dalam template baris, bukan di kotak ListViewItem-nya.
+    /// Latar kotak ListViewItem ikut diubah oleh efek hover, sehingga belangnya bisa hilang.
+    /// </summary>
+    public Brush RowBackground { get; }
 
     public bool IsPlaying
     {

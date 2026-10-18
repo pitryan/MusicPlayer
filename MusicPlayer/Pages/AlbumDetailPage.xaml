@@ -19,8 +19,7 @@
         x:Name="TrackList"
         Padding="32,0,32,0"
         SelectionMode="Single"
-        DoubleTapped="TrackList_DoubleTapped"
-        ContainerContentChanging="TrackList_ContainerContentChanging">
+        DoubleTapped="TrackList_DoubleTapped">
 
         <ListView.Header>
             <Grid ColumnSpacing="32" Margin="0,32,0,24" Height="260">
@@ -101,8 +100,11 @@
         </ListView.Header>
 
         <ListView.ItemContainerStyle>
+            <!-- Isi baris dibuat memenuhi seluruh kotaknya, supaya latar belangnya menutup satu baris penuh -->
             <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="0" />
                 <Setter Property="MinHeight" Value="44" />
                 <Setter Property="CornerRadius" Value="4" />
             </Style>
@@ -110,7 +112,11 @@
 
         <ListView.ItemTemplate>
             <DataTemplate x:DataType="vm:TrackRow">
-                <Grid ColumnSpacing="16">
+                <Grid
+                    ColumnSpacing="16"
+                    Padding="12,0"
+                    CornerRadius="4"
+                    Background="{x:Bind RowBackground}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="28" />
                         <ColumnDefinition Width="*" />
@@ -130,7 +136,8 @@
                         FontSize="12"
                         Foreground="{StaticResource AccentRedBrush}"
                         Visibility="{x:Bind PlayingVisibility, Mode=OneWay}"
-                        HorizontalAlignment="Right" />
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center" />
 
                     <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
                     <TextBlock

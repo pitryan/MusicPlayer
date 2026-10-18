@@ -18,7 +18,7 @@
         IsPaneToggleButtonVisible="False"
         IsSettingsVisible="True"
         IsTitleBarAutoPaddingEnabled="False"
-        SelectionChanged="NavView_SelectionChanged"
+        ItemInvoked="NavView_ItemInvoked"
         BackRequested="NavView_BackRequested">
 
         <!-- Warna NavigationView diganti langsung di kontrolnya (lightweight styling) -->

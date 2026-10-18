@@ -44,6 +44,7 @@ public sealed partial class MainWindow : Window
 
         // Halaman pertama: Recently Added
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
+        NavigateToSection("recent");
 
         Closed += (_, _) => Playback.Dispose();
     }
@@ -58,13 +59,18 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void UpdateTitleBarRegions()
     {
-        if (Content?.XamlRoot is not { } xamlRoot)
+        // Saat jendela di-minimize, ukurannya tidak berarti (bahkan bisa negatif), jadi lewati saja.
+        // Perhitungan diulang otomatis saat jendela dibuka kembali.
+        if (Content?.XamlRoot is not { IsHostVisible: true } xamlRoot
+            || AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized })
             return;
 
         double scale = xamlRoot.RasterizationScale; // misalnya 1.25 kalau skala layar 125%
 
         // Sisakan ruang untuk tombol minimize/maximize/close milik Windows di kanan
-        CaptionButtonsColumn.Width = new GridLength(AppWindow.TitleBar.RightInset / scale);
+        double captionWidth = AppWindow.TitleBar.RightInset / scale;
+        if (double.IsFinite(captionWidth) && captionWidth >= 0)
+            CaptionButtonsColumn.Width = new GridLength(captionWidth);
 
         RectInt32[] interactive = [ToWindowRect(TransportPanel, scale), ToWindowRect(LcdBorder, scale)];
         InputNonClientPointerSource
@@ -81,8 +87,8 @@ public sealed partial class MainWindow : Window
         return new RectInt32(
             (int)Math.Round(bounds.X * scale),
             (int)Math.Round(bounds.Y * scale),
-            (int)Math.Round(bounds.Width * scale),
-            (int)Math.Round(bounds.Height * scale));
+            (int)Math.Round(Math.Max(0, bounds.Width) * scale),
+            (int)Math.Round(Math.Max(0, bounds.Height) * scale));
     }
 
     private void Previous_Click(object sender, RoutedEventArgs e) => Playback.Previous();
@@ -103,15 +109,39 @@ public sealed partial class MainWindow : Window
     {
         QualityFlyout.Hide();
         NavView.SelectedItem = NavView.SettingsItem;
+        NavigateToSection("settings");
     }
 
     // ── Navigasi ─────────────────────────────────────────────
 
-    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private string _currentSection = "";
+
+    /// <summary>
+    /// Dipanggil setiap kali menu sidebar diklik, termasuk menu yang sedang terpilih.
+    /// (SelectionChanged tidak terpanggil untuk menu yang sudah terpilih; itu penyebab menu Albums
+    /// tidak merespons saat sedang membuka detail album.)
+    /// </summary>
+    private void NavView_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
-        string tag = args.IsSettingsSelected
+        string tag = args.IsSettingsInvoked
             ? "settings"
-            : (args.SelectedItem as NavigationViewItem)?.Tag as string ?? "songs";
+            : args.InvokedItemContainer?.Tag as string ?? "songs";
+
+        if (tag == _currentSection)
+        {
+            // Menu yang sama diklik lagi, misalnya Albums saat membuka detail album:
+            // kembali ke halaman utama menu itu, dengan posisi scroll yang sama seperti tadi
+            while (ContentFrame.CanGoBack)
+                ContentFrame.GoBack();
+            return;
+        }
+
+        NavigateToSection(tag);
+    }
+
+    private void NavigateToSection(string tag)
+    {
+        _currentSection = tag;
 
         switch (tag)
         {

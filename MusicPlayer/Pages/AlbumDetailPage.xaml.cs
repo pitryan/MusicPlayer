@@ -2,11 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
-using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
@@ -18,10 +16,6 @@ namespace MusicPlayer.Pages;
 public sealed partial class AlbumDetailPage : Page
 {
     private const int CoverPixelWidth = 520; // dua kali ukuran tampilnya, supaya tetap tajam di layar HiDPI
-
-    // Latar baris genap dibuat sedikit lebih terang, supaya baris mudah diikuti mata
-    private static readonly Brush StripeBrush = new SolidColorBrush(ColorHelper.FromArgb(0x0D, 0xFF, 0xFF, 0xFF));
-    private static readonly Brush NoBrush = new SolidColorBrush(Colors.Transparent);
 
     private List<Track> _tracks = [];
     private List<TrackRow> _rows = [];
@@ -38,7 +32,7 @@ public sealed partial class AlbumDetailPage : Page
             return;
 
         _tracks = App.Database.GetAlbumTracks(album.Artist, album.Title).ToList();
-        _rows = _tracks.Select(t => new TrackRow(t)).ToList();
+        _rows = _tracks.Select((track, index) => new TrackRow(track, index)).ToList();
         TrackList.ItemsSource = _rows;
 
         AlbumTitleText.Text = album.Title;
@@ -89,11 +83,6 @@ public sealed partial class AlbumDetailPage : Page
         string? playingPath = App.Playback.CurrentTrack?.FilePath;
         foreach (var row in _rows)
             row.IsPlaying = row.Track.FilePath == playingPath;
-    }
-
-    private void TrackList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
-    {
-        args.ItemContainer.Background = args.ItemIndex % 2 == 0 ? StripeBrush : NoBrush;
     }
 
     private void Play_Click(object sender, RoutedEventArgs e)
