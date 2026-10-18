@@ -4,6 +4,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="MusicPlayer.AudioLab/MusicPlayer.AudioLab.csproj" />
   <Project Path="MusicPlayer/MusicPlayer.csproj">
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />
