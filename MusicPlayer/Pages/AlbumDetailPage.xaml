@@ -19,7 +19,8 @@
         x:Name="TrackList"
         Padding="32,0,32,0"
         SelectionMode="Single"
-        DoubleTapped="TrackList_DoubleTapped">
+        DoubleTapped="TrackList_DoubleTapped"
+        RightTapped="TrackList_RightTapped">
 
         <ListView.Header>
             <Grid ColumnSpacing="32" Margin="0,32,0,24" Height="260">

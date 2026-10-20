@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 
 namespace MusicPlayer.Pages;
@@ -25,6 +26,12 @@ public sealed partial class SongsPage : Page
         SongsList.ItemsSource = _tracks;
         CountText.Text = $"{_tracks.Count} songs";
         EmptyState.Visibility = _tracks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SongsList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is Track track)
+            TrackMenu.Show(SongsList, e.GetPosition(SongsList), _tracks, _tracks.IndexOf(track));
     }
 
     private void SongsList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

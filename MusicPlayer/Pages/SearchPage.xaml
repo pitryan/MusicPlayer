@@ -103,7 +103,8 @@
                 <ListView
                     x:Name="SongResults"
                     SelectionMode="Single"
-                    DoubleTapped="SongResults_DoubleTapped">
+                    DoubleTapped="SongResults_DoubleTapped"
+                    RightTapped="SongResults_RightTapped">
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />

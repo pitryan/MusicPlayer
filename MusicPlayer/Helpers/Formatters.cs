@@ -16,6 +16,21 @@ public static class Formatters
             : $"{(int)time.TotalMinutes}:{time.Seconds:00}";
     }
 
+    /// <summary>
+    /// Kapan lagu diputar, dalam waktu lokal: jam saja kalau hari ini ("14:05"), "Yesterday 14:05",
+    /// atau tanggalnya kalau lebih lama. Format jam dan tanggal mengikuti pengaturan Windows.
+    /// </summary>
+    public static string PlayedAt(DateTime playedUtc)
+    {
+        DateTime local = playedUtc.ToLocalTime();
+        DateTime today = DateTime.Today;
+        if (local.Date == today)
+            return local.ToString("t");
+        if (local.Date == today.AddDays(-1))
+            return $"Yesterday {local:t}";
+        return local.Year == today.Year ? local.ToString("d MMM") : local.ToString("d MMM yyyy");
+    }
+
     /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
     public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 

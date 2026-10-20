@@ -28,7 +28,7 @@ public partial class App : Application
         // Aplikasi packaged punya folder data sendiri, terpisah dari database LibraryLab
         string databasePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "library.db");
         Database = new LibraryDatabase(databasePath);
-        Playback = new PlaybackService(DispatcherQueue.GetForCurrentThread());
+        Playback = new PlaybackService(DispatcherQueue.GetForCurrentThread(), Database);
 
         MainWindow = new MainWindow();
         MainWindow.Activate();

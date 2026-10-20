@@ -73,7 +73,10 @@
                 </StackPanel>
 
                 <!-- Setiap album: cover di kiri, daftar lagu di kanan. Klik dua kali sebuah lagu untuk memutarnya -->
-                <ItemsRepeater x:Name="AlbumRepeater" DoubleTapped="AlbumRepeater_DoubleTapped">
+                <ItemsRepeater
+                    x:Name="AlbumRepeater"
+                    DoubleTapped="AlbumRepeater_DoubleTapped"
+                    RightTapped="AlbumRepeater_RightTapped">
                     <ItemsRepeater.ItemTemplate>
                         <DataTemplate x:DataType="vm:AlbumBlock">
                             <Grid ColumnSpacing="28" Margin="0,0,0,40">

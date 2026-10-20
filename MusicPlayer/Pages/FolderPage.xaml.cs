@@ -106,11 +106,13 @@ public sealed partial class FolderPage : Page
 
     private void Shuffle_Click(object sender, RoutedEventArgs e)
     {
-        var tracks = App.Database.GetFolderTracks(_folder, includeSubfolders: true)
-            .OrderBy(_ => Random.Shared.Next())
-            .ToList();
-        if (tracks.Count > 0)
-            App.Playback.PlayQueue(tracks, 0);
+        App.Playback.PlayShuffled(App.Database.GetFolderTracks(_folder, includeSubfolders: true));
+    }
+
+    private void TrackList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is TrackRow row)
+            TrackMenu.Show(TrackList, e.GetPosition(TrackList), _tracks, _rows.IndexOf(row));
     }
 
     private void TrackList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

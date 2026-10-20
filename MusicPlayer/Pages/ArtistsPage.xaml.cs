@@ -101,9 +101,7 @@ public sealed partial class ArtistsPage : Page
 
     private void Shuffle_Click(object sender, RoutedEventArgs e)
     {
-        var tracks = _blocks.SelectMany(b => b.Tracks).OrderBy(_ => Random.Shared.Next()).ToList();
-        if (tracks.Count > 0)
-            App.Playback.PlayQueue(tracks, 0);
+        App.Playback.PlayShuffled(_blocks.SelectMany(b => b.Tracks).ToList());
     }
 
     private void AlbumRepeater_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
@@ -115,6 +113,16 @@ public sealed partial class ArtistsPage : Page
         var block = _blocks.FirstOrDefault(b => b.Rows.Contains(row));
         if (block is not null)
             App.Playback.PlayQueue(block.Tracks, block.Rows.IndexOf(row));
+    }
+
+    private void AlbumRepeater_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is not TrackRow row)
+            return;
+
+        var block = _blocks.FirstOrDefault(b => b.Rows.Contains(row));
+        if (block is not null)
+            TrackMenu.Show(AlbumRepeater, e.GetPosition(AlbumRepeater), block.Tracks, block.Rows.IndexOf(row));
     }
 
     private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e)

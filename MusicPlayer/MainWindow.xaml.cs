@@ -10,7 +10,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using MusicPlayer.Library;
 using MusicPlayer.Pages;
+using MusicPlayer.Helpers;
 using MusicPlayer.Services;
+using MusicPlayer.ViewModels;
 using Windows.Foundation;
 using Windows.Graphics;
 
@@ -55,6 +57,10 @@ public sealed partial class MainWindow : Window
 
         RefreshFolderItems();
 
+        Playback.UpNext.CollectionChanged += (_, _) => UpdateQueueTexts();
+        Playback.PlayRecorded += (_, _) => { if (IsHistoryTabSelected) LoadHistory(); };
+        UpdateQueueTexts();
+
         // Halaman pertama: Recently Added
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
         NavigateToSection("recent");
@@ -85,7 +91,12 @@ public sealed partial class MainWindow : Window
         if (double.IsFinite(captionWidth) && captionWidth >= 0)
             CaptionButtonsColumn.Width = new GridLength(captionWidth);
 
-        RectInt32[] interactive = [ToWindowRect(TransportPanel, scale), ToWindowRect(LcdBorder, scale)];
+        RectInt32[] interactive =
+        [
+            ToWindowRect(TransportPanel, scale),
+            ToWindowRect(LcdBorder, scale),
+            ToWindowRect(RightButtonsPanel, scale),
+        ];
         InputNonClientPointerSource
             .GetForWindowId(AppWindow.Id)
             .SetRegionRects(NonClientRegionKind.Passthrough, interactive);
@@ -110,12 +121,122 @@ public sealed partial class MainWindow : Window
 
     private void Next_Click(object sender, RoutedEventArgs e) => Playback.Next();
 
+    private void ShuffleToggle_Click(object sender, RoutedEventArgs e) =>
+        Playback.IsShuffle = ShuffleToggle.IsChecked == true;
+
+    private void RepeatToggle_Click(object sender, RoutedEventArgs e)
+    {
+        Playback.CycleRepeat();
+
+        // Tombol ini punya tiga keadaan (Off, All, One), jadi status menyalanya diatur sendiri:
+        // dari All ke One tombol tetap menyala, walaupun ToggleButton biasanya bergantian nyala-mati.
+        RepeatToggle.IsChecked = Playback.IsRepeatOn;
+    }
+
     private void SeekBar_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         // Klik di garis progres: lompat ke posisi itu
         var bar = (FrameworkElement)sender;
         if (bar.ActualWidth > 0)
             Playback.SeekToFraction(e.GetCurrentPoint(bar).Position.X / bar.ActualWidth);
+    }
+
+    // ── Panel Playing Next ───────────────────────────────────
+
+    private const int HistoryLimit = 100;
+
+    private bool IsHistoryTabSelected => QueueTabs.SelectedItem == HistoryTab;
+
+    private void QueueToggle_Click(object sender, RoutedEventArgs e)
+    {
+        bool open = QueueToggle.IsChecked == true;
+        QueuePanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        if (open && IsHistoryTabSelected)
+            LoadHistory();
+    }
+
+    private void QueueTabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        bool history = IsHistoryTabSelected;
+        UpNextList.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
+        HistoryList.Visibility = history ? Visibility.Visible : Visibility.Collapsed;
+        ClearQueueButton.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
+
+        if (history)
+            LoadHistory();
+        else
+            UpdateQueueTexts();
+    }
+
+    private void UpdateQueueTexts()
+    {
+        if (IsHistoryTabSelected)
+            return;
+
+        int count = Playback.UpNext.Count;
+        QueueCountText.Text = Formatters.Count(count, "song");
+        QueueEmptyText.Text = "Nothing up next. Right-click a song and choose Play Next or Add to Queue.";
+        QueueEmptyText.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void LoadHistory()
+    {
+        var plays = App.Database.GetRecentPlays(HistoryLimit);
+        HistoryList.ItemsSource = plays.Select(p => new HistoryEntry(p)).ToList();
+
+        QueueCountText.Text = plays.Count >= HistoryLimit ? $"Last {HistoryLimit} plays" : Formatters.Count(plays.Count, "play");
+        QueueEmptyText.Text = "Songs you listen to appear here.";
+        QueueEmptyText.Visibility = plays.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void HistoryList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (!args.InRecycleQueue && args.Item is HistoryEntry entry)
+            entry.EnsureCover();
+    }
+
+    private void HistoryList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        // Putar lagu itu sekarang juga, tanpa mengubah Playing Next
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is HistoryEntry entry)
+            Playback.PlayNow(entry.Track);
+    }
+
+    private void HistoryList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is not HistoryEntry entry)
+            return;
+
+        var menu = new MenuFlyout();
+        menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayNow(entry.Track)));
+        menu.Items.Add(TrackMenu.CreateItem("Play Next", "\uE893", () => Playback.PlayNext(entry.Track)));
+        menu.Items.Add(TrackMenu.CreateItem("Add to Queue", "\uE710", () => Playback.AddToQueue(entry.Track)));
+        menu.ShowAt(HistoryList, e.GetPosition(HistoryList));
+    }
+
+    private void ClearQueue_Click(object sender, RoutedEventArgs e) => Playback.ClearQueue();
+
+    private void UpNextList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (!args.InRecycleQueue && args.Item is QueueEntry entry)
+            entry.EnsureCover();
+    }
+
+    private void UpNextList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
+            Playback.PlayFromQueue(entry);
+    }
+
+    private void UpNextList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is not QueueEntry entry)
+            return;
+
+        var menu = new MenuFlyout();
+        menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayFromQueue(entry)));
+        menu.Items.Add(TrackMenu.CreateItem("Remove from Queue", "\uE711", () => Playback.RemoveFromQueue(entry)));
+        menu.ShowAt(UpNextList, e.GetPosition(UpNextList));
     }
 
     private void AudioSettings_Click(object sender, RoutedEventArgs e)

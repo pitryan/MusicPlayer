@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
@@ -93,8 +94,13 @@ public sealed partial class AlbumDetailPage : Page
 
     private void Shuffle_Click(object sender, RoutedEventArgs e)
     {
-        if (_tracks.Count > 0)
-            App.Playback.PlayQueue(_tracks.OrderBy(_ => Random.Shared.Next()).ToList(), 0);
+        App.Playback.PlayShuffled(_tracks);
+    }
+
+    private void TrackList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is TrackRow row)
+            TrackMenu.Show(TrackList, e.GetPosition(TrackList), _tracks, _rows.IndexOf(row));
     }
 
     private void TrackList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

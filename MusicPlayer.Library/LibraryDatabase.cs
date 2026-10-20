@@ -22,6 +22,10 @@ public sealed class LibraryDatabase
         "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics";
 
     // Disc kosong dianggap disc 1, dan lagu tanpa nomor track ditaruh di akhir albumnya
+    // Kolom yang sama dengan TrackColumns, tapi diawali "t." untuk query yang menggabungkan dua tabel
+    private static readonly string TrackColumnsT =
+        string.Join(", ", TrackColumns.Split(',').Select(c => "t." + c.Trim()));
+
     private const string AlbumOrder =
         "ORDER BY coalesce(album_artist, artist) COLLATE NOCASE, album COLLATE NOCASE, " +
         "coalesce(disc_number, 1), coalesce(track_number, 999999), path";
@@ -448,6 +452,61 @@ public sealed class LibraryDatabase
             WithLyrics: r.GetInt32(8));
     }
 
+    // ── Riwayat putar ────────────────────────────────────────
+
+    public void RecordPlay(string path, DateTime playedUtc)
+    {
+        using var connection = Open();
+        Execute(connection, "INSERT INTO plays (path, played_utc) VALUES ($path, $time)",
+            ("$path", path), ("$time", playedUtc.Ticks));
+    }
+
+    /// <summary>Lagu yang terakhir diputar, yang terbaru lebih dulu. Lagu yang sudah tidak ada di library dilewati.</summary>
+    public IReadOnlyList<PlayRecord> GetRecentPlays(int limit = 100)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {TrackColumnsT}, p.played_utc
+            FROM plays p JOIN tracks t ON t.path = p.path
+            ORDER BY p.played_utc DESC, p.id DESC
+            LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+        using var r = command.ExecuteReader();
+
+        var plays = new List<PlayRecord>();
+        while (r.Read())
+            plays.Add(new PlayRecord(ReadTrack(r), new DateTime(r.GetInt64(TrackColumnCount), DateTimeKind.Utc)));
+        return plays;
+    }
+
+    /// <summary>Lagu yang paling sering diputar. Kalau jumlahnya sama, yang terakhir diputar lebih dulu.</summary>
+    public IReadOnlyList<PlayCount> GetMostPlayed(int limit = 100)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {TrackColumnsT}, count(*) AS plays, max(p.played_utc) AS last_played
+            FROM plays p JOIN tracks t ON t.path = p.path
+            GROUP BY t.id
+            ORDER BY plays DESC, last_played DESC
+            LIMIT $limit
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+        using var r = command.ExecuteReader();
+
+        var result = new List<PlayCount>();
+        while (r.Read())
+        {
+            result.Add(new PlayCount(
+                ReadTrack(r),
+                r.GetInt32(TrackColumnCount),
+                new DateTime(r.GetInt64(TrackColumnCount + 1), DateTimeKind.Utc)));
+        }
+        return result;
+    }
+
     // ── Bagian internal ──────────────────────────────────────
 
     private SqliteConnection Open()
@@ -497,6 +556,16 @@ public sealed class LibraryDatabase
             CREATE INDEX IF NOT EXISTS ix_tracks_folder ON tracks(folder);
             CREATE INDEX IF NOT EXISTS ix_tracks_album  ON tracks(album_artist, album);
             CREATE INDEX IF NOT EXISTS ix_tracks_artist ON tracks(artist);
+
+            -- Riwayat putar: satu baris setiap kali sebuah lagu benar-benar didengarkan.
+            -- Disambungkan ke lagu lewat path, jadi riwayat tetap ada walaupun lagunya di-scan ulang.
+            CREATE TABLE IF NOT EXISTS plays (
+                id         INTEGER PRIMARY KEY,
+                path       TEXT NOT NULL COLLATE NOCASE,
+                played_utc INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_plays_path ON plays(path);
+            CREATE INDEX IF NOT EXISTS ix_plays_time ON plays(played_utc);
             """);
 
         // Migrasi: setiap perubahan skema menaikkan user_version satu angka
@@ -526,13 +595,19 @@ public sealed class LibraryDatabase
     private static string EscapeLike(string text) =>
         text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
+    private const int TrackColumnCount = 23; // jumlah kolom di TrackColumns
+
     private static List<Track> ReadTracks(SqliteCommand command)
     {
         using var r = command.ExecuteReader();
         var tracks = new List<Track>();
         while (r.Read())
-        {
-            tracks.Add(new Track
+            tracks.Add(ReadTrack(r));
+        return tracks;
+    }
+
+    private static Track ReadTrack(SqliteDataReader r) =>
+            new Track
             {
                 Id = r.GetInt64(0),
                 FilePath = r.GetString(1),
@@ -557,10 +632,7 @@ public sealed class LibraryDatabase
                 BitrateKbps = r.GetInt32(20),
                 HasCover = r.GetBoolean(21),
                 HasLyrics = r.GetBoolean(22),
-            });
-        }
-        return tracks;
-    }
+            };
 
     private static string? Text(SqliteDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
 

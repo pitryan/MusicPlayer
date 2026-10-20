@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.ViewModels;
 
@@ -81,6 +82,12 @@ public sealed partial class SearchPage : Page
     {
         if (e.ClickedItem is AlbumItem album)
             Frame.Navigate(typeof(AlbumDetailPage), album.Summary);
+    }
+
+    private void SongResults_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is Track track)
+            TrackMenu.Show(SongResults, e.GetPosition(SongResults), _songs, _songs.IndexOf(track));
     }
 
     private void SongResults_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -8,6 +10,7 @@ using Microsoft.UI.Xaml.Media;
 using MusicPlayer.Audio;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
+using MusicPlayer.ViewModels;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
@@ -23,9 +26,19 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private const string IdleSubtitle = "Double-click a song to play it";
 
     private readonly AudioEngine _engine = new();
+    private readonly LibraryDatabase _database;
     private readonly DispatcherQueueTimer _timer;
-    private IReadOnlyList<Track> _queue = [];
-    private int _index = -1;
+
+    // Untuk riwayat: berapa lama lagu sekarang benar-benar didengarkan (pause dan seek tidak dihitung)
+    private double _listenedSeconds;
+    private bool _playRecorded;
+    // Lagu-lagu yang sudah diputar sebelum lagu sekarang, untuk tombol Previous dan Repeat All
+    private readonly List<Track> _previous = [];
+
+    // Urutan Playing Next sebelum diacak, untuk dikembalikan saat shuffle dimatikan
+    private List<QueueEntry> _originalOrder = [];
+    private bool _isShuffle;
+    private RepeatMode _repeatMode = RepeatMode.Off;
     private MMDevice? _device;
 
     private Track? _currentTrack;
@@ -46,16 +59,20 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private string _deviceText = "";
     private Visibility _qualityVisibility = Visibility.Collapsed;
 
-    public PlaybackService(DispatcherQueue dispatcherQueue)
+    public PlaybackService(DispatcherQueue dispatcherQueue, LibraryDatabase database)
     {
+        _database = database;
         _engine.PlaybackStopped += OnPlaybackStopped;
 
         // Perbarui posisi lagu di tampilan 4 kali per detik
         _timer = dispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromMilliseconds(250);
-        _timer.Tick += (_, _) => RefreshPosition();
+        _timer.Tick += (_, _) => OnTimerTick();
         _timer.Start();
     }
+
+    /// <summary>Dipicu setiap kali sebuah lagu tercatat di riwayat putar.</summary>
+    public event EventHandler? PlayRecorded;
 
     public Track? CurrentTrack
     {
@@ -167,11 +184,149 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         private set => SetProperty(ref _qualityVisibility, value);
     }
 
-    /// <summary>Memutar daftar lagu mulai dari lagu ke-startIndex; daftar itu jadi antreannya.</summary>
+    /// <summary>
+    /// Shuffle mengacak urutan Playing Next. Saat dimatikan, sisa antrean kembali ke urutan aslinya.
+    /// </summary>
+    public bool IsShuffle
+    {
+        get => _isShuffle;
+        set
+        {
+            if (!SetProperty(ref _isShuffle, value))
+                return;
+
+            if (value)
+                ShuffleUpNext();
+            else
+                ReplaceUpNext(QueueOrder.Restored(UpNext.ToList(), _originalOrder));
+        }
+    }
+
+    public RepeatMode RepeatMode
+    {
+        get => _repeatMode;
+        private set
+        {
+            if (SetProperty(ref _repeatMode, value))
+            {
+                OnPropertyChanged(nameof(IsRepeatOn));
+                OnPropertyChanged(nameof(RepeatSymbol));
+            }
+        }
+    }
+
+    /// <summary>Tombol repeat menyala untuk mode All dan One.</summary>
+    public bool IsRepeatOn => RepeatMode != RepeatMode.Off;
+
+    /// <summary>Ikon tombol repeat: ada angka 1 untuk mode One.</summary>
+    public Symbol RepeatSymbol => RepeatMode == RepeatMode.One ? Symbol.RepeatOne : Symbol.RepeatAll;
+
+    public void CycleRepeat() => RepeatMode = RepeatMode switch
+    {
+        RepeatMode.Off => RepeatMode.All,
+        RepeatMode.All => RepeatMode.One,
+        _ => RepeatMode.Off,
+    };
+
+    /// <summary>
+    /// Lagu-lagu yang akan diputar setelah lagu sekarang (panel Playing Next). Urutannya bisa diubah
+    /// dengan digeser langsung di panel itu; Next selalu mengambil lagu paling atas.
+    /// </summary>
+    public ObservableCollection<QueueEntry> UpNext { get; } = [];
+
+    /// <summary>
+    /// Memutar daftar lagu mulai dari lagu ke-startIndex. Lagu sesudahnya masuk Playing Next,
+    /// dan lagu sebelumnya bisa dicapai dengan tombol Previous.
+    /// </summary>
     public void PlayQueue(IReadOnlyList<Track> tracks, int startIndex)
     {
-        _queue = tracks;
-        PlayAt(startIndex);
+        if (startIndex < 0 || startIndex >= tracks.Count)
+            return;
+
+        _previous.Clear();
+        UpNext.Clear();
+
+        if (IsShuffle)
+        {
+            // Shuffle aktif: lagu yang dipilih diputar dulu, lalu SEMUA lagu lain di daftar itu diacak,
+            // termasuk yang letaknya sebelum lagu yang dipilih (kalau tidak, lagu-lagu itu terlewat)
+            for (int i = 0; i < tracks.Count; i++)
+            {
+                if (i != startIndex)
+                    UpNext.Add(new QueueEntry(tracks[i]));
+            }
+            ShuffleUpNext();
+        }
+        else
+        {
+            _previous.AddRange(tracks.Take(startIndex));
+            foreach (var track in tracks.Skip(startIndex + 1))
+                UpNext.Add(new QueueEntry(track));
+        }
+
+        Play(tracks[startIndex]);
+    }
+
+    /// <summary>
+    /// Tombol Shuffle di halaman album, artis, dan folder: menyalakan shuffle, lalu memutar
+    /// daftar itu mulai dari lagu acak, seperti di Apple Music.
+    /// </summary>
+    public void PlayShuffled(IReadOnlyList<Track> tracks)
+    {
+        if (tracks.Count == 0)
+            return;
+
+        IsShuffle = true;
+        PlayQueue(tracks, Random.Shared.Next(tracks.Count));
+    }
+
+    /// <summary>Langsung memutar sebuah lagu tanpa mengubah Playing Next (misalnya dari History).</summary>
+    public void PlayNow(Track track)
+    {
+        if (CurrentTrack is not null)
+            _previous.Add(CurrentTrack);
+        Play(track);
+    }
+
+    /// <summary>Menaruh lagu di urutan paling atas Playing Next. Kalau belum ada yang diputar, langsung diputar.</summary>
+    public void PlayNext(Track track)
+    {
+        if (CurrentTrack is null)
+            Play(track);
+        else
+            UpNext.Insert(0, new QueueEntry(track));
+    }
+
+    /// <summary>Menaruh lagu di urutan paling bawah Playing Next. Kalau belum ada yang diputar, langsung diputar.</summary>
+    public void AddToQueue(Track track)
+    {
+        if (CurrentTrack is null)
+            Play(track);
+        else
+            UpNext.Add(new QueueEntry(track));
+    }
+
+    /// <summary>Langsung memutar sebuah lagu dari Playing Next. Lagu-lagu di atasnya dilewati.</summary>
+    public void PlayFromQueue(QueueEntry entry)
+    {
+        int index = UpNext.IndexOf(entry);
+        if (index < 0)
+            return;
+
+        for (int i = 0; i <= index; i++)
+            UpNext.RemoveAt(0);
+
+        if (CurrentTrack is not null)
+            _previous.Add(CurrentTrack);
+        Play(entry.Track);
+    }
+
+    public void RemoveFromQueue(QueueEntry entry) => UpNext.Remove(entry);
+
+    public void ClearQueue()
+    {
+        UpNext.Clear();
+        _originalOrder.Clear();
     }
 
     public void TogglePlayPause()
@@ -183,12 +338,62 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         RefreshPosition();
     }
 
-    public void Next()
+    /// <summary>Tombol Next. Dalam mode Repeat One pun, tombol ini tetap pindah ke lagu berikutnya.</summary>
+    public void Next() => Advance();
+
+    private void Advance()
     {
-        if (_index + 1 < _queue.Count)
-            PlayAt(_index + 1);
-        else
-            StopAll();
+        if (UpNext.Count == 0)
+        {
+            if (RepeatMode == RepeatMode.Off || CurrentTrack is null)
+            {
+                StopAll();
+                return;
+            }
+
+            RestartQueue();
+            return;
+        }
+
+        var next = UpNext[0];
+        UpNext.RemoveAt(0);
+        if (CurrentTrack is not null)
+            _previous.Add(CurrentTrack);
+        Play(next.Track);
+    }
+
+    /// <summary>
+    /// Repeat: antrean sudah habis, jadi semua lagu yang tadi diputar (ditambah lagu sekarang) diputar
+    /// lagi dari awal. Kalau shuffle aktif, urutannya diacak ulang.
+    /// </summary>
+    private void RestartQueue()
+    {
+        var entries = _previous.Append(CurrentTrack!).Select(t => new QueueEntry(t)).ToList();
+        _previous.Clear();
+
+        if (IsShuffle)
+        {
+            _originalOrder = entries.ToList();
+            entries = QueueOrder.Shuffled(entries);
+        }
+
+        var first = entries[0];
+        entries.RemoveAt(0);
+        ReplaceUpNext(entries);
+        Play(first.Track);
+    }
+
+    private void ShuffleUpNext()
+    {
+        _originalOrder = UpNext.ToList();
+        ReplaceUpNext(QueueOrder.Shuffled(_originalOrder));
+    }
+
+    private void ReplaceUpNext(List<QueueEntry> entries)
+    {
+        UpNext.Clear();
+        foreach (var entry in entries)
+            UpNext.Add(entry);
     }
 
     public void Previous()
@@ -198,12 +403,18 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
         // Seperti pemutar musik pada umumnya: kalau lagu sudah berjalan lebih dari
         // 3 detik, tombol ini mengulang lagu dari awal, bukan pindah ke lagu sebelumnya
-        if (_engine.Position > TimeSpan.FromSeconds(3) || _index <= 0)
+        if (_engine.Position > TimeSpan.FromSeconds(3) || _previous.Count == 0)
+        {
             _engine.Seek(TimeSpan.Zero);
-        else
-            PlayAt(_index - 1);
+            RefreshPosition();
+            return;
+        }
 
-        RefreshPosition();
+        // Lagu sekarang dikembalikan ke paling atas Playing Next
+        var previous = _previous[^1];
+        _previous.RemoveAt(_previous.Count - 1);
+        UpNext.Insert(0, new QueueEntry(CurrentTrack));
+        Play(previous);
     }
 
     /// <summary>Lompat ke posisi tertentu, dari 0 (awal lagu) sampai 1 (akhir lagu).</summary>
@@ -223,13 +434,8 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _device?.Dispose();
     }
 
-    private void PlayAt(int index)
+    private void Play(Track track)
     {
-        if (index < 0 || index >= _queue.Count)
-            return;
-
-        _index = index;
-        var track = _queue[index];
         MMDevice? device = null;
 
         try
@@ -244,6 +450,8 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             _engine.Play();
 
             CurrentTrack = track;
+            _listenedSeconds = 0;
+            _playRecorded = false;
             TitleText = track.DisplayTitle;
             SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
             StatusText = "";
@@ -263,7 +471,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private void StopAll()
     {
         _engine.Close();
-        _index = -1;
+        _previous.Clear();
         CurrentTrack = null;
         CurrentCover = null;
         TitleText = IdleTitle;
@@ -323,7 +531,11 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             return;
         }
 
-        Next(); // lagu selesai dengan normal: lanjut ke lagu berikutnya
+        // Lagu selesai dengan normal: ulangi kalau Repeat One, selain itu lanjut ke lagu berikutnya
+        if (RepeatMode == RepeatMode.One && CurrentTrack is { } track)
+            Play(track);
+        else
+            Advance();
     }
 
     private async Task LoadCoverAsync(Track track)
@@ -334,6 +546,39 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         // Lewati kalau sementara itu pengguna sudah pindah ke lagu lain
         if (ReferenceEquals(CurrentTrack, track))
             CurrentCover = cover;
+    }
+
+    private void OnTimerTick()
+    {
+        TrackListening();
+        RefreshPosition();
+    }
+
+    /// <summary>
+    /// Sebuah lagu masuk riwayat setelah benar-benar didengarkan separuh durasinya, atau 4 menit untuk
+    /// lagu yang panjang (aturan yang juga dipakai layanan seperti Last.fm). Lagu yang dilewati di awal
+    /// tidak dihitung, dan satu kali putar hanya dicatat sekali.
+    /// </summary>
+    private void TrackListening()
+    {
+        if (CurrentTrack is not { } track || _playRecorded || _engine.State != PlaybackState.Playing)
+            return;
+
+        _listenedSeconds += _timer.Interval.TotalSeconds;
+        double needed = Math.Min(240, Math.Max(1, _engine.Duration.TotalSeconds / 2));
+        if (_listenedSeconds < needed)
+            return;
+
+        _playRecorded = true;
+        try
+        {
+            _database.RecordPlay(track.FilePath, DateTime.UtcNow);
+            PlayRecorded?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception)
+        {
+            // Gagal menulis riwayat (misalnya database terkunci) tidak boleh mengganggu pemutaran
+        }
     }
 
     private void RefreshPosition()

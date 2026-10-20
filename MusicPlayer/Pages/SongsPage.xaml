@@ -58,7 +58,8 @@
             x:Name="SongsList"
             Grid.Row="2"
             SelectionMode="Single"
-            DoubleTapped="SongsList_DoubleTapped">
+            DoubleTapped="SongsList_DoubleTapped"
+            RightTapped="SongsList_RightTapped">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
