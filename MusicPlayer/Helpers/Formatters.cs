@@ -31,6 +31,9 @@ public static class Formatters
         return local.Year == today.Year ? local.ToString("d MMM") : local.ToString("d MMM yyyy");
     }
 
+    /// <summary>Angka volume untuk ditampilkan di samping slider, misalnya "65".</summary>
+    public static string Percent(double value) => Math.Round(value).ToString();
+
     /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
     public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 

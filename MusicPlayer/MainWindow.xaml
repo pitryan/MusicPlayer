@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:MusicPlayer.Controls"
     xmlns:vm="using:MusicPlayer.ViewModels"
+    xmlns:helpers="using:MusicPlayer.Helpers"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -146,6 +147,7 @@
                 <Border
                     x:Name="LcdBorder"
                     Grid.Column="1"
+                    RightTapped="LcdBorder_RightTapped"
                     Height="52"
                     VerticalAlignment="Center"
                     CornerRadius="6"
@@ -292,6 +294,57 @@
                         Orientation="Horizontal"
                         Spacing="4"
                         VerticalAlignment="Center">
+                        <Button
+                            x:Name="VolumeButton"
+                            Padding="8"
+                            MinWidth="40"
+                            MinHeight="40"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="Volume (scroll to adjust)"
+                            PointerWheelChanged="VolumeButton_PointerWheelChanged">
+                            <FontIcon Glyph="{x:Bind Playback.VolumeGlyph, Mode=OneWay}" FontSize="16" />
+                            <Button.Flyout>
+                                <Flyout Placement="Bottom">
+                                    <StackPanel Width="300" Spacing="8">
+                                        <Grid ColumnSpacing="8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="32" />
+                                            </Grid.ColumnDefinitions>
+                                            <ToggleButton
+                                                x:Name="MuteToggle"
+                                                Padding="6"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                IsChecked="{x:Bind Playback.IsMuted, Mode=OneWay}"
+                                                Click="MuteToggle_Click"
+                                                ToolTipService.ToolTip="Mute">
+                                                <FontIcon Glyph="&#xE74F;" FontSize="14" />
+                                            </ToggleButton>
+                                            <Slider
+                                                Grid.Column="1"
+                                                Minimum="0"
+                                                Maximum="100"
+                                                StepFrequency="1"
+                                                Value="{x:Bind Playback.Volume, Mode=TwoWay}"
+                                                VerticalAlignment="Center" />
+                                            <TextBlock
+                                                Grid.Column="2"
+                                                Text="{x:Bind helpers:Formatters.Percent(Playback.Volume), Mode=OneWay}"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <TextBlock
+                                            Text="{x:Bind Playback.VolumeDescription, Mode=OneWay}"
+                                            FontSize="12"
+                                            TextWrapping="Wrap"
+                                            Foreground="{StaticResource SecondaryTextBrush}" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
                         <ToggleButton
                             x:Name="QueueToggle"
                             Padding="8"

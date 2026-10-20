@@ -122,7 +122,7 @@ public sealed partial class ArtistsPage : Page
 
         var block = _blocks.FirstOrDefault(b => b.Rows.Contains(row));
         if (block is not null)
-            TrackMenu.Show(AlbumRepeater, e.GetPosition(AlbumRepeater), block.Tracks, block.Rows.IndexOf(row));
+            TrackMenu.Show(AlbumRepeater, e.GetPosition(AlbumRepeater), block.Tracks, block.Rows.IndexOf(row), goToArtist: false);
     }
 
     private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e)

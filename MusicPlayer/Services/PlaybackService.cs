@@ -27,6 +27,20 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
     private readonly AudioEngine _engine = new();
     private readonly LibraryDatabase _database;
+    private readonly DispatcherQueue _dispatcher;
+
+    // Volume: 0-100 untuk slider. Untuk perangkat dengan volume hardware (exclusive mode), nilainya
+    // mengikuti volume perangkat itu sendiri, termasuk saat diubah lewat tombol volume keyboard.
+    private double _volume = 100;
+    private bool _isMuted;
+    private string _volumeDescription = "";
+    private AudioEndpointVolume? _deviceVolume;
+    private bool _syncingFromDevice;
+
+    // Penanda untuk perubahan volume perangkat yang kita lakukan sendiri. Windows mengirim notifikasi
+    // untuk SETIAP perubahan; yang membawa penanda ini diabaikan, supaya slider tidak "melompat balik"
+    // saat sedang digeser.
+    private static readonly Guid OwnVolumeChange = Guid.NewGuid();
     private readonly DispatcherQueueTimer _timer;
 
     // Untuk riwayat: berapa lama lagu sekarang benar-benar didengarkan (pause dan seek tidak dihitung)
@@ -62,6 +76,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     public PlaybackService(DispatcherQueue dispatcherQueue, LibraryDatabase database)
     {
         _database = database;
+        _dispatcher = dispatcherQueue;
         _engine.PlaybackStopped += OnPlaybackStopped;
 
         // Perbarui posisi lagu di tampilan 4 kali per detik
@@ -205,7 +220,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     public RepeatMode RepeatMode
     {
         get => _repeatMode;
-        private set
+        set
         {
             if (SetProperty(ref _repeatMode, value))
             {
@@ -213,6 +228,43 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(RepeatSymbol));
             }
         }
+    }
+
+    /// <summary>Volume dari 0 sampai 100.</summary>
+    public double Volume
+    {
+        get => _volume;
+        set
+        {
+            if (SetProperty(ref _volume, Math.Clamp(Math.Round(value), 0, 100)))
+            {
+                OnPropertyChanged(nameof(VolumeGlyph));
+                ApplyVolume();
+            }
+        }
+    }
+
+    public bool IsMuted
+    {
+        get => _isMuted;
+        set
+        {
+            if (SetProperty(ref _isMuted, value))
+            {
+                OnPropertyChanged(nameof(VolumeGlyph));
+                ApplyVolume();
+            }
+        }
+    }
+
+    /// <summary>Ikon tombol volume: speaker dicoret saat mute atau volume 0.</summary>
+    public string VolumeGlyph => IsMuted || Volume == 0 ? "\uE74F" : "\uE767";
+
+    /// <summary>Penjelasan volume mana yang sedang diatur, ditampilkan di bawah slider.</summary>
+    public string VolumeDescription
+    {
+        get => _volumeDescription;
+        private set => SetProperty(ref _volumeDescription, value);
     }
 
     /// <summary>Tombol repeat menyala untuk mode All dan One.</summary>
@@ -430,8 +482,75 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     public void Dispose()
     {
         _timer.Stop();
+        DetachDeviceVolume();
         _engine.Dispose();
         _device?.Dispose();
+    }
+
+    private void ApplyVolume()
+    {
+        if (!_syncingFromDevice)
+            _engine.SetVolume((float)(Volume / 100), IsMuted);
+    }
+
+    private void AttachVolume(MMDevice device)
+    {
+        switch (_engine.VolumeKind)
+        {
+            case VolumeKind.Device:
+                // Volume perangkat dipakai apa adanya, TIDAK ditimpa dengan nilai slider,
+                // supaya suara tidak tiba-tiba keras saat lagu pertama diputar
+                try
+                {
+                    var endpoint = device.AudioEndpointVolume;
+                    endpoint.NotificationGuid = OwnVolumeChange;
+                    SyncFromDevice(endpoint.MasterVolumeLevelScalar, endpoint.Mute);
+                    endpoint.OnVolumeNotification += OnDeviceVolumeChanged;
+                    _deviceVolume = endpoint;
+                }
+                catch (Exception)
+                {
+                    // Gagal membaca volume perangkat: slider tetap bisa dipakai untuk mengubahnya
+                }
+                VolumeDescription = "Device volume: adjusts your DAC or speakers directly, so playback stays bit-perfect.";
+                break;
+
+            case VolumeKind.Digital:
+                ApplyVolume();
+                VolumeDescription = "Digital volume: this device has no hardware volume, so playback is not bit-perfect below 100.";
+                break;
+
+            default:
+                ApplyVolume();
+                VolumeDescription = "App volume, the same as the MusicPlayer slider in the Windows volume mixer.";
+                break;
+        }
+    }
+
+    private void DetachDeviceVolume()
+    {
+        if (_deviceVolume is null)
+            return;
+
+        _deviceVolume.OnVolumeNotification -= OnDeviceVolumeChanged;
+        _deviceVolume = null;
+    }
+
+    private void OnDeviceVolumeChanged(AudioVolumeNotificationData data)
+    {
+        if (data.EventContext == OwnVolumeChange)
+            return; // perubahan dari slider kita sendiri
+
+        // Bisa dipanggil dari thread lain (misalnya saat volume diubah dari Windows), jadi dipindah ke UI thread
+        _dispatcher.TryEnqueue(() => SyncFromDevice(data.MasterVolume, data.Muted));
+    }
+
+    private void SyncFromDevice(float volume, bool muted)
+    {
+        _syncingFromDevice = true; // nilai ini datang dari perangkat, jadi tidak perlu dikirim balik
+        Volume = volume * 100;
+        IsMuted = muted;
+        _syncingFromDevice = false;
     }
 
     private void Play(Track track)
@@ -445,8 +564,10 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
 
             _engine.Open(track.FilePath, device); // player lama ditutup lebih dulu di sini
+            DetachDeviceVolume();
             _device?.Dispose();
             _device = device;
+            AttachVolume(device); // sebelum Play, supaya tidak ada sesaat suara dengan volume yang salah
             _engine.Play();
 
             CurrentTrack = track;
@@ -471,6 +592,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private void StopAll()
     {
         _engine.Close();
+        DetachDeviceVolume();
         _previous.Clear();
         CurrentTrack = null;
         CurrentCover = null;

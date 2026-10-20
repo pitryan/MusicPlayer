@@ -100,7 +100,7 @@ public sealed partial class AlbumDetailPage : Page
     private void TrackList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         if ((e.OriginalSource as FrameworkElement)?.DataContext is TrackRow row)
-            TrackMenu.Show(TrackList, e.GetPosition(TrackList), _tracks, _rows.IndexOf(row));
+            TrackMenu.Show(TrackList, e.GetPosition(TrackList), _tracks, _rows.IndexOf(row), goToAlbum: false);
     }
 
     private void TrackList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)

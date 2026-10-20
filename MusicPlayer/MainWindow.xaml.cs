@@ -211,6 +211,7 @@ public sealed partial class MainWindow : Window
         menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayNow(entry.Track)));
         menu.Items.Add(TrackMenu.CreateItem("Play Next", "\uE893", () => Playback.PlayNext(entry.Track)));
         menu.Items.Add(TrackMenu.CreateItem("Add to Queue", "\uE710", () => Playback.AddToQueue(entry.Track)));
+        TrackMenu.AddGoToItems(menu, entry.Track);
         menu.ShowAt(HistoryList, e.GetPosition(HistoryList));
     }
 
@@ -236,7 +237,35 @@ public sealed partial class MainWindow : Window
         var menu = new MenuFlyout();
         menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayFromQueue(entry)));
         menu.Items.Add(TrackMenu.CreateItem("Remove from Queue", "\uE711", () => Playback.RemoveFromQueue(entry)));
+        TrackMenu.AddGoToItems(menu, entry.Track);
         menu.ShowAt(UpNextList, e.GetPosition(UpNextList));
+    }
+
+    // ── Volume ───────────────────────────────────────────────
+
+    private void MuteToggle_Click(object sender, RoutedEventArgs e) =>
+        Playback.IsMuted = MuteToggle.IsChecked == true;
+
+    private void VolumeButton_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        // Scroll di atas tombol volume: naik/turun 2 per putaran roda
+        int delta = e.GetCurrentPoint(VolumeButton).Properties.MouseWheelDelta;
+        Playback.Volume += Math.Sign(delta) * 2;
+        e.Handled = true;
+    }
+
+    /// <summary>Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya.</summary>
+    public void ShowPage(Type page, object? parameter) => ContentFrame.Navigate(page, parameter);
+
+    private void LcdBorder_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if (Playback.CurrentTrack is not { } track)
+            return;
+
+        var menu = new MenuFlyout();
+        TrackMenu.AddGoToItems(menu, track);
+        menu.Items.RemoveAt(0); // pemisah di awal tidak perlu karena tidak ada item lain di atasnya
+        menu.ShowAt(LcdBorder, e.GetPosition(LcdBorder));
     }
 
     private void AudioSettings_Click(object sender, RoutedEventArgs e)

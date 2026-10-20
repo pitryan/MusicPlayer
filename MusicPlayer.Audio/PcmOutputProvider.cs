@@ -19,6 +19,7 @@ public sealed class PcmOutputProvider : IWaveProvider
     private byte[] _sourceBuffer = [];
     private volatile bool _isPaused;
     private volatile bool _hasEnded;
+    private volatile float _gain = 1f;
 
     public PcmOutputProvider(WaveStream source, WaveFormat outputFormat)
     {
@@ -54,6 +55,17 @@ public sealed class PcmOutputProvider : IWaveProvider
     {
         get => _isPaused;
         set => _isPaused = value;
+    }
+
+    /// <summary>
+    /// Volume digital, dari 0 (hening) sampai 1 (apa adanya). Hanya dipakai untuk perangkat tanpa volume
+    /// hardware di exclusive mode. Di bawah 1, sampel ikut diubah, jadi output tidak lagi bit-perfect;
+    /// tepat di 1, sampel tidak disentuh sama sekali.
+    /// </summary>
+    public float Gain
+    {
+        get => _gain;
+        set => _gain = Math.Clamp(value, 0f, 1f);
     }
 
     public TimeSpan TotalTime => _source.TotalTime;
@@ -103,6 +115,9 @@ public sealed class PcmOutputProvider : IWaveProvider
             }
         }
 
+        if (_gain < 1f)
+            ApplyGain(buffer[..total]);
+
         if (!justEnded)
             return total;
 
@@ -135,6 +150,16 @@ public sealed class PcmOutputProvider : IWaveProvider
         }
 
         return samplesRead * _outBytes;
+    }
+
+    private void ApplyGain(Span<byte> data)
+    {
+        double gain = _gain;
+        for (int i = 0; i + _outBytes <= data.Length; i += _outBytes)
+        {
+            var slot = data.Slice(i, _outBytes);
+            WriteSample(slot, (int)Math.Round(ReadSample(slot) * gain));
+        }
     }
 
     /// <summary>Membaca satu sampel dan menaruhnya "rata kiri" di dalam int 32-bit.</summary>

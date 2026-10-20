@@ -365,6 +365,19 @@ public sealed class LibraryDatabase
         return ReadTracks(command);
     }
 
+    /// <summary>Album tempat sebuah lagu berada (untuk menu "Go to Album"), atau null kalau lagunya tanpa album.</summary>
+    public AlbumSummary? FindAlbum(Track track)
+    {
+        if (track.Album is null)
+            return null;
+
+        // Kunci album sama seperti di GetAlbums: album artist, atau artis lagu kalau album artist kosong
+        string artist = track.AlbumArtist ?? track.Artist ?? "";
+        return GetAlbums().FirstOrDefault(a =>
+            string.Equals(a.Title, track.Album, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(a.Artist, artist, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Lagu-lagu sebuah album, urut disc lalu nomor track.</summary>
     public IReadOnlyList<Track> GetAlbumTracks(string artist, string album)
     {

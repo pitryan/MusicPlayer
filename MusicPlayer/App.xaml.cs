@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 using Windows.Storage;
@@ -29,8 +30,29 @@ public partial class App : Application
         string databasePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "library.db");
         Database = new LibraryDatabase(databasePath);
         Playback = new PlaybackService(DispatcherQueue.GetForCurrentThread(), Database);
+        RestorePlaybackSettings();
 
         MainWindow = new MainWindow();
         MainWindow.Activate();
+    }
+
+    /// <summary>Volume, mute, shuffle, dan repeat diingat dari sesi sebelumnya, lalu disimpan setiap kali berubah.</summary>
+    private static void RestorePlaybackSettings()
+    {
+        Playback.Volume = AppSettings.Get("Volume", 100.0);
+        Playback.IsMuted = AppSettings.Get("Muted", false);
+        Playback.IsShuffle = AppSettings.Get("Shuffle", false);
+        Playback.RepeatMode = (RepeatMode)AppSettings.Get("Repeat", (int)RepeatMode.Off);
+
+        Playback.PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(PlaybackService.Volume): AppSettings.Set("Volume", Playback.Volume); break;
+                case nameof(PlaybackService.IsMuted): AppSettings.Set("Muted", Playback.IsMuted); break;
+                case nameof(PlaybackService.IsShuffle): AppSettings.Set("Shuffle", Playback.IsShuffle); break;
+                case nameof(PlaybackService.RepeatMode): AppSettings.Set("Repeat", (int)Playback.RepeatMode); break;
+            }
+        };
     }
 }
