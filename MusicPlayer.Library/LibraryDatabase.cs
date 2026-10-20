@@ -208,14 +208,20 @@ public sealed class LibraryDatabase
 
     // ── Query untuk tampilan ─────────────────────────────────
 
-    /// <summary>Semua album, diurutkan per artis lalu tahun. Lagu tanpa nama album tidak ikut.</summary>
-    public IReadOnlyList<AlbumSummary> GetAlbums()
+    /// <summary>
+    /// Semua album, diurutkan per artis lalu tahun. Lagu tanpa nama album tidak ikut.
+    /// Kalau genre diisi, hanya lagu bergenre itu yang dihitung.
+    /// </summary>
+    public IReadOnlyList<AlbumSummary> GetAlbums(string? genre = null)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
+        string genreFilter = genre is null ? "" : "AND genre = $genre COLLATE NOCASE";
+        if (genre is not null)
+            command.Parameters.AddWithValue("$genre", genre);
         // Judul, artis, dan cover album diambil dari lagu pertamanya (disc dan nomor track terkecil).
         // "rn = 1" menandai lagu pertama itu di setiap album.
-        command.CommandText = """
+        command.CommandText = $"""
             WITH ranked AS (
                 SELECT *,
                        coalesce(album_artist, artist, '') AS album_key,
@@ -224,7 +230,7 @@ public sealed class LibraryDatabase
                            ORDER BY coalesce(disc_number, 1), coalesce(track_number, 999999), path
                        ) AS rn
                 FROM tracks
-                WHERE album IS NOT NULL
+                WHERE album IS NOT NULL {genreFilter}
             )
             SELECT max(CASE WHEN rn = 1 THEN album END),
                    max(CASE WHEN rn = 1 THEN album_key END),
@@ -279,6 +285,81 @@ public sealed class LibraryDatabase
             .OrderByDescending(a => a.Year ?? 0)
             .ThenBy(a => a.Title, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+
+    /// <summary>Semua genre beserta jumlah album dan lagunya, urut nama. Lagu tanpa genre tidak ikut.</summary>
+    public IReadOnlyList<GenreSummary> GetGenres()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT min(genre), -- dari variasi huruf besar/kecil, pilih yang berawalan huruf besar ("J-Pop", bukan "j-pop")
+                   count(DISTINCT CASE WHEN album IS NOT NULL
+                       THEN lower(coalesce(album_artist, artist, '')) || '|' || lower(album) END),
+                   count(*),
+                   min(path)
+            FROM tracks
+            WHERE genre IS NOT NULL
+            GROUP BY genre COLLATE NOCASE
+            ORDER BY genre COLLATE NOCASE
+            """;
+        using var r = command.ExecuteReader();
+
+        var genres = new List<GenreSummary>();
+        while (r.Read())
+            genres.Add(new GenreSummary(r.GetString(0), r.GetInt32(1), r.GetInt32(2), r.GetString(3)));
+        return genres;
+    }
+
+    /// <summary>Subfolder langsung dari sebuah folder (yang berisi lagu), urut nama.</summary>
+    public IReadOnlyList<FolderSummary> GetSubfolders(string folder)
+    {
+        string prefix = LibraryPaths.NormalizeFolder(folder);
+
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT path FROM tracks WHERE {UnderFolder} ORDER BY path COLLATE NOCASE";
+        command.Parameters.AddWithValue("$folder", prefix);
+        using var r = command.ExecuteReader();
+
+        // Dari setiap path lagu, ambil nama folder pertama setelah folder yang sedang dibuka
+        var children = new Dictionary<string, (int Count, string FirstPath)>(StringComparer.OrdinalIgnoreCase);
+        while (r.Read())
+        {
+            string path = r.GetString(0);
+            string relative = path[prefix.Length..];
+            int separator = relative.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]);
+            if (separator < 0)
+                continue; // file langsung di folder ini, bukan di subfolder
+
+            string name = relative[..separator];
+            children[name] = children.TryGetValue(name, out var info)
+                ? (info.Count + 1, info.FirstPath)
+                : (1, path);
+        }
+
+        return children
+            .Select(c => new FolderSummary(Path.Combine(prefix, c.Key), c.Key, c.Value.Count, c.Value.FirstPath))
+            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>Lagu di sebuah folder, urut path. Bisa hanya file langsung di folder itu, atau termasuk semua subfolder.</summary>
+    public IReadOnlyList<Track> GetFolderTracks(string folder, bool includeSubfolders)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        if (includeSubfolders)
+        {
+            command.CommandText = $"SELECT {TrackColumns} FROM tracks WHERE {UnderFolder} ORDER BY path COLLATE NOCASE";
+            command.Parameters.AddWithValue("$folder", LibraryPaths.NormalizeFolder(folder));
+        }
+        else
+        {
+            command.CommandText = $"SELECT {TrackColumns} FROM tracks WHERE folder = $dir COLLATE NOCASE ORDER BY path COLLATE NOCASE";
+            command.Parameters.AddWithValue("$dir", LibraryPaths.WithoutTrailingSeparator(folder));
+        }
+        return ReadTracks(command);
+    }
 
     /// <summary>Lagu-lagu sebuah album, urut disc lalu nomor track.</summary>
     public IReadOnlyList<Track> GetAlbumTracks(string artist, string album)

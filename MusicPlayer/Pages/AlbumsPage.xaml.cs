@@ -8,7 +8,10 @@ using MusicPlayer.ViewModels;
 
 namespace MusicPlayer.Pages;
 
-/// <summary>Grid album. Parameter navigasi "recent" menampilkan Recently Added; selain itu, Albums.</summary>
+/// <summary>
+/// Grid album. Parameter navigasi "recent" menampilkan Recently Added, "genre:&lt;nama&gt;" menampilkan
+/// album dari satu genre, dan selain itu menampilkan semua album.
+/// </summary>
 public sealed partial class AlbumsPage : Page
 {
     private string? _mode;
@@ -31,9 +34,15 @@ public sealed partial class AlbumsPage : Page
         LoadAlbums();
     }
 
+    private const string GenrePrefix = "genre:";
+
     private void LoadAlbums()
     {
-        var albums = App.Database.GetAlbums().Select(a => new AlbumItem(a)).ToList();
+        string? genre = _mode is not null && _mode.StartsWith(GenrePrefix, StringComparison.Ordinal)
+            ? _mode[GenrePrefix.Length..]
+            : null;
+
+        var albums = App.Database.GetAlbums(genre).Select(a => new AlbumItem(a)).ToList();
         CountText.Text = $"{albums.Count} albums";
         EmptyState.Visibility = albums.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -49,7 +58,7 @@ public sealed partial class AlbumsPage : Page
         }
         else
         {
-            PageTitle.Text = "Albums";
+            PageTitle.Text = genre ?? "Albums";
             AlbumGrid.ItemsSource = albums;
         }
     }

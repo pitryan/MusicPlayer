@@ -68,6 +68,12 @@
                     <SymbolIcon Symbol="Audio" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <NavigationViewItem Content="Genres" Tag="genres">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE8EC;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <!-- Grup "Folders" ditambahkan dari kode (RefreshFolderItems), karena isinya mengikuti Settings -->
         </NavigationView.MenuItems>
 
         <Grid>

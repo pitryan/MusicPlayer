@@ -44,6 +44,7 @@ public sealed partial class SettingsPage : Page
         }
 
         RefreshFolders();
+        App.MainWindow.RefreshFolderItems();
         await ScanAsync();
     }
 
@@ -54,6 +55,7 @@ public sealed partial class SettingsPage : Page
             int removed = App.Database.RemoveFolder(folder);
             StatusText.Text = $"Removed from library ({removed} songs). Your files were not deleted.";
             RefreshFolders();
+            App.MainWindow.RefreshFolderItems();
         }
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
@@ -7,6 +8,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using MusicPlayer.Library;
 using MusicPlayer.Pages;
 using MusicPlayer.Services;
 using Windows.Foundation;
@@ -50,6 +52,8 @@ public sealed partial class MainWindow : Window
         _searchTimer.Interval = TimeSpan.FromMilliseconds(300);
         _searchTimer.IsRepeating = false;
         _searchTimer.Tick += (_, _) => ShowSearch(SearchBox.Text);
+
+        RefreshFolderItems();
 
         // Halaman pertama: Recently Added
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
@@ -124,6 +128,40 @@ public sealed partial class MainWindow : Window
     // ── Navigasi ─────────────────────────────────────────────
 
     private string _currentSection = "";
+    private readonly List<object> _folderMenuItems = [];
+
+    private const string FolderTagPrefix = "folder:";
+
+    /// <summary>
+    /// Membuat ulang grup "Folders" di sidebar dari daftar folder di Settings.
+    /// Dipanggil saat aplikasi dibuka dan setiap kali folder ditambah atau dihapus.
+    /// </summary>
+    public void RefreshFolderItems()
+    {
+        foreach (object item in _folderMenuItems)
+            NavView.MenuItems.Remove(item);
+        _folderMenuItems.Clear();
+
+        var folders = App.Database.GetFolders();
+        if (folders.Count == 0)
+            return;
+
+        _folderMenuItems.Add(new NavigationViewItemHeader { Content = "Folders" });
+        foreach (string folder in folders)
+        {
+            var item = new NavigationViewItem
+            {
+                Content = LibraryPaths.DisplayName(folder),
+                Tag = FolderTagPrefix + folder,
+                Icon = new FontIcon { Glyph = "\uE8B7" },
+            };
+            ToolTipService.SetToolTip(item, folder); // path lengkap saat kursor diarahkan
+            _folderMenuItems.Add(item);
+        }
+
+        foreach (object item in _folderMenuItems)
+            NavView.MenuItems.Add(item);
+    }
 
     /// <summary>
     /// Dipanggil setiap kali menu sidebar diklik, termasuk menu yang sedang terpilih.
@@ -162,6 +200,12 @@ public sealed partial class MainWindow : Window
                 break;
             case "artists":
                 ContentFrame.Navigate(typeof(ArtistsPage));
+                break;
+            case "genres":
+                ContentFrame.Navigate(typeof(GenresPage));
+                break;
+            case not null when tag.StartsWith(FolderTagPrefix, StringComparison.Ordinal):
+                ContentFrame.Navigate(typeof(FolderPage), tag[FolderTagPrefix.Length..]);
                 break;
             case "settings":
                 ContentFrame.Navigate(typeof(SettingsPage));

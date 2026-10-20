@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="MusicPlayer.Pages.GenresPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels"
+    NavigationCacheMode="Enabled">
+
+    <Grid Padding="24,20,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+            <TextBlock Text="Genres" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock
+                x:Name="CountText"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,4"
+                Foreground="{StaticResource SecondaryTextBrush}" />
+        </StackPanel>
+
+        <GridView
+            x:Name="GenreGrid"
+            Grid.Row="1"
+            Padding="0,0,24,24"
+            SelectionMode="None"
+            IsItemClickEnabled="True"
+            ItemClick="GenreGrid_ItemClick"
+            ContainerContentChanging="GenreGrid_ContainerContentChanging">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="vm:GenreItem">
+                    <!-- Kotak genre: cover sebagai latar, digelapkan di bagian bawah supaya teksnya terbaca -->
+                    <Grid
+                        Width="240"
+                        Height="135"
+                        CornerRadius="8"
+                        Background="{StaticResource CoverPlaceholderBrush}">
+                        <Border CornerRadius="8">
+                            <Border.Background>
+                                <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                            </Border.Background>
+                        </Border>
+                        <Border CornerRadius="8">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#1A000000" Offset="0" />
+                                    <GradientStop Color="#D9000000" Offset="1" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <StackPanel VerticalAlignment="Bottom" Margin="14,0,14,12">
+                            <TextBlock
+                                Text="{x:Bind Name}"
+                                FontSize="18"
+                                FontWeight="SemiBold"
+                                Foreground="White"
+                                TextTrimming="CharacterEllipsis"
+                                MaxLines="1" />
+                            <TextBlock Text="{x:Bind CountText}" FontSize="12" Foreground="#CCFFFFFF" />
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <StackPanel
+            x:Name="EmptyState"
+            Grid.Row="1"
+            Visibility="Collapsed"
+            Spacing="8"
+            Margin="0,48,24,0"
+            HorizontalAlignment="Center">
+            <TextBlock Text="No genres yet" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock
+                Text="Genres come from the Genre tag of your songs."
+                Foreground="{StaticResource SecondaryTextBrush}" />
+        </StackPanel>
+    </Grid>
+</Page>
