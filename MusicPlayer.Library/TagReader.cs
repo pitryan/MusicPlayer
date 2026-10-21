@@ -51,6 +51,8 @@ public static class TagReader
                 BitrateKbps = bitrate,
                 HasCover = (tag.Pictures?.Length ?? 0) > 0,
                 HasLyrics = !string.IsNullOrWhiteSpace(tag.Lyrics),
+                ReleaseDate = Clean(ReadReleaseDate(file)),
+                Copyright = Clean(tag.Copyright),
             };
         }
         catch (Exception ex)
@@ -59,6 +61,37 @@ public static class TagReader
             error = ex.Message;
             return track;
         }
+    }
+
+    /// <summary>
+    /// Tanggal rilis lengkap kalau ada, misalnya "2026-09-30". Untuk semua format TagLib hanya menyediakan tahunnya,
+    /// jadi tanggal lengkap dibaca dari tag aslinya: DATE (FLAC/Ogg), TDRC (MP3), atau ©day (M4A).
+    /// </summary>
+    // Kotak tanggal rilis di tag M4A bernama "©day" (byte 0xA9 lalu "day"). Konstanta BoxType milik TagLib tidak publik.
+    private static readonly TagLib.ByteVector AppleDayBox = new(0xA9, (byte)'d', (byte)'a', (byte)'y');
+
+    private static string? ReadReleaseDate(TagLib.File file)
+    {
+        // DATE = tanggal rilis edisi ini. ORIGINALDATE (dari MusicBrainz Picard) dan YEAR jadi cadangan; YEAR dari
+        // toko musik kadang berisi waktu lengkap seperti "2025-02-06T15:00:00Z", dan bagian tanggalnya tetap terbaca.
+        if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+        {
+            foreach (string key in new[] { "DATE", "ORIGINALDATE", "YEAR" })
+            {
+                if (xiph.GetFirstField(key) is { Length: > 0 } date)
+                    return date;
+            }
+        }
+
+        if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3
+            && TagLib.Id3v2.TextInformationFrame.Get(id3, "TDRC", false)?.Text is { Length: > 0 } recorded)
+            return recorded[0];
+
+        if (file.GetTag(TagLib.TagTypes.Apple) is TagLib.Mpeg4.AppleTag apple
+            && apple.GetText(AppleDayBox) is { Length: > 0 } day)
+            return day[0];
+
+        return null;
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

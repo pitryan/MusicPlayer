@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Tombol Previous, Play/Pause, dan Next yang sama di jendela utama dan MiniPlayer (nanti juga layar penuh).
+    Ikon: Fluent UI System Icons (Microsoft, lisensi MIT), https://github.com/microsoft/fluentui-system-icons
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.TransportButtons"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:helpers="using:MusicPlayer.Helpers">
+
+    <StackPanel Orientation="Horizontal" Spacing="4">
+        <Button Style="{StaticResource TransportButtonStyle}" Click="Previous_Click" ToolTipService.ToolTip="Previous">
+            <PathIcon Data="F1 M10.0003 5.48714C10.0003 4.66804 9.06946 4.19635 8.40894 4.68074L2.52935 8.99243C1.84829 9.49188 1.84829 10.509 2.52935 11.0084L8.40894 15.3201C9.06946 15.8045 10.0003 15.3328 10.0003 14.5137V11.3538L15.4089 15.3201C16.0695 15.8045 17.0003 15.3328 17.0003 14.5137V5.48714C17.0003 4.66804 16.0695 4.19635 15.4089 4.68074L10.0003 8.64707V5.48714Z" />
+        </Button>
+
+        <!-- Ikon Play dan Pause sama-sama ada di tombol; yang tampil mengikuti status pemutaran -->
+        <Button Style="{StaticResource TransportButtonStyle}" Click="PlayPause_Click" ToolTipService.ToolTip="Play / Pause">
+            <Grid>
+                <PathIcon
+                    Data="F1 M17.2221 8.68458C18.2586 9.25438 18.2586 10.7437 17.2221 11.3135L7.22259 16.8105C6.22292 17.36 5 16.6367 5 15.496L5 4.50214C5 3.36137 6.22292 2.63812 7.22259 3.18766L17.2221 8.68458Z"
+                    Visibility="{x:Bind helpers:Formatters.CollapsedIf(Playback.IsPlaying), Mode=OneWay}" />
+                <PathIcon
+                    Data="F1 M5 2C3.89543 2 3 2.89543 3 4V16C3 17.1046 3.89543 18 5 18H7C8.10457 18 9 17.1046 9 16V4C9 2.89543 8.10457 2 7 2H5ZM13 2C11.8954 2 11 2.89543 11 4V16C11 17.1046 11.8954 18 13 18H15C16.1046 18 17 17.1046 17 16V4C17 2.89543 16.1046 2 15 2H13Z"
+                    Visibility="{x:Bind helpers:Formatters.VisibleIf(Playback.IsPlaying), Mode=OneWay}" />
+            </Grid>
+        </Button>
+
+        <Button Style="{StaticResource TransportButtonStyle}" Click="Next_Click" ToolTipService.ToolTip="Next">
+            <PathIcon Data="F1 M10.0183 5.48617C10.0183 4.66707 10.9491 4.19538 11.6097 4.67976L17.4893 8.99146C18.1703 9.4909 18.1703 10.508 17.4893 11.0075L11.6097 15.3192C10.9491 15.8036 10.0183 15.3319 10.0183 14.5128V11.3528L4.60967 15.3192C3.94915 15.8036 3.01831 15.3319 3.01831 14.5128V5.48617C3.01831 4.66707 3.94915 4.19538 4.60967 4.67976L10.0183 8.6461V5.48617Z" />
+        </Button>
+    </StackPanel>
+</UserControl>

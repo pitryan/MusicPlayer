@@ -41,7 +41,7 @@
                 <Setter Property="MinHeight" Value="40" />
             </Style>
 
-            <!-- Badge kualitas kecil di LCD, misalnya "Hi-Res Lossless" -->
+            <!-- Badge kualitas kecil (ikon dan teks): "Hi-Res", "Lossless", atau codec lossy seperti "MP3" -->
             <Style x:Key="QualityBadgeButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderBrush" Value="#66FFFFFF" />

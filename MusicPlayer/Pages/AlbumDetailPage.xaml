@@ -56,30 +56,53 @@
                         TextWrapping="Wrap"
                         MaxLines="2"
                         TextTrimming="CharacterEllipsis" />
-                    <TextBlock
-                        x:Name="ArtistText"
+                    <!-- Nama artis bisa diklik: membuka artis itu di halaman Artists, sama seperti "Go to Artist" -->
+                    <HyperlinkButton
+                        x:Name="ArtistLink"
                         Grid.Row="2"
-                        FontSize="28"
-                        Foreground="{StaticResource AccentRedBrush}"
-                        TextTrimming="CharacterEllipsis" />
+                        Padding="0"
+                        ToolTipService.ToolTip="Go to artist"
+                        Click="ArtistLink_Click">
+                        <TextBlock
+                            x:Name="ArtistText"
+                            FontSize="28"
+                            Foreground="{StaticResource AccentRedBrush}"
+                            TextTrimming="CharacterEllipsis" />
+                    </HyperlinkButton>
 
-                    <!-- Contoh: "Pop · 2022" lalu badge kualitas -->
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                    <!-- Contoh: "Alternative Rock · 2026 ·" lalu ikon dan teks kualitas tanpa kotak, seperti Apple Music.
+                         Ikon golongan kualitas: desain asli MusicPlayer, sama dengan di badge LCD. -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
                         <TextBlock
                             x:Name="MetaText"
                             FontSize="12"
                             FontWeight="SemiBold"
                             Foreground="{StaticResource SecondaryTextBrush}"
                             VerticalAlignment="Center" />
-                        <Border
-                            x:Name="QualityBadge"
-                            BorderBrush="#66FFFFFF"
-                            BorderThickness="1"
-                            CornerRadius="3"
-                            Padding="5,0,5,1"
-                            VerticalAlignment="Center">
-                            <TextBlock x:Name="QualityBadgeText" FontSize="10" Foreground="#CCFFFFFF" />
-                        </Border>
+                        <StackPanel x:Name="QualityBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Viewbox Width="12" Height="12" VerticalAlignment="Center">
+                                <Grid Width="20" Height="20">
+                                    <PathIcon
+                                        x:Name="HiResIcon"
+                                        Data="F1 M1,8.4 A0.9,0.9 0 0 1 2.8,8.4 V11.6 A0.9,0.9 0 0 1 1,11.6 Z M3.7,6.4 A0.9,0.9 0 0 1 5.5,6.4 V13.6 A0.9,0.9 0 0 1 3.7,13.6 Z M6.4,4.4 A0.9,0.9 0 0 1 8.2,4.4 V15.6 A0.9,0.9 0 0 1 6.4,15.6 Z M9.1,2.4 A0.9,0.9 0 0 1 10.9,2.4 V17.6 A0.9,0.9 0 0 1 9.1,17.6 Z M11.8,4.4 A0.9,0.9 0 0 1 13.6,4.4 V15.6 A0.9,0.9 0 0 1 11.8,15.6 Z M14.5,6.4 A0.9,0.9 0 0 1 16.3,6.4 V13.6 A0.9,0.9 0 0 1 14.5,13.6 Z M17.2,8.4 A0.9,0.9 0 0 1 19,8.4 V11.6 A0.9,0.9 0 0 1 17.2,11.6 Z"
+                                        Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <PathIcon
+                                        x:Name="LosslessIcon"
+                                        Data="F1 M0.9,8.3 A1.3,1.3 0 0 1 3.5,8.3 V11.7 A1.3,1.3 0 0 1 0.9,11.7 Z M4.8,5.8 A1.3,1.3 0 0 1 7.4,5.8 V14.2 A1.3,1.3 0 0 1 4.8,14.2 Z M8.7,3.3 A1.3,1.3 0 0 1 11.3,3.3 V16.7 A1.3,1.3 0 0 1 8.7,16.7 Z M12.6,5.8 A1.3,1.3 0 0 1 15.2,5.8 V14.2 A1.3,1.3 0 0 1 12.6,14.2 Z M16.5,8.3 A1.3,1.3 0 0 1 19.1,8.3 V11.7 A1.3,1.3 0 0 1 16.5,11.7 Z"
+                                        Foreground="{StaticResource SecondaryTextBrush}" />
+                                    <PathIcon
+                                        x:Name="LossyIcon"
+                                        Data="F1 M0.9,8.2 A1.3,1.3 0 1 1 3.5,8.2 A1.3,1.3 0 1 1 0.9,8.2 Z M0.9,11.8 A1.3,1.3 0 1 1 3.5,11.8 A1.3,1.3 0 1 1 0.9,11.8 Z M4.8,6.4 A1.3,1.3 0 1 1 7.4,6.4 A1.3,1.3 0 1 1 4.8,6.4 Z M4.8,10 A1.3,1.3 0 1 1 7.4,10 A1.3,1.3 0 1 1 4.8,10 Z M4.8,13.6 A1.3,1.3 0 1 1 7.4,13.6 A1.3,1.3 0 1 1 4.8,13.6 Z M8.7,4.6 A1.3,1.3 0 1 1 11.3,4.6 A1.3,1.3 0 1 1 8.7,4.6 Z M8.7,8.2 A1.3,1.3 0 1 1 11.3,8.2 A1.3,1.3 0 1 1 8.7,8.2 Z M8.7,11.8 A1.3,1.3 0 1 1 11.3,11.8 A1.3,1.3 0 1 1 8.7,11.8 Z M8.7,15.4 A1.3,1.3 0 1 1 11.3,15.4 A1.3,1.3 0 1 1 8.7,15.4 Z M12.6,6.4 A1.3,1.3 0 1 1 15.2,6.4 A1.3,1.3 0 1 1 12.6,6.4 Z M12.6,10 A1.3,1.3 0 1 1 15.2,10 A1.3,1.3 0 1 1 12.6,10 Z M12.6,13.6 A1.3,1.3 0 1 1 15.2,13.6 A1.3,1.3 0 1 1 12.6,13.6 Z M16.5,8.2 A1.3,1.3 0 1 1 19.1,8.2 A1.3,1.3 0 1 1 16.5,8.2 Z M16.5,11.8 A1.3,1.3 0 1 1 19.1,11.8 A1.3,1.3 0 1 1 16.5,11.8 Z"
+                                        Foreground="{StaticResource SecondaryTextBrush}" />
+                                </Grid>
+                            </Viewbox>
+                            <TextBlock
+                                x:Name="QualityBadgeText"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Foreground="{StaticResource SecondaryTextBrush}"
+                                VerticalAlignment="Center" />
+                        </StackPanel>
                     </StackPanel>
 
                     <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="12">
@@ -121,7 +144,6 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="28" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="48" />
                     </Grid.ColumnDefinitions>
 
@@ -140,15 +162,18 @@
                         HorizontalAlignment="Right"
                         VerticalAlignment="Center" />
 
-                    <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
+                    <!-- Judul, dan di bawahnya artis lagu kalau berbeda dari artis album -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Padding="0,6">
+                        <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            Text="{x:Bind ArtistUnderTitle}"
+                            Visibility="{x:Bind ArtistUnderTitleVisibility}"
+                            FontSize="12"
+                            Foreground="{StaticResource SecondaryTextBrush}"
+                            TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
                     <TextBlock
                         Grid.Column="2"
-                        Text="{x:Bind ArtistText}"
-                        Style="{StaticResource CellStyle}"
-                        Foreground="{StaticResource SecondaryTextBrush}"
-                        MaxWidth="420" />
-                    <TextBlock
-                        Grid.Column="3"
                         Text="{x:Bind DurationText}"
                         Style="{StaticResource CellStyle}"
                         Foreground="{StaticResource SecondaryTextBrush}"
@@ -157,11 +182,16 @@
             </DataTemplate>
         </ListView.ItemTemplate>
 
-        <!-- Kaki halaman: tahun rilis, jumlah lagu, dan total durasi -->
+        <!-- Kaki halaman seperti Apple Music: tanggal rilis, jumlah lagu, durasi, ukuran file, dan copyright -->
         <ListView.Footer>
             <StackPanel Margin="12,20,0,40" Spacing="2">
                 <TextBlock x:Name="FooterYearText" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
                 <TextBlock x:Name="FooterCountText" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock
+                    x:Name="FooterCopyrightText"
+                    FontSize="12"
+                    TextWrapping="Wrap"
+                    Foreground="{StaticResource SecondaryTextBrush}" />
             </StackPanel>
         </ListView.Footer>
     </ListView>

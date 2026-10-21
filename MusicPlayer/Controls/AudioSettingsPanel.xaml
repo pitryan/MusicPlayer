@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Pengaturan audio di halaman Settings: perangkat output dan exclusive mode. Dibuka juga lewat tombol
+    "Audio Quality Settings" di popup badge kualitas.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.AudioSettingsPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels">
+
+    <StackPanel Spacing="8">
+        <TextBlock Text="Audio" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+        <TextBlock Text="Output" FontWeight="SemiBold" Margin="0,4,0,0" />
+        <ComboBox
+            x:Name="OutputDeviceCombo"
+            ItemsSource="{x:Bind Playback.OutputDevices}"
+            MinWidth="360"
+            SelectionChanged="OutputDeviceCombo_SelectionChanged">
+            <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:OutputDeviceItem">
+                    <TextBlock Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <ToggleSwitch
+            Header="Exclusive mode"
+            IsOn="{x:Bind Playback.UseExclusiveMode, Mode=TwoWay}"
+            Margin="0,4,0,0" />
+        <TextBlock
+            Text="{x:Bind Playback.OutputModeDescription, Mode=OneWay}"
+            FontSize="12"
+            TextWrapping="Wrap"
+            MaxWidth="520"
+            HorizontalAlignment="Left"
+            Foreground="{StaticResource SecondaryTextBrush}" />
+    </StackPanel>
+</UserControl>

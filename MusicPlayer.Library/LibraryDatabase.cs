@@ -19,7 +19,7 @@ public sealed class LibraryDatabase
     private const string TrackColumns =
         "id, path, folder, file_size, modified_utc, title, artist, album, album_artist, genre, year, " +
         "track_number, track_count, disc_number, disc_count, duration_ms, codec, sample_rate, " +
-        "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics";
+        "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, release_date, copyright";
 
     // Disc kosong dianggap disc 1, dan lagu tanpa nomor track ditaruh di akhir albumnya
     // Kolom yang sama dengan TrackColumns, tapi diawali "t." untuk query yang menggabungkan dua tabel
@@ -132,11 +132,11 @@ public sealed class LibraryDatabase
             INSERT INTO tracks (
                 path, folder, file_size, modified_utc, title, artist, album, album_artist, genre, year,
                 track_number, track_count, disc_number, disc_count, duration_ms, codec, sample_rate,
-                bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, added_utc)
+                bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, added_utc, release_date, copyright)
             VALUES (
                 $path, $folder, $file_size, $modified_utc, $title, $artist, $album, $album_artist, $genre, $year,
                 $track_number, $track_count, $disc_number, $disc_count, $duration_ms, $codec, $sample_rate,
-                $bits_per_sample, $channels, $bitrate_kbps, $has_cover, $has_lyrics, $added_utc)
+                $bits_per_sample, $channels, $bitrate_kbps, $has_cover, $has_lyrics, $added_utc, $release_date, $copyright)
             ON CONFLICT(path) DO UPDATE SET
                 folder = excluded.folder, file_size = excluded.file_size, modified_utc = excluded.modified_utc,
                 title = excluded.title, artist = excluded.artist, album = excluded.album,
@@ -146,7 +146,7 @@ public sealed class LibraryDatabase
                 duration_ms = excluded.duration_ms, codec = excluded.codec, sample_rate = excluded.sample_rate,
                 bits_per_sample = excluded.bits_per_sample, channels = excluded.channels,
                 bitrate_kbps = excluded.bitrate_kbps, has_cover = excluded.has_cover,
-                has_lyrics = excluded.has_lyrics
+                has_lyrics = excluded.has_lyrics, release_date = excluded.release_date, copyright = excluded.copyright
             """;
 
         // Parameter dibuat sekali lalu diisi ulang untuk tiap lagu: jauh lebih cepat untuk ribuan baris
@@ -155,7 +155,7 @@ public sealed class LibraryDatabase
             "$path", "$folder", "$file_size", "$modified_utc", "$title", "$artist", "$album", "$album_artist",
             "$genre", "$year", "$track_number", "$track_count", "$disc_number", "$disc_count", "$duration_ms",
             "$codec", "$sample_rate", "$bits_per_sample", "$channels", "$bitrate_kbps", "$has_cover",
-            "$has_lyrics", "$added_utc",
+            "$has_lyrics", "$added_utc", "$release_date", "$copyright",
         ];
         foreach (string name in names)
             command.Parameters.AddWithValue(name, DBNull.Value);
@@ -176,6 +176,8 @@ public sealed class LibraryDatabase
             Set(command, "$track_count", t.TrackCount);
             Set(command, "$disc_number", t.DiscNumber);
             Set(command, "$disc_count", t.DiscCount);
+            Set(command, "$release_date", t.ReleaseDate);
+            Set(command, "$copyright", t.Copyright);
             Set(command, "$duration_ms", (long)t.Duration.TotalMilliseconds);
             Set(command, "$codec", t.Codec);
             Set(command, "$sample_rate", t.SampleRate);
@@ -591,6 +593,30 @@ public sealed class LibraryDatabase
             // Versi 1: added_utc dulu berisi waktu scan; sekarang waktu ubah file (lihat UpsertTracks)
             Execute(connection, "UPDATE tracks SET added_utc = modified_utc; PRAGMA user_version = 1;");
         }
+
+        if (version < 2)
+        {
+            // Versi 2: tanggal rilis lengkap dan copyright untuk halaman album. modified_utc dikosongkan supaya scan
+            // berikutnya membaca ulang tag semua lagu; tanggal ditambahkan (added_utc) tidak ikut berubah.
+            // Kolom hanya ditambah kalau belum ada, supaya migrasi ini aman kalau sampai dijalankan ulang
+            var columns = TableColumns(connection, "tracks");
+            if (!columns.Contains("release_date"))
+                Execute(connection, "ALTER TABLE tracks ADD COLUMN release_date TEXT;");
+            if (!columns.Contains("copyright"))
+                Execute(connection, "ALTER TABLE tracks ADD COLUMN copyright TEXT;");
+            Execute(connection, "UPDATE tracks SET modified_utc = 0; PRAGMA user_version = 2;");
+        }
+    }
+
+    private static HashSet<string> TableColumns(SqliteConnection connection, string table)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table})";
+        using var reader = command.ExecuteReader();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            names.Add(reader.GetString(1));
+        return names;
     }
 
     private static int Execute(SqliteConnection connection, string sql, params (string Name, object? Value)[] parameters)
@@ -608,7 +634,7 @@ public sealed class LibraryDatabase
     private static string EscapeLike(string text) =>
         text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
-    private const int TrackColumnCount = 23; // jumlah kolom di TrackColumns
+    private const int TrackColumnCount = 25; // jumlah kolom di TrackColumns; naikkan setiap kali kolom ditambah
 
     private static List<Track> ReadTracks(SqliteCommand command)
     {
@@ -632,6 +658,8 @@ public sealed class LibraryDatabase
                 Album = Text(r, 7),
                 AlbumArtist = Text(r, 8),
                 Genre = Text(r, 9),
+                ReleaseDate = Text(r, 23),
+                Copyright = Text(r, 24),
                 Year = Number(r, 10),
                 TrackNumber = Number(r, 11),
                 TrackCount = Number(r, 12),

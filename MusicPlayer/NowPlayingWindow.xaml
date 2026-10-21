@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Pemutar layar penuh, seperti tampilan layar penuh Apple Music tanpa lirik: latar dari cover yang diburamkan,
+    cover besar, lalu judul, badge kualitas, progres, dan kontrol. Lirik di sisi kanan menyusul di tahap lirik.
+    Ikon tombol keluar dan tutup: Fluent UI System Icons (Microsoft, lisensi MIT).
+-->
+<Window
+    x:Class="MusicPlayer.NowPlayingWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls"
+    Title="MusicPlayer">
+
+    <!-- KeyboardAcceleratorPlacementMode Hidden: tanpa ini WinUI memunculkan kotak "Esc" di dekat kursor -->
+    <Grid Background="#FF1C1C1C" KeyboardAcceleratorPlacementMode="Hidden">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Escape" Invoked="Escape_Invoked" />
+        </Grid.KeyboardAccelerators>
+
+        <!-- Latar: cover diperbesar sedikit supaya tepinya tidak terlihat, lalu diburamkan dan digelapkan acrylic.
+             Kalau efek transparansi Windows dimatikan, acrylic memakai warna gelap polos (FallbackColor). -->
+        <Border RenderTransformOrigin="0.5,0.5">
+            <Border.RenderTransform>
+                <ScaleTransform ScaleX="1.15" ScaleY="1.15" />
+            </Border.RenderTransform>
+            <Border.Background>
+                <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill" />
+            </Border.Background>
+        </Border>
+        <Border>
+            <Border.Background>
+                <AcrylicBrush TintColor="#FF141414" TintOpacity="0.5" FallbackColor="#FF1C1C1C" />
+            </Border.Background>
+        </Border>
+
+        <!-- Cover di atas, teks dan kontrol di bawahnya. Cover mengecil sendiri kalau layarnya pendek. -->
+        <Grid Padding="48,72,48,56" RowSpacing="28">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Viewbox MaxWidth="640" MaxHeight="640" Stretch="Uniform" VerticalAlignment="Bottom">
+                <Grid Width="640" Height="640" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                    <FontIcon Glyph="&#xE8D6;" FontSize="96" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <!-- Diisi dari kode dengan cover resolusi besar (lihat LoadLargeCoverAsync) -->
+                    <Border CornerRadius="8">
+                        <Border.Background>
+                            <ImageBrush x:Name="CoverBrush" Stretch="UniformToFill" />
+                        </Border.Background>
+                    </Border>
+                </Grid>
+            </Viewbox>
+
+            <StackPanel Grid.Row="1" Width="500" Spacing="6" HorizontalAlignment="Center">
+                <controls:MarqueeText
+                    Text="{x:Bind Playback.TitleText, Mode=OneWay}"
+                    FontSize="20"
+                    FontWeight="SemiBold" />
+                <controls:MarqueeText
+                    Text="{x:Bind Playback.SubtitleText, Mode=OneWay}"
+                    FontSize="18"
+                    Foreground="{StaticResource SecondaryTextBrush}" />
+                <controls:QualityBadge HorizontalAlignment="Center" Margin="0,4,0,0" />
+
+                <!-- Progres lagu: klik di garis untuk lompat ke posisi itu -->
+                <Grid ColumnSpacing="12" Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        Text="{x:Bind Playback.ElapsedText, Mode=OneWay}"
+                        FontSize="13"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        VerticalAlignment="Center" />
+                    <Grid
+                        Grid.Column="1"
+                        Height="16"
+                        Background="Transparent"
+                        PointerPressed="SeekBar_PointerPressed">
+                        <ProgressBar
+                            Minimum="0"
+                            Maximum="{x:Bind Playback.DurationSeconds, Mode=OneWay}"
+                            Value="{x:Bind Playback.PositionSeconds, Mode=OneWay}"
+                            Foreground="#CCFFFFFF"
+                            VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock
+                        Grid.Column="2"
+                        Text="{x:Bind Playback.RemainingText, Mode=OneWay}"
+                        FontSize="13"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Volume di kiri, tombol transport di tengah. Tombol lirik menyusul di tahap lirik. -->
+                <Grid Margin="0,4,0,0">
+                    <controls:VolumeButton HorizontalAlignment="Left" VerticalAlignment="Center" />
+                    <controls:TransportButtons HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
+            </StackPanel>
+        </Grid>
+
+        <!-- Pojok kanan atas: keluar dari layar penuh (kembali ke MiniPlayer, sama seperti Esc), dan tutup (kembali ke jendela utama) -->
+        <StackPanel
+            Orientation="Horizontal"
+            Spacing="4"
+            Margin="0,16,16,0"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top">
+            <Button
+                Padding="8"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTipService.ToolTip="Exit full screen (Esc)"
+                Click="ExitFullScreen_Click">
+                <PathIcon Data="F1 M8.50001 11C8.77613 11 9.00001 11.2239 9.00001 11.5V16.5C8.99997 16.7761 8.77611 17 8.50001 17C8.22391 17 8.00005 16.7761 8.00001 16.5V12.707L2.85352 17.8535C2.65827 18.0487 2.34174 18.0487 2.14649 17.8535C1.95124 17.6583 1.95126 17.3418 2.14649 17.1465L7.29298 12H3.50001C3.22391 12 3.00005 11.7761 3.00001 11.5C3.00001 11.2239 3.22388 11 3.50001 11H8.50001ZM17.1465 2.14649C17.3418 1.95123 17.6583 1.95123 17.8535 2.14649C18.0488 2.34176 18.0488 2.65828 17.8535 2.85352L12.707 8.00001H16.5C16.7761 8.00003 17 8.22388 17 8.50001C17 8.77611 16.7761 9 16.5 9.00001H11.5C11.2239 8.99999 11.0001 8.77611 11 8.50001V3.50001C11 3.22388 11.2239 3.00003 11.5 3.00001C11.7761 3.00003 12 3.22388 12 3.50001V7.29298L17.1465 2.14649Z" />
+            </Button>
+            <Button
+                Padding="8"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTipService.ToolTip="Close"
+                Click="Close_Click">
+                <PathIcon Data="F1 M4.08859 4.21569L4.14645 4.14645C4.32001 3.97288 4.58944 3.9536 4.78431 4.08859L4.85355 4.14645L10 9.293L15.1464 4.14645C15.32 3.97288 15.5894 3.9536 15.7843 4.08859L15.8536 4.14645C16.0271 4.32001 16.0464 4.58944 15.9114 4.78431L15.8536 4.85355L10.707 10L15.8536 15.1464C16.0271 15.32 16.0464 15.5894 15.9114 15.7843L15.8536 15.8536C15.68 16.0271 15.4106 16.0464 15.2157 15.9114L15.1464 15.8536L10 10.707L4.85355 15.8536C4.67999 16.0271 4.41056 16.0464 4.21569 15.9114L4.14645 15.8536C3.97288 15.68 3.9536 15.4106 4.08859 15.2157L4.14645 15.1464L9.293 10L4.14645 4.85355C3.97288 4.67999 3.9536 4.41056 4.08859 4.21569L4.14645 4.14645L4.08859 4.21569Z" />
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

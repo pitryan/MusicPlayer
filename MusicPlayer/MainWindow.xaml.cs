@@ -65,7 +65,13 @@ public sealed partial class MainWindow : Window
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
         NavigateToSection("recent");
 
-        Closed += (_, _) => Playback.Dispose();
+        Closed += (_, _) =>
+        {
+            // Aplikasi ditutup: MiniPlayer atau layar penuh ikut ditutup, supaya tidak ada jendela yang tertinggal
+            _isClosing = true;
+            _replacement?.Close();
+            Playback.Dispose();
+        };
     }
 
     // ── Bar atas ─────────────────────────────────────────────
@@ -115,11 +121,8 @@ public sealed partial class MainWindow : Window
             (int)Math.Round(Math.Max(0, bounds.Height) * scale));
     }
 
-    private void Previous_Click(object sender, RoutedEventArgs e) => Playback.Previous();
 
-    private void PlayPause_Click(object sender, RoutedEventArgs e) => Playback.TogglePlayPause();
 
-    private void Next_Click(object sender, RoutedEventArgs e) => Playback.Next();
 
     private void ShuffleToggle_Click(object sender, RoutedEventArgs e) =>
         Playback.IsShuffle = ShuffleToggle.IsChecked == true;
@@ -241,17 +244,69 @@ public sealed partial class MainWindow : Window
         menu.ShowAt(UpNextList, e.GetPosition(UpNextList));
     }
 
-    // ── Volume ───────────────────────────────────────────────
+    // ── MiniPlayer dan layar penuh ───────────────────────────
 
-    private void MuteToggle_Click(object sender, RoutedEventArgs e) =>
-        Playback.IsMuted = MuteToggle.IsChecked == true;
+    // Jendela yang sedang menggantikan jendela utama (MiniPlayer atau layar penuh); paling banyak satu
+    private Window? _replacement;
+    private bool _isClosing;
 
-    private void VolumeButton_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    private void LcdCover_PointerEntered(object sender, PointerRoutedEventArgs e) =>
+        LcdCoverOverlay.Visibility = Visibility.Visible;
+
+    private void LcdCover_PointerExited(object sender, PointerRoutedEventArgs e) =>
+        LcdCoverOverlay.Visibility = Visibility.Collapsed;
+
+    private void LcdCover_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        // Scroll di atas tombol volume: naik/turun 2 per putaran roda
-        int delta = e.GetCurrentPoint(VolumeButton).Properties.MouseWheelDelta;
-        Playback.Volume += Math.Sign(delta) * 2;
-        e.Handled = true;
+        // Jendela ini akan disembunyikan, jadi efek hover-nya dimatikan dulu supaya tidak tertinggal saat muncul lagi
+        LcdCoverOverlay.Visibility = Visibility.Collapsed;
+        ShowMiniPlayer();
+    }
+
+    /// <summary>Membuka MiniPlayer. Dipakai cover LCD dan tombol keluar di layar penuh.</summary>
+    public void ShowMiniPlayer() => ShowInstead(new MiniPlayerWindow());
+
+    /// <summary>Membuka layar penuh di layar tempat MiniPlayer (atau jendela ini) sedang berada.</summary>
+    public void ShowFullScreen() => ShowInstead(new NowPlayingWindow((_replacement ?? this).AppWindow.Id));
+
+    /// <summary>
+    /// Membuka pengaturan audio di Settings (tombol "Audio Quality Settings" di popup kualitas). Kalau sedang di
+    /// MiniPlayer atau layar penuh, jendela itu ditutup dulu, supaya jendela utama muncul lagi.
+    /// </summary>
+    public void OpenAudioSettings()
+    {
+        _replacement?.Close();
+        NavView.SelectedItem = NavView.SettingsItem;
+        NavigateToSection("settings");
+    }
+
+    /// <summary>
+    /// Jendela lain menggantikan jendela utama: jendela utama disembunyikan, lalu muncul lagi seperti semula begitu
+    /// jendela itu ditutup. Kalau jendela pengganti lain sedang terbuka (MiniPlayer ⇄ layar penuh), jendela itu
+    /// ditutup tanpa memunculkan jendela utama.
+    /// </summary>
+    private void ShowInstead(Window window)
+    {
+        Window? previous = _replacement;
+        _replacement = window;
+        window.Closed += (_, _) =>
+        {
+            // Ditutup karena diganti jendela pengganti lain: jendela utama tetap tersembunyi
+            if (!ReferenceEquals(_replacement, window))
+                return;
+
+            _replacement = null;
+            if (_isClosing)
+                return;
+
+            AppWindow.Show();
+            Activate();
+        };
+
+        // Jendela pengganti tampil lebih dulu, supaya aplikasi tidak pernah sesaat tanpa jendela yang terlihat
+        window.Activate();
+        previous?.Close();
+        AppWindow.Hide();
     }
 
     /// <summary>Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya.</summary>
@@ -268,24 +323,6 @@ public sealed partial class MainWindow : Window
         menu.ShowAt(LcdBorder, e.GetPosition(LcdBorder));
     }
 
-    // True selama daftar output di popup kualitas sedang diisi dari kode, bukan dipilih pengguna
-    private bool _fillingOutputList;
-
-    private void QualityFlyout_Opening(object sender, object e)
-    {
-        // Diisi ulang setiap kali popup dibuka, supaya DAC yang baru dicolok langsung muncul di daftar
-        _fillingOutputList = true;
-        OutputDeviceCombo.SelectedItem = Playback.RefreshOutputDevices();
-        _fillingOutputList = false;
-    }
-
-    private void OutputDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_fillingOutputList || OutputDeviceCombo.SelectedItem is not OutputDeviceItem item)
-            return;
-
-        Playback.SelectOutputDevice(item.Id, item.Name);
-    }
 
     // ── Navigasi ─────────────────────────────────────────────
 

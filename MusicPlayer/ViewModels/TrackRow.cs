@@ -18,12 +18,20 @@ public sealed class TrackRow : ObservableObject
 
     private bool _isPlaying;
 
-    public TrackRow(Track track, int index)
+    /// <param name="albumArtist">
+    /// Diisi halaman album: artis lagu ditampilkan di bawah judul hanya kalau berbeda dari artis albumnya, seperti
+    /// Apple Music (misalnya lagu "feat." atau kompilasi).
+    /// </param>
+    public TrackRow(Track track, int index, string? albumArtist = null)
     {
         Track = track;
         RowBackground = index % 2 == 0 ? StripeBrush : ClearBrush;
         NumberText = Formatters.TrackNumber(track.TrackNumber);
         ArtistText = track.DisplayArtist;
+        ArtistUnderTitle = albumArtist is not null
+            && !string.Equals(track.DisplayArtist, albumArtist, System.StringComparison.OrdinalIgnoreCase)
+            ? track.DisplayArtist
+            : "";
         DurationText = Formatters.Time(track.Duration);
     }
 
@@ -38,6 +46,11 @@ public sealed class TrackRow : ObservableObject
     /// tetap menunjukkan siapa penyanyi setiap lagunya.
     /// </summary>
     public string ArtistText { get; }
+
+    /// <summary>Artis di bawah judul (halaman album); kosong kalau sama dengan artis album.</summary>
+    public string ArtistUnderTitle { get; }
+
+    public Visibility ArtistUnderTitleVisibility => ArtistUnderTitle.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public string DurationText { get; }
 

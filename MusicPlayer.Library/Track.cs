@@ -32,6 +32,12 @@ public sealed record Track
     public bool HasCover { get; init; }
     public bool HasLyrics { get; init; }
 
+    /// <summary>Tanggal rilis apa adanya dari tag, misalnya "2026-09-30", "2026-09", atau "2026".</summary>
+    public string? ReleaseDate { get; init; }
+
+    /// <summary>Teks copyright dari tag, misalnya "℗ 2026 Sony Music Labels Inc.".</summary>
+    public string? Copyright { get; init; }
+
     public string DisplayTitle => Title ?? Path.GetFileNameWithoutExtension(FilePath);
     public string DisplayArtist => Artist ?? AlbumArtist ?? "Unknown Artist";
     public string DisplayAlbum => Album ?? "Unknown Album";

@@ -180,7 +180,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         private set => SetProperty(ref _playPauseSymbol, value);
     }
 
-    /// <summary>Contoh: "Hi-Res Lossless", "Lossless", atau "MP3 320 kbps".</summary>
+    /// <summary>Golongan kualitas di popup: "Hi-Res", "Lossless", atau "Lossy".</summary>
     public string QualityBadgeText
     {
         get => _qualityBadgeText;
@@ -255,6 +255,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             if (SetProperty(ref _repeatMode, value))
             {
                 OnPropertyChanged(nameof(IsRepeatOn));
+                OnPropertyChanged(nameof(IsRepeatOne));
                 OnPropertyChanged(nameof(RepeatSymbol));
             }
         }
@@ -303,12 +304,44 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// <summary>Ikon tombol repeat: ada angka 1 untuk mode One.</summary>
     public Symbol RepeatSymbol => RepeatMode == RepeatMode.One ? Symbol.RepeatOne : Symbol.RepeatAll;
 
+    /// <summary>True untuk Repeat One. Menentukan ikon tombol repeat: "ulangi semua" atau "ulangi satu".</summary>
+    public bool IsRepeatOne => RepeatMode == RepeatMode.One;
+
     public void CycleRepeat() => RepeatMode = RepeatMode switch
     {
         RepeatMode.Off => RepeatMode.All,
         RepeatMode.All => RepeatMode.One,
         _ => RepeatMode.Off,
     };
+
+    private bool _isPlaying;
+    private QualityKind _qualityKind = QualityKind.Lossless;
+
+    /// <summary>Golongan kualitas lagu sekarang. Menentukan ikon di badge dan popup kualitas.</summary>
+    public QualityKind QualityKind
+    {
+        get => _qualityKind;
+        private set
+        {
+            if (!SetProperty(ref _qualityKind, value))
+                return;
+
+            OnPropertyChanged(nameof(IsHiResQuality));
+            OnPropertyChanged(nameof(IsLosslessQuality));
+            OnPropertyChanged(nameof(IsLossyQuality));
+        }
+    }
+
+    public bool IsHiResQuality => QualityKind == QualityKind.HiRes;
+    public bool IsLosslessQuality => QualityKind == QualityKind.Lossless;
+    public bool IsLossyQuality => QualityKind == QualityKind.Lossy;
+
+    /// <summary>True saat lagu benar-benar berbunyi. Menentukan ikon Play atau Pause di tombol transport.</summary>
+    public bool IsPlaying
+    {
+        get => _isPlaying;
+        private set => SetProperty(ref _isPlaying, value);
+    }
 
     /// <summary>Pilihan di daftar output popup kualitas. Diisi ulang oleh <see cref="RefreshOutputDevices"/>.</summary>
     public ObservableCollection<OutputDeviceItem> OutputDevices { get; } = [];
@@ -949,9 +982,10 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private void UpdateQualityInfo(Track track, MMDevice? device)
     {
         var quality = AudioQuality.Describe(track);
-        QualityBadgeText = quality.Badge;
+        QualityBadgeText = quality.Label;
         QualityShortText = quality.ShortBadge;
         QualityDetailText = quality.Detail;
+        QualityKind = quality.Kind;
         DeviceText = device?.FriendlyName ?? "";
 
         if (device is null)
@@ -1075,6 +1109,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         DurationSeconds = Math.Max(duration.TotalSeconds, 1);
         ElapsedText = Formatters.Time(position);
         RemainingText = "-" + Formatters.Time(remaining);
-        PlayPauseSymbol = _engine.State == PlaybackState.Playing ? Symbol.Pause : Symbol.Play;
+        IsPlaying = _engine.State == PlaybackState.Playing;
+        PlayPauseSymbol = IsPlaying ? Symbol.Pause : Symbol.Play;
     }
 }

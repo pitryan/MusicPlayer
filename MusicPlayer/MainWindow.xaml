@@ -107,7 +107,10 @@
                     Margin="16,0,0,0"
                     HorizontalAlignment="Left"
                     VerticalAlignment="Center">
-                    <!-- Shuffle dan repeat menyala merah saat aktif, sama seperti tombol antrean -->
+                    <!--
+                        Shuffle dan repeat menyala merah saat aktif, sama seperti tombol antrean. Ikonnya versi tebal dari
+                        Fluent UI System Icons (Microsoft, lisensi MIT), serasi dengan tombol di TransportButtons.
+                    -->
                     <ToggleButton
                         x:Name="ShuffleToggle"
                         Padding="8"
@@ -118,17 +121,9 @@
                         IsChecked="{x:Bind Playback.IsShuffle, Mode=OneWay}"
                         Click="ShuffleToggle_Click"
                         ToolTipService.ToolTip="Shuffle">
-                        <SymbolIcon Symbol="Shuffle" />
+                        <PathIcon Data="F1 M15.7803 3.71967C15.4874 3.42678 15.0126 3.42678 14.7197 3.71967C14.4268 4.01256 14.4268 4.48744 14.7197 4.78033L15.4735 5.53419C12.3828 5.81153 10.5945 7.72788 8.99886 9.43788L8.9517 9.48841C7.18821 11.3779 5.6408 13.0002 2.75 13.0002C2.33579 13.0002 2 13.336 2 13.7502C2 14.1645 2.33579 14.5002 2.75 14.5002C6.32656 14.5002 8.27635 12.4108 10.0011 10.5624L10.0483 10.5119C11.628 8.81932 13.0343 7.34116 15.388 7.05139L14.7197 7.71975C14.4268 8.01265 14.4268 8.48752 14.7197 8.78041C15.0126 9.07331 15.4874 9.07331 15.7803 8.78041L17.7804 6.78037C18.0733 6.48748 18.0733 6.0126 17.7804 5.71971L15.7803 3.71967ZM2.75 5.50024C5.52864 5.50024 7.32539 6.76133 8.79759 8.19071C8.63182 8.36517 8.47131 8.53728 8.31508 8.70481L8.22064 8.80606C8.06689 8.97079 7.9169 9.13088 7.76961 9.2859C6.41908 7.97133 4.98663 7.00024 2.75 7.00024C2.33579 7.00024 2 6.66446 2 6.25024C2 5.83603 2.33579 5.50024 2.75 5.50024ZM15.4735 14.4658C13.1281 14.2554 11.5327 13.1011 10.2024 11.8095C10.3682 11.635 10.5288 11.4628 10.685 11.2953L10.7794 11.1941C10.9331 11.0294 11.0831 10.8693 11.2304 10.7143C12.399 11.8518 13.6289 12.7321 15.388 12.9486L14.7197 12.2802C14.4268 11.9874 14.4268 11.5125 14.7197 11.2196C15.0126 10.9267 15.4874 10.9267 15.7803 11.2196L17.7804 13.2196C18.0733 13.5125 18.0733 13.9874 17.7804 14.2803L15.7803 16.2803C15.4874 16.5732 15.0126 16.5732 14.7197 16.2803C14.4268 15.9874 14.4268 15.5126 14.7197 15.2197L15.4735 14.4658Z" />
                     </ToggleButton>
-                    <Button Style="{StaticResource TransportButtonStyle}" Click="Previous_Click" ToolTipService.ToolTip="Previous">
-                        <SymbolIcon Symbol="Previous" />
-                    </Button>
-                    <Button Style="{StaticResource TransportButtonStyle}" Click="PlayPause_Click" ToolTipService.ToolTip="Play / Pause">
-                        <SymbolIcon Symbol="{x:Bind Playback.PlayPauseSymbol, Mode=OneWay}" />
-                    </Button>
-                    <Button Style="{StaticResource TransportButtonStyle}" Click="Next_Click" ToolTipService.ToolTip="Next">
-                        <SymbolIcon Symbol="Next" />
-                    </Button>
+                    <controls:TransportButtons />
                     <ToggleButton
                         x:Name="RepeatToggle"
                         Padding="8"
@@ -139,7 +134,14 @@
                         IsChecked="{x:Bind Playback.IsRepeatOn, Mode=OneWay}"
                         Click="RepeatToggle_Click"
                         ToolTipService.ToolTip="Repeat: off, all, or one">
-                        <SymbolIcon Symbol="{x:Bind Playback.RepeatSymbol, Mode=OneWay}" />
+                        <Grid>
+                            <PathIcon
+                                Data="F1 M15.7505 6.01C15.9298 6.01 16.0944 6.07292 16.2234 6.17788C17.3113 7.09184 18.0029 8.46516 18.0029 10C18.0029 12.6888 15.8806 14.8818 13.2198 14.9954L13.0029 15H8.56105L9.7808 16.2197C10.0471 16.4859 10.0713 16.9026 9.85341 17.1962L9.7808 17.2803C9.51453 17.5466 9.09787 17.5708 8.80425 17.3529L8.72014 17.2803L6.22014 14.7803C5.95387 14.5141 5.92966 14.0974 6.14752 13.8038L6.22014 13.7197L8.72014 11.2197C9.01303 10.9268 9.4879 10.9268 9.7808 11.2197C10.0471 11.4859 10.0713 11.9026 9.85341 12.1962L9.7808 12.2803L8.56105 13.5H13.0029C14.8714 13.5 16.398 12.0357 16.4977 10.192L16.5029 10C16.5029 8.91885 16.0127 7.95219 15.2424 7.31017C15.094 7.17538 15.0005 6.97861 15.0005 6.76C15.0005 6.34579 15.3363 6.01 15.7505 6.01ZM10.2201 2.71967C10.4864 2.4534 10.9031 2.4292 11.1967 2.64705L11.2808 2.71967L13.7808 5.21967L13.8534 5.30379C14.0471 5.56478 14.0495 5.92299 13.8606 6.18638L13.7808 6.28033L11.2808 8.78033L11.1967 8.85295C10.9357 9.0466 10.5775 9.04899 10.3141 8.86012L10.2201 8.78033L10.1475 8.69621C9.95387 8.43522 9.95148 8.07701 10.1403 7.81362L10.2201 7.71967L11.439 6.5H6.99805C5.12948 6.5 3.60292 7.96428 3.50323 9.80796L3.49805 10C3.49805 11.0831 3.99006 12.0514 4.76278 12.6934C4.90897 12.8289 5.00047 13.0238 5.00047 13.24C5.00047 13.6542 4.66468 13.99 4.25047 13.99C4.05918 13.99 3.88462 13.9184 3.75213 13.8005C2.67913 12.8872 1.99805 11.5232 1.99805 10C1.99805 7.31125 4.12035 5.11818 6.78116 5.00462L6.99805 5H11.439L10.2201 3.78033L10.1475 3.69621C9.92966 3.4026 9.95387 2.98594 10.2201 2.71967Z"
+                                Visibility="{x:Bind helpers:Formatters.CollapsedIf(Playback.IsRepeatOne), Mode=OneWay}" />
+                            <PathIcon
+                                Data="F1 M15.7524 6.01C15.9317 6.01 16.0963 6.07292 16.2254 6.17788C17.3133 7.09184 18.0048 8.46516 18.0048 10C18.0048 10.1979 17.9933 10.3931 17.971 10.585C17.5142 10.3549 17.0211 10.1866 16.5024 10.0911L16.5048 10C16.5048 8.91885 16.0146 7.95219 15.2444 7.31017C15.096 7.17538 15.0024 6.97861 15.0024 6.76C15.0024 6.34579 15.3382 6.01 15.7524 6.01ZM10.3749 13.5C10.1907 13.9718 10.0697 14.4753 10.0224 15H8.563L9.78275 16.2197C10.049 16.4859 10.0732 16.9026 9.85537 17.1962L9.78275 17.2803C9.51648 17.5466 9.09982 17.5708 8.80621 17.3529L8.72209 17.2803L6.22209 14.7803C5.95582 14.5141 5.93162 14.0974 6.14947 13.8038L6.22209 13.7197L8.72209 11.2197C9.01498 10.9268 9.48986 10.9268 9.78275 11.2197C10.049 11.4859 10.0732 11.9026 9.85537 12.1962L9.78275 12.2803L8.563 13.5H10.3749ZM10.2221 2.71967C10.4884 2.4534 10.905 2.4292 11.1986 2.64705L11.2827 2.71967L13.7827 5.21967L13.8554 5.30379C14.049 5.56478 14.0514 5.92299 13.8625 6.18638L13.7827 6.28033L11.2827 8.78033L11.1986 8.85295C10.9376 9.0466 10.5794 9.04899 10.316 8.86012L10.2221 8.78033L10.1495 8.69621C9.95582 8.43522 9.95343 8.07701 10.1423 7.81362L10.2221 7.71967L11.441 6.5H7C5.13144 6.5 3.60487 7.96428 3.50518 9.80796L3.5 10C3.5 11.0831 3.99201 12.0514 4.76473 12.6934C4.91093 12.8289 5.00242 13.0238 5.00242 13.24C5.00242 13.6542 4.66663 13.99 4.25242 13.99C4.06113 13.99 3.88657 13.9184 3.75408 13.8005C2.68108 12.8872 2 11.5232 2 10C2 7.31125 4.12231 5.11818 6.78311 5.00462L7 5H11.441L10.2221 3.78033L10.1495 3.69621C9.93162 3.4026 9.95582 2.98594 10.2221 2.71967ZM20 15.5C20 17.9853 17.9853 20 15.5 20C13.0147 20 11 17.9853 11 15.5C11 13.0147 13.0147 11 15.5 11C17.9853 11 20 13.0147 20 15.5ZM16.0477 12.8386C15.8633 12.7864 15.5572 12.8034 15.3683 13.0719C15.1551 13.3751 14.7871 13.7975 14.2764 14.0528C14.0294 14.1763 13.9293 14.4766 14.0528 14.7236C14.1763 14.9706 14.4766 15.0707 14.7236 14.9472C15.0229 14.7976 15.2814 14.6114 15.5 14.4182V17.5C15.5 17.7761 15.7239 18 16 18C16.2761 18 16.5 17.7761 16.5 17.5V13.4236C16.5 13.0752 16.2327 12.891 16.0477 12.8386Z"
+                                Visibility="{x:Bind helpers:Formatters.VisibleIf(Playback.IsRepeatOne), Mode=OneWay}" />
+                        </Grid>
                     </ToggleButton>
                 </StackPanel>
 
@@ -158,13 +160,27 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <Grid Background="{StaticResource CoverPlaceholderBrush}" CornerRadius="6,0,0,6">
+                        <!-- Arahkan kursor ke cover: cover diburamkan dan ikon MiniPlayer muncul. Klik untuk membuka MiniPlayer. -->
+                        <Grid
+                            Background="{StaticResource CoverPlaceholderBrush}"
+                            CornerRadius="6,0,0,6"
+                            ToolTipService.ToolTip="MiniPlayer"
+                            PointerEntered="LcdCover_PointerEntered"
+                            PointerExited="LcdCover_PointerExited"
+                            Tapped="LcdCover_Tapped">
                             <FontIcon Glyph="&#xE8D6;" FontSize="20" Foreground="{StaticResource SecondaryTextBrush}" />
                             <Border CornerRadius="6,0,0,6">
                                 <Border.Background>
                                     <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill" />
                                 </Border.Background>
                             </Border>
+                            <!-- Acrylic memburamkan cover di belakangnya. Ikon: Fluent UI System Icons (MIT). -->
+                            <Grid x:Name="LcdCoverOverlay" CornerRadius="6,0,0,6" Visibility="Collapsed">
+                                <Grid.Background>
+                                    <AcrylicBrush TintColor="#FF000000" TintOpacity="0.35" FallbackColor="#B3000000" />
+                                </Grid.Background>
+                                <PathIcon Data="F1 M2 5.75C2 4.23122 3.23122 3 4.75 3H15.25C16.7688 3 18 4.23122 18 5.75V10H17V5.75C17 4.7835 16.2165 4 15.25 4H4.75C3.7835 4 3 4.7835 3 5.75V12.25C3 13.2165 3.7835 14 4.75 14H9V15H4.75C3.23122 15 2 13.7688 2 12.25V5.75ZM11.5 11C10.6716 11 10 11.6716 10 12.5V16.5C10 17.3284 10.6716 18 11.5 18H17.5C18.3284 18 19 17.3284 19 16.5V12.5C19 11.6716 18.3284 11 17.5 11H11.5Z" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
                         </Grid>
 
                         <Grid Grid.Column="1" Padding="8,4,8,3">
@@ -181,68 +197,7 @@
                             </Grid.RowDefinitions>
 
                             <!-- Badge kualitas; diklik untuk melihat detail format dan jalur output -->
-                            <Button
-                                Style="{StaticResource QualityBadgeButtonStyle}"
-                                Content="{x:Bind Playback.QualityShortText, Mode=OneWay}"
-                                Visibility="{x:Bind Playback.QualityVisibility, Mode=OneWay}"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Center">
-                                <Button.Flyout>
-                                    <Flyout x:Name="QualityFlyout" Placement="Bottom" Opening="QualityFlyout_Opening">
-                                        <StackPanel Width="300" Spacing="4">
-                                            <TextBlock
-                                                Text="{x:Bind Playback.QualityBadgeText, Mode=OneWay}"
-                                                FontWeight="SemiBold"
-                                                HorizontalAlignment="Center" />
-                                            <TextBlock
-                                                Text="{x:Bind Playback.QualityDetailText, Mode=OneWay}"
-                                                HorizontalAlignment="Center" />
-
-                                            <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,8" />
-
-                                            <TextBlock
-                                                Text="{x:Bind Playback.OutputModeText, Mode=OneWay}"
-                                                FontWeight="SemiBold"
-                                                Foreground="{StaticResource AccentRedBrush}"
-                                                HorizontalAlignment="Center" />
-                                            <TextBlock
-                                                Text="{x:Bind Playback.OutputDetailText, Mode=OneWay}"
-                                                TextWrapping="Wrap"
-                                                TextAlignment="Center"
-                                                HorizontalAlignment="Center" />
-                                            <TextBlock
-                                                Text="{x:Bind Playback.DeviceText, Mode=OneWay}"
-                                                Foreground="{StaticResource SecondaryTextBrush}"
-                                                HorizontalAlignment="Center" />
-
-                                            <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,8" />
-
-                                            <!-- Pilihan output. Daftarnya diisi ulang setiap kali popup dibuka (QualityFlyout_Opening). -->
-                                            <TextBlock Text="Output" FontWeight="SemiBold" />
-                                            <ComboBox
-                                                x:Name="OutputDeviceCombo"
-                                                ItemsSource="{x:Bind Playback.OutputDevices}"
-                                                HorizontalAlignment="Stretch"
-                                                SelectionChanged="OutputDeviceCombo_SelectionChanged">
-                                                <ComboBox.ItemTemplate>
-                                                    <DataTemplate x:DataType="vm:OutputDeviceItem">
-                                                        <TextBlock Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" />
-                                                    </DataTemplate>
-                                                </ComboBox.ItemTemplate>
-                                            </ComboBox>
-                                            <ToggleSwitch
-                                                Header="Exclusive mode"
-                                                IsOn="{x:Bind Playback.UseExclusiveMode, Mode=TwoWay}"
-                                                Margin="0,4,0,0" />
-                                            <TextBlock
-                                                Text="{x:Bind Playback.OutputModeDescription, Mode=OneWay}"
-                                                FontSize="12"
-                                                TextWrapping="Wrap"
-                                                Foreground="{StaticResource SecondaryTextBrush}" />
-                                        </StackPanel>
-                                    </Flyout>
-                                </Button.Flyout>
-                            </Button>
+                            <controls:QualityBadge HorizontalAlignment="Left" VerticalAlignment="Center" />
 
                             <controls:MarqueeText
                                 Grid.Column="1"
@@ -317,57 +272,7 @@
                         Orientation="Horizontal"
                         Spacing="4"
                         VerticalAlignment="Center">
-                        <Button
-                            x:Name="VolumeButton"
-                            Padding="8"
-                            MinWidth="40"
-                            MinHeight="40"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            ToolTipService.ToolTip="Volume (scroll to adjust)"
-                            PointerWheelChanged="VolumeButton_PointerWheelChanged">
-                            <FontIcon Glyph="{x:Bind Playback.VolumeGlyph, Mode=OneWay}" FontSize="16" />
-                            <Button.Flyout>
-                                <Flyout Placement="Bottom">
-                                    <StackPanel Width="300" Spacing="8">
-                                        <Grid ColumnSpacing="8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="32" />
-                                            </Grid.ColumnDefinitions>
-                                            <ToggleButton
-                                                x:Name="MuteToggle"
-                                                Padding="6"
-                                                Background="Transparent"
-                                                BorderThickness="0"
-                                                IsChecked="{x:Bind Playback.IsMuted, Mode=OneWay}"
-                                                Click="MuteToggle_Click"
-                                                ToolTipService.ToolTip="Mute">
-                                                <FontIcon Glyph="&#xE74F;" FontSize="14" />
-                                            </ToggleButton>
-                                            <Slider
-                                                Grid.Column="1"
-                                                Minimum="0"
-                                                Maximum="100"
-                                                StepFrequency="1"
-                                                Value="{x:Bind Playback.Volume, Mode=TwoWay}"
-                                                VerticalAlignment="Center" />
-                                            <TextBlock
-                                                Grid.Column="2"
-                                                Text="{x:Bind helpers:Formatters.Percent(Playback.Volume), Mode=OneWay}"
-                                                VerticalAlignment="Center"
-                                                HorizontalAlignment="Right" />
-                                        </Grid>
-                                        <TextBlock
-                                            Text="{x:Bind Playback.VolumeDescription, Mode=OneWay}"
-                                            FontSize="12"
-                                            TextWrapping="Wrap"
-                                            Foreground="{StaticResource SecondaryTextBrush}" />
-                                    </StackPanel>
-                                </Flyout>
-                            </Button.Flyout>
-                        </Button>
+                        <controls:VolumeButton />
                         <ToggleButton
                             x:Name="QueueToggle"
                             Padding="8"
