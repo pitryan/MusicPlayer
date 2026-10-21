@@ -48,8 +48,9 @@ public sealed class PcmOutputProvider : IWaveProvider
     /// Dalam exclusive mode, perangkat memutar ulang isi buffer lama kalau kita berhenti
     /// mengisinya, sehingga terdengar potongan suara yang berulang. Karena itu saat pause
     /// kita tetap mengirim data, tapi berupa hening.
-    /// Catatan: selama pause, stream tetap aktif (Windows tidak akan sleep). Di aplikasi
-    /// sungguhan nanti, kita bisa menghentikan stream kalau pause-nya terlalu lama.
+    /// Hening ini hanya sebentar: begitu sisa audio di buffer perangkat selesai diputar,
+    /// PlaybackService melepas perangkatnya (AudioEngine.ReleaseDevice), supaya Windows bisa
+    /// sleep dan aplikasi lain bisa memakai DAC.
     /// </summary>
     public bool IsPaused
     {

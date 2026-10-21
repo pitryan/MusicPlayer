@@ -268,11 +268,23 @@ public sealed partial class MainWindow : Window
         menu.ShowAt(LcdBorder, e.GetPosition(LcdBorder));
     }
 
-    private void AudioSettings_Click(object sender, RoutedEventArgs e)
+    // True selama daftar output di popup kualitas sedang diisi dari kode, bukan dipilih pengguna
+    private bool _fillingOutputList;
+
+    private void QualityFlyout_Opening(object sender, object e)
     {
-        QualityFlyout.Hide();
-        NavView.SelectedItem = NavView.SettingsItem;
-        NavigateToSection("settings");
+        // Diisi ulang setiap kali popup dibuka, supaya DAC yang baru dicolok langsung muncul di daftar
+        _fillingOutputList = true;
+        OutputDeviceCombo.SelectedItem = Playback.RefreshOutputDevices();
+        _fillingOutputList = false;
+    }
+
+    private void OutputDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_fillingOutputList || OutputDeviceCombo.SelectedItem is not OutputDeviceItem item)
+            return;
+
+        Playback.SelectOutputDevice(item.Id, item.Name);
     }
 
     // ── Navigasi ─────────────────────────────────────────────

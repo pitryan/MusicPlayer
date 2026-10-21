@@ -60,7 +60,9 @@ public static class ExclusiveFormatNegotiator
 
     public static string DescribeError(COMException ex) => ex.HResult switch
     {
-        AudioClientErrorCode.DeviceInUse => "Another app is using the device in exclusive mode.",
+        // DeviceInUse juga muncul kalau aplikasi lain sedang memakai perangkat di shared mode dan opsi
+        // "Give exclusive mode applications priority" di Windows dimatikan, jadi pesannya tidak menyebut mode
+        AudioClientErrorCode.DeviceInUse => "Another app is using the device.",
         AudioClientErrorCode.ExclusiveModeNotAllowed => "Exclusive mode is turned off in the Windows sound settings for this device.",
         _ => $"WASAPI error 0x{ex.HResult:X8}: {ex.Message}",
     };

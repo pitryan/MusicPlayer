@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -12,6 +13,7 @@ using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.ViewModels;
 using NAudio.CoreAudioApi;
+using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
 
 namespace MusicPlayer.Services;
@@ -42,6 +44,28 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     // saat sedang digeser.
     private static readonly Guid OwnVolumeChange = Guid.NewGuid();
     private readonly DispatcherQueueTimer _timer;
+
+    // Berapa lama DAC tetap dipegang setelah pause, di luar waktu menunggu sisa audio di buffer selesai
+    // diputar (AudioEngine.DrainTime). Nol berarti DAC dilepas begitu pause benar-benar hening, supaya
+    // aplikasi lain langsung bisa bersuara dan Windows bisa sleep. Naikkan (misalnya ke 5 detik) kalau DAC
+    // berbunyi klik setiap lagu dilanjutkan: pause sebentar lalu lanjut tidak perlu membuka DAC lagi.
+    private static readonly TimeSpan KeepDeviceAfterPause = TimeSpan.Zero;
+    private readonly DispatcherQueueTimer _releaseTimer;
+
+    // HRESULT dari Windows kalau tidak ada perangkat output sama sekali (ERROR_NOT_FOUND)
+    private const int NoDeviceFound = unchecked((int)0x80070490);
+
+    // Output pilihan pengguna, diatur dari popup kualitas. _outputDeviceId null = ikut perangkat default Windows.
+    private string? _outputDeviceId;
+    private string _outputDeviceName = "";
+    private bool _useExclusiveMode = true;
+
+    // Output diganti saat lagu diputar: setelah perangkat lama dilepas, lagu langsung dilanjutkan
+    private bool _outputChangePending;
+
+    // Lagu berhenti karena perangkat (dicabut, atau perangkat pilihan tidak tersambung), bukan karena pause.
+    // Kalau pengguna lalu memilih output lain, lagu langsung dilanjutkan di sana.
+    private bool _interruptedByDevice;
 
     // Untuk riwayat: berapa lama lagu sekarang benar-benar didengarkan (pause dan seek tidak dihitung)
     private double _listenedSeconds;
@@ -84,6 +108,12 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _timer.Interval = TimeSpan.FromMilliseconds(250);
         _timer.Tick += (_, _) => OnTimerTick();
         _timer.Start();
+
+        // Melepas DAC setelah pause (lihat KeepDeviceAfterPause). Sekali jalan, dihitung ulang setiap pause.
+        _releaseTimer = dispatcherQueue.CreateTimer();
+        _releaseTimer.Interval = AudioEngine.DrainTime + KeepDeviceAfterPause;
+        _releaseTimer.IsRepeating = false;
+        _releaseTimer.Tick += (_, _) => ReleaseDeviceIfPaused();
     }
 
     /// <summary>Dipicu setiap kali sebuah lagu tercatat di riwayat putar.</summary>
@@ -280,6 +310,105 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _ => RepeatMode.Off,
     };
 
+    /// <summary>Pilihan di daftar output popup kualitas. Diisi ulang oleh <see cref="RefreshOutputDevices"/>.</summary>
+    public ObservableCollection<OutputDeviceItem> OutputDevices { get; } = [];
+
+    /// <summary>ID perangkat output pilihan, atau null untuk perangkat default Windows.</summary>
+    public string? OutputDeviceId => _outputDeviceId;
+
+    /// <summary>Nama perangkat pilihan, untuk pesan saat perangkat itu tidak tersambung.</summary>
+    public string OutputDeviceName => _outputDeviceName;
+
+    /// <summary>
+    /// Exclusive mode (bit-perfect) atau shared mode (lewat mixer Windows, bersama aplikasi lain).
+    /// Lagu yang sedang diputar langsung pindah ke mode yang baru.
+    /// </summary>
+    public bool UseExclusiveMode
+    {
+        get => _useExclusiveMode;
+        set
+        {
+            if (!SetProperty(ref _useExclusiveMode, value))
+                return;
+
+            OnPropertyChanged(nameof(OutputModeDescription));
+            ApplyOutputChange();
+        }
+    }
+
+    /// <summary>Penjelasan di bawah tombol exclusive mode.</summary>
+    public string OutputModeDescription => UseExclusiveMode
+        ? "Bit-perfect. While a song plays, other apps can't play sound on this device."
+        : "Plays through the Windows mixer, together with other apps. Not bit-perfect.";
+
+    /// <summary>
+    /// Memilih perangkat output (null = perangkat default Windows). Lagu yang sedang diputar langsung pindah
+    /// ke perangkat itu di posisi yang sama; lagu yang sedang di-pause memakai perangkat itu saat Play.
+    /// </summary>
+    public void SelectOutputDevice(string? deviceId, string deviceName)
+    {
+        if (deviceId == _outputDeviceId)
+            return;
+
+        _outputDeviceId = deviceId;
+        _outputDeviceName = deviceId is null ? "" : deviceName;
+        OnPropertyChanged(nameof(OutputDeviceId));
+        ApplyOutputChange();
+    }
+
+    /// <summary>
+    /// Mengisi ulang daftar output, lalu mengembalikan pilihan yang sedang aktif. Dipanggil setiap kali popup
+    /// kualitas dibuka, supaya DAC yang baru dicolok langsung muncul. Perangkat pilihan yang sedang tidak
+    /// tersambung tetap tampil dengan keterangan, supaya jelas apa yang sedang dipilih.
+    /// </summary>
+    public OutputDeviceItem RefreshOutputDevices()
+    {
+        string defaultName = "";
+        var devices = new List<OutputDeviceItem>();
+
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            try
+            {
+                using var defaultDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                defaultName = defaultDevice.FriendlyName;
+            }
+            catch (COMException)
+            {
+                // Tidak ada perangkat default, misalnya semua perangkat sedang dicabut
+            }
+
+            using var active = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+            foreach (var device in active)
+            {
+                using (device)
+                    devices.Add(new OutputDeviceItem(device.ID, device.FriendlyName, device.FriendlyName));
+            }
+        }
+        catch (COMException)
+        {
+            // Layanan audio Windows bermasalah: daftar hanya berisi pilihan default
+        }
+
+        OutputDevices.Clear();
+        var defaultItem = new OutputDeviceItem(null, "", defaultName.Length > 0 ? $"Windows default ({defaultName})" : "Windows default");
+        OutputDevices.Add(defaultItem);
+        foreach (var item in devices.OrderBy(d => d.Label, StringComparer.CurrentCultureIgnoreCase))
+            OutputDevices.Add(item);
+
+        if (_outputDeviceId is null)
+            return defaultItem;
+
+        var selected = OutputDevices.FirstOrDefault(d => d.Id == _outputDeviceId);
+        if (selected is null)
+        {
+            selected = new OutputDeviceItem(_outputDeviceId, _outputDeviceName, $"{_outputDeviceName} (not connected)");
+            OutputDevices.Add(selected);
+        }
+        return selected;
+    }
+
     /// <summary>
     /// Lagu-lagu yang akan diputar setelah lagu sekarang (panel Playing Next). Urutannya bisa diubah
     /// dengan digeser langsung di panel itu; Next selalu mengambil lagu paling atas.
@@ -386,9 +515,181 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (CurrentTrack is null)
             return;
 
-        _engine.TogglePause();
+        if (_engine.State == PlaybackState.Playing)
+            Pause();
+        else
+            Resume();
+
         RefreshPosition();
     }
+
+    private void Pause()
+    {
+        _interruptedByDevice = false;
+        _engine.Pause();
+
+        // Hitungan dimulai ulang setiap pause, supaya pause-lanjut-pause yang cepat tidak melepas DAC
+        // sebelum sisa audio di buffer selesai diputar
+        _releaseTimer.Stop();
+        _releaseTimer.Start();
+    }
+
+    private void Resume()
+    {
+        _releaseTimer.Stop();
+
+        // Output sedang diganti dan perangkat lama belum sempat dilepas: lepas sekarang, supaya Play memakai
+        // pengaturan yang baru
+        if (_outputChangePending)
+        {
+            _outputChangePending = false;
+            _engine.ReleaseDevice();
+        }
+
+        // DAC sudah dilepas selama pause: buka lagi dulu. Kalau gagal, lagu tetap di-pause di posisinya dan
+        // pesannya tampil di kanan atas. Pengguna ingin memutar lagu, jadi begitu output lain dipilih, lagu lanjut.
+        if (_engine.IsDeviceReleased && !ReopenDevice())
+        {
+            _interruptedByDevice = true;
+            return;
+        }
+
+        _engine.Play();
+        if (_engine.State == PlaybackState.Playing)
+        {
+            _interruptedByDevice = false;
+            StatusText = "";
+        }
+    }
+
+    /// <summary>Dipanggil timer setelah pause. Kalau lagu sudah dilanjutkan atau diganti, tidak ada yang dilepas.</summary>
+    private void ReleaseDeviceIfPaused()
+    {
+        _releaseTimer.Stop();
+        if (_engine.State == PlaybackState.Paused && !_engine.IsDeviceReleased)
+            _engine.ReleaseDevice();
+
+        // Output diganti saat lagu diputar: sisa audio sudah habis diputar dan perangkat lama sudah dilepas,
+        // jadi lanjutkan dengan pengaturan yang baru
+        if (_outputChangePending)
+        {
+            Resume();
+            RefreshPosition();
+        }
+    }
+
+    /// <summary>
+    /// Perangkat atau mode output diganti. Lagu yang sedang diputar langsung pindah: di-pause, ditunggu sampai
+    /// sisa audio di buffer habis, perangkat lama dilepas, lalu dibuka lagi dengan pengaturan baru di posisi
+    /// yang sama. Lagu yang sedang di-pause hanya dilepas dari perangkat lama; pengaturan baru dipakai saat Play.
+    /// </summary>
+    private void ApplyOutputChange()
+    {
+        if (CurrentTrack is null)
+            return; // belum ada lagu: pengaturan baru dipakai saat lagu berikutnya diputar
+
+        if (_engine.IsDeviceReleased)
+        {
+            // Lagu berhenti karena perangkatnya bermasalah, lalu pengguna memilih output lain: lanjutkan di sana
+            if (_interruptedByDevice)
+            {
+                Resume();
+                RefreshPosition();
+            }
+            return;
+        }
+
+        if (_engine.State == PlaybackState.Playing)
+        {
+            Pause();
+            _outputChangePending = true;
+        }
+        else
+        {
+            _releaseTimer.Stop();
+            _engine.ReleaseDevice();
+        }
+
+        RefreshPosition();
+    }
+
+    /// <summary>
+    /// Perangkat untuk membuka lagu: pilihan pengguna, atau perangkat default Windows. Perangkat pilihan yang
+    /// sedang tidak tersambung sengaja TIDAK diganti diam-diam dengan perangkat lain, supaya suara tidak
+    /// tiba-tiba keluar dari tempat yang tidak diharapkan (misalnya speaker laptop).
+    /// </summary>
+    private MMDevice GetOutputDevice()
+    {
+        using var enumerator = new MMDeviceEnumerator();
+        if (_outputDeviceId is null)
+            return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+        MMDevice device;
+        try
+        {
+            device = enumerator.GetDevice(_outputDeviceId);
+        }
+        catch (COMException)
+        {
+            throw new OutputDeviceUnavailableException(_outputDeviceName);
+        }
+
+        if (device.State != DeviceState.Active)
+        {
+            device.Dispose();
+            throw new OutputDeviceUnavailableException(_outputDeviceName);
+        }
+        return device;
+    }
+
+    /// <summary>Perangkat output pilihan pengguna sedang tidak tersambung.</summary>
+    private sealed class OutputDeviceUnavailableException : Exception
+    {
+        public OutputDeviceUnavailableException(string deviceName) : base($"{deviceName} isn't connected.")
+        {
+            DeviceName = deviceName;
+        }
+
+        public string DeviceName { get; }
+    }
+
+    /// <summary>
+    /// Membuka DAC lagi untuk lagu yang sedang di-pause, di posisi terakhir. Selalu memakai perangkat default
+    /// saat ini, sama seperti saat memutar lagu baru. Jadi kalau DAC dicabut selama pause, lagu lanjut di
+    /// perangkat yang dipilih Windows, tapi hanya setelah pengguna menekan Play.
+    /// </summary>
+    private bool ReopenDevice()
+    {
+        MMDevice? device = null;
+
+        try
+        {
+            device = GetOutputDevice();
+            _engine.ReopenDevice(device, UseExclusiveMode);
+            DetachDeviceVolume();
+            _device?.Dispose();
+            _device = device;
+            AttachVolume(device); // sebelum Play, supaya tidak ada sesaat suara dengan volume yang salah
+            UpdateQualityInfo(CurrentTrack!, device);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!ReferenceEquals(device, _device))
+                device?.Dispose();
+            StatusText = $"Couldn't resume: {DescribeDeviceError(ex)}";
+            return false;
+        }
+    }
+
+    private static string DescribeDeviceError(Exception ex) => ex switch
+    {
+        OutputDeviceUnavailableException missing => $"{missing.DeviceName} isn't connected.",
+        { HResult: AudioClientErrorCode.DeviceInUse } => "the audio device is in use by another app.",
+        { HResult: AudioClientErrorCode.DeviceInvalidated } => "the audio device was disconnected.",
+        { HResult: NoDeviceFound } => "no audio output device was found.",
+        _ => ex.Message,
+    };
 
     /// <summary>Tombol Next. Dalam mode Repeat One pun, tombol ini tetap pindah ke lagu berikutnya.</summary>
     public void Next() => Advance();
@@ -482,6 +783,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     public void Dispose()
     {
         _timer.Stop();
+        _releaseTimer.Stop();
         DetachDeviceVolume();
         _engine.Dispose();
         _device?.Dispose();
@@ -555,29 +857,30 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
     private void Play(Track track)
     {
+        _releaseTimer.Stop(); // lagu baru selalu langsung diputar, jadi DAC tidak perlu dilepas
+        _outputChangePending = false;
+        _interruptedByDevice = false;
         MMDevice? device = null;
 
         try
         {
-            // Selalu pakai perangkat default saat ini, supaya ganti headset/DAC langsung terpakai
-            using (var enumerator = new MMDeviceEnumerator())
-                device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            // Perangkat pilihan pengguna, atau perangkat default Windows saat ini
+            device = GetOutputDevice();
 
-            _engine.Open(track.FilePath, device); // player lama ditutup lebih dulu di sini
+            _engine.Open(track.FilePath, device, UseExclusiveMode); // player lama ditutup lebih dulu di sini
             DetachDeviceVolume();
             _device?.Dispose();
             _device = device;
             AttachVolume(device); // sebelum Play, supaya tidak ada sesaat suara dengan volume yang salah
             _engine.Play();
 
-            CurrentTrack = track;
-            _listenedSeconds = 0;
-            _playRecorded = false;
-            TitleText = track.DisplayTitle;
-            SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
+            ShowTrack(track);
             StatusText = "";
             UpdateQualityInfo(track, device);
-            _ = LoadCoverAsync(track);
+        }
+        catch (OutputDeviceUnavailableException ex)
+        {
+            WaitForDevice(track, ex.DeviceName);
         }
         catch (Exception ex)
         {
@@ -589,8 +892,47 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         RefreshPosition();
     }
 
+    private void ShowTrack(Track track)
+    {
+        CurrentTrack = track;
+        _listenedSeconds = 0;
+        _playRecorded = false;
+        TitleText = track.DisplayTitle;
+        SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
+        _ = LoadCoverAsync(track);
+    }
+
+    /// <summary>
+    /// Perangkat pilihan sedang tidak tersambung. Lagunya tetap dimuat dan di-pause di awal, supaya judul dan badge
+    /// kualitas tampil dan output lain bisa dipilih dari popup-nya. Begitu output lain dipilih (atau Play ditekan
+    /// setelah perangkatnya dicolok), lagu langsung diputar.
+    /// </summary>
+    private void WaitForDevice(Track track, string deviceName)
+    {
+        try
+        {
+            _engine.OpenWithoutDevice(track.FilePath);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Couldn't play \"{track.DisplayTitle}\": {ex.Message}";
+            return;
+        }
+
+        DetachDeviceVolume();
+        _device?.Dispose();
+        _device = null;
+        ShowTrack(track);
+        _interruptedByDevice = true;
+        StatusText = $"{deviceName} isn't connected. Plug it in, or choose another output from the quality badge.";
+        UpdateQualityInfo(track, device: null);
+    }
+
     private void StopAll()
     {
+        _releaseTimer.Stop();
+        _outputChangePending = false;
+        _interruptedByDevice = false;
         _engine.Close();
         DetachDeviceVolume();
         _previous.Clear();
@@ -603,15 +945,21 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         RefreshPosition();
     }
 
-    private void UpdateQualityInfo(Track track, MMDevice device)
+    /// <summary>Isi popup kualitas. <paramref name="device"/> null berarti perangkat pilihan sedang tidak tersambung.</summary>
+    private void UpdateQualityInfo(Track track, MMDevice? device)
     {
         var quality = AudioQuality.Describe(track);
         QualityBadgeText = quality.Badge;
         QualityShortText = quality.ShortBadge;
         QualityDetailText = quality.Detail;
-        DeviceText = device.FriendlyName;
+        DeviceText = device?.FriendlyName ?? "";
 
-        if (_engine.ExclusiveFormat is { } format)
+        if (device is null)
+        {
+            OutputModeText = "Not connected";
+            OutputDetailText = $"{_outputDeviceName} isn't connected. Plug it in, or choose another output below.";
+        }
+        else if (_engine.ExclusiveFormat is { } format)
         {
             string rate = AudioQuality.FormatSampleRate(format.SampleRate);
             OutputModeText = "Exclusive mode · bit-perfect";
@@ -623,7 +971,9 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         {
             OutputModeText = "Shared mode";
             string mixed = $"Windows mixes the audio at {DescribeMixRate(device)}.";
-            OutputDetailText = _engine.FallbackReason is { } reason ? $"{reason} {mixed}" : mixed;
+            OutputDetailText = !UseExclusiveMode ? $"Exclusive mode is turned off. {mixed}"
+                : _engine.FallbackReason is { } reason ? $"{reason} {mixed}"
+                : mixed;
         }
 
         QualityVisibility = Visibility.Visible;
@@ -648,7 +998,19 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         // WasapiPlayer mengirim event ini lewat UI thread, jadi aman mengubah tampilan di sini
         if (e.Exception is not null)
         {
-            StatusText = $"Playback stopped: {e.Exception.Message}";
+            // Perangkat bermasalah di tengah lagu, paling sering karena DAC dicabut. Player yang rusak dibuang
+            // dan lagu berhenti di posisinya (antrean tidak maju). Lagu sengaja tidak dilanjutkan otomatis di
+            // perangkat lain, misalnya speaker laptop, supaya suara tidak tiba-tiba keluar dari tempat yang
+            // tidak diharapkan. Tombol Play melanjutkannya di perangkat default saat itu.
+            _releaseTimer.Stop();
+            _outputChangePending = false;
+            _engine.ReleaseDevice();
+            _interruptedByDevice = true;
+            StatusText = e.Exception.HResult != AudioClientErrorCode.DeviceInvalidated
+                ? $"Playback stopped: {e.Exception.Message}"
+                : _outputDeviceId is null
+                    ? "Audio device disconnected. Press Play to resume."
+                    : $"{_outputDeviceName} disconnected. Plug it back in, or choose another output from the quality badge.";
             RefreshPosition();
             return;
         }

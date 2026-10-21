@@ -25,6 +25,12 @@ public sealed class AudioEngine : IDisposable
 {
     private const int LatencyMs = 100;
 
+    /// <summary>
+    /// Waktu yang cukup bagi perangkat untuk memutar sisa audio di buffernya (kira-kira dua kali latency).
+    /// Ditunggu sebelum player dihentikan di akhir lagu, dan sebelum perangkat dilepas saat pause.
+    /// </summary>
+    public static readonly TimeSpan DrainTime = TimeSpan.FromMilliseconds(LatencyMs * 2 + 50);
+
     private readonly object _playerLock = new();
     private MediaFoundationReader? _reader;
     private PcmOutputProvider? _output;
@@ -41,8 +47,14 @@ public sealed class AudioEngine : IDisposable
     /// <summary>Format yang dikirim ke perangkat dalam exclusive mode; null kalau memakai shared mode.</summary>
     public PcmFormat? ExclusiveFormat { get; private set; }
 
-    /// <summary>Cara volume diatur untuk lagu ini, ditentukan saat file dibuka.</summary>
+    /// <summary>Cara volume diatur untuk lagu ini, ditentukan saat perangkat dibuka.</summary>
     public VolumeKind VolumeKind { get; private set; }
+
+    /// <summary>
+    /// True kalau lagu masih terbuka (file dan posisinya tersimpan), tapi perangkat audio sudah dilepas.
+    /// Lihat <see cref="ReleaseDevice"/>.
+    /// </summary>
+    public bool IsDeviceReleased => _output is not null && _player is null;
 
     public TimeSpan Position => _output?.CurrentTime ?? TimeSpan.Zero;
     public TimeSpan Duration => _output?.TotalTime ?? TimeSpan.Zero;
@@ -51,7 +63,8 @@ public sealed class AudioEngine : IDisposable
     {
         get
         {
-            if (_player is null || _output is null) return PlaybackState.Stopped;
+            if (_output is null) return PlaybackState.Stopped;
+            if (_player is null) return PlaybackState.Paused; // perangkat dilepas: lagu tetap di posisinya
             if (_player.PlaybackState == PlaybackState.Playing && _output.IsPaused) return PlaybackState.Paused;
             return _player.PlaybackState;
         }
@@ -60,8 +73,84 @@ public sealed class AudioEngine : IDisposable
     public void Open(string path, MMDevice device, bool preferExclusive = true)
     {
         Close();
-        _device = device;
         _reader = new MediaFoundationReader(path);
+
+        try
+        {
+            OpenDevice(device, preferExclusive);
+        }
+        catch
+        {
+            // Jangan tinggalkan file terbuka tanpa perangkat. Pesan error-nya ditampilkan pemanggil.
+            Close();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Membuka lagu tanpa perangkat audio, dalam keadaan sama seperti setelah <see cref="ReleaseDevice"/>: posisi
+    /// dan durasi sudah terbaca, dan <see cref="ReopenDevice"/> membuka perangkatnya nanti. Dipakai kalau perangkat
+    /// pilihan pengguna sedang tidak tersambung, supaya lagunya tetap tampil dan bisa diputar di perangkat lain.
+    /// </summary>
+    public void OpenWithoutDevice(string path)
+    {
+        Close();
+        _reader = new MediaFoundationReader(path);
+
+        // Provider sementara, hanya untuk membaca posisi dan durasi. ReopenDevice membuat provider baru dengan
+        // format yang diterima perangkatnya.
+        _output = new PcmOutputProvider(_reader, _reader.WaveFormat) { IsPaused = true };
+    }
+
+    /// <summary>
+    /// Melepas perangkat audio tanpa menutup lagu: file dan posisinya tetap disimpan. Selama itu aplikasi
+    /// lain bisa memakai DAC dan Windows bisa sleep. <see cref="ReopenDevice"/> membukanya lagi.
+    /// </summary>
+    /// <remarks>
+    /// Saat pause, panggil ini setelah <see cref="DrainTime"/>. Sisa audio di buffer perangkat sempat
+    /// terdengar lebih dulu, jadi posisi yang tersimpan sama dengan bagian terakhir yang benar-benar terdengar,
+    /// dan lagu nanti lanjut tanpa ada bagian yang terlompati. Dipanggil juga setelah perangkat error
+    /// (misalnya DAC dicabut), supaya player yang sudah mati dibuang.
+    /// </remarks>
+    public void ReleaseDevice()
+    {
+        lock (_playerLock)
+        {
+            DisposePlayer();
+            if (_output is not null)
+                _output.IsPaused = true;
+        }
+    }
+
+    /// <summary>
+    /// Membuka perangkat lagi setelah <see cref="ReleaseDevice"/>, untuk lagu yang sama di posisi yang sama.
+    /// Format dinegosiasi ulang karena perangkatnya bisa berbeda (misalnya DAC dicabut, lalu Windows pindah
+    /// ke speaker). Kalau gagal, engine tetap dalam keadaan dilepas di posisi yang sama, jadi bisa dicoba lagi.
+    /// </summary>
+    public void ReopenDevice(MMDevice device, bool preferExclusive = true)
+    {
+        if (_reader is null || _output is null)
+            throw new InvalidOperationException("No song is open.");
+
+        ReleaseDevice();
+        var previousDevice = _device;
+
+        try
+        {
+            OpenDevice(device, preferExclusive);
+        }
+        catch
+        {
+            // Perangkat yang gagal dibuka akan di-dispose pemanggil, jadi tidak boleh disimpan. Perangkat lama
+            // tetap dipakai untuk mengatur volume selama lagu masih di-pause.
+            _device = previousDevice;
+            throw;
+        }
+    }
+
+    private void OpenDevice(MMDevice device, bool preferExclusive)
+    {
+        _device = device;
         FallbackReason = null;
         ExclusiveFormat = null;
 
@@ -72,7 +161,7 @@ public sealed class AudioEngine : IDisposable
         }
 
         // Shared mode: mixer Windows yang mengurus konversi format
-        CreatePlayer(device, exclusive: false, _reader.WaveFormat);
+        CreatePlayer(device, exclusive: false, _reader!.WaveFormat);
         IsExclusive = false;
         OutputDescription = "Windows mixer (shared mode)";
         VolumeKind = VolumeKind.Session;
@@ -139,12 +228,15 @@ public sealed class AudioEngine : IDisposable
         }
         catch (Exception ex) when (ex is COMException or NotSupportedException)
         {
-            DisposePlayer();
             FallbackReason = ex is COMException com ? ExclusiveFormatNegotiator.DescribeError(com) : ex.Message;
             return false;
         }
     }
 
+    /// <summary>
+    /// Membuka perangkat dengan format tertentu. Kalau gagal, tidak ada yang berubah: player yang setengah
+    /// jadi langsung dibuang, dan provider lama (beserta posisinya) tetap dipakai.
+    /// </summary>
     private void CreatePlayer(MMDevice device, bool exclusive, WaveFormat outputFormat)
     {
         var builder = new WasapiPlayerBuilder()
@@ -155,15 +247,34 @@ public sealed class AudioEngine : IDisposable
 
         builder = exclusive ? builder.WithExclusiveMode() : builder.WithSharedMode();
 
-        _output = new PcmOutputProvider(_reader!, outputFormat);
-        _output.EndOfStream += OnEndOfStream;
-        _player = builder.Build();
-        _player.PlaybackStopped += OnPlaybackStopped;
-        _player.Init(_output);
+        // Provider baru membaca dari reader yang sama, jadi posisi lagu tidak berubah. Provider lama baru
+        // diganti setelah perangkat berhasil dibuka, supaya posisinya tetap terbaca kalau pembukaan gagal.
+        var output = new PcmOutputProvider(_reader!, outputFormat);
+        var player = builder.Build();
+        try
+        {
+            player.Init(output); // di sinilah error "device in use" atau format ditolak muncul
+        }
+        catch
+        {
+            player.Dispose();
+            throw;
+        }
+
+        output.EndOfStream += OnEndOfStream;
+        player.PlaybackStopped += OnPlaybackStopped;
+        lock (_playerLock)
+        {
+            if (_output is not null)
+                _output.EndOfStream -= OnEndOfStream;
+            _output = output;
+            _player = player;
+        }
     }
 
     public void Play()
     {
+        // Perangkat sudah dilepas (lihat ReleaseDevice): pemanggil harus membukanya lagi dengan ReopenDevice
         if (_player is null || _output is null) return;
         if (_output.HasEnded)
             _output.CurrentTime = TimeSpan.Zero; // lagu sudah habis: putar ulang dari awal
@@ -196,6 +307,8 @@ public sealed class AudioEngine : IDisposable
         lock (_playerLock)
         {
             DisposePlayer();
+            if (_output is not null)
+                _output.EndOfStream -= OnEndOfStream;
             _output = null;
         }
         _reader?.Dispose();
@@ -211,10 +324,10 @@ public sealed class AudioEngine : IDisposable
 
         // Event ini datang dari thread audio. Menghentikan player dari thread itu sendiri
         // akan deadlock, jadi kita jadwalkan di thread lain, setelah sisa audio di buffer
-        // perangkat selesai diputar (kira-kira dua kali latency).
+        // perangkat selesai diputar.
         _ = Task.Run(async () =>
         {
-            await Task.Delay(LatencyMs * 2 + 50);
+            await Task.Delay(DrainTime);
             lock (_playerLock)
             {
                 // Lewati kalau sementara itu file sudah diganti atau pengguna seek mundur
@@ -229,6 +342,9 @@ public sealed class AudioEngine : IDisposable
         lock (_playerLock)
         {
             if (_player is null) return;
+
+            // Lepas handler lebih dulu: Dispose ikut memicu PlaybackStopped, dan event itu tidak boleh
+            // dianggap "lagu selesai" (yang membuat antrean maju ke lagu berikutnya)
             _player.PlaybackStopped -= OnPlaybackStopped;
             _player.Dispose();
             _player = null;

@@ -188,8 +188,8 @@
                                 HorizontalAlignment="Left"
                                 VerticalAlignment="Center">
                                 <Button.Flyout>
-                                    <Flyout x:Name="QualityFlyout" Placement="Bottom">
-                                        <StackPanel Width="280" Spacing="4">
+                                    <Flyout x:Name="QualityFlyout" Placement="Bottom" Opening="QualityFlyout_Opening">
+                                        <StackPanel Width="300" Spacing="4">
                                             <TextBlock
                                                 Text="{x:Bind Playback.QualityBadgeText, Mode=OneWay}"
                                                 FontWeight="SemiBold"
@@ -215,11 +215,30 @@
                                                 Foreground="{StaticResource SecondaryTextBrush}"
                                                 HorizontalAlignment="Center" />
 
-                                            <Button
-                                                Content="Audio settings"
+                                            <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,8" />
+
+                                            <!-- Pilihan output. Daftarnya diisi ulang setiap kali popup dibuka (QualityFlyout_Opening). -->
+                                            <TextBlock Text="Output" FontWeight="SemiBold" />
+                                            <ComboBox
+                                                x:Name="OutputDeviceCombo"
+                                                ItemsSource="{x:Bind Playback.OutputDevices}"
                                                 HorizontalAlignment="Stretch"
-                                                Margin="0,10,0,0"
-                                                Click="AudioSettings_Click" />
+                                                SelectionChanged="OutputDeviceCombo_SelectionChanged">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:OutputDeviceItem">
+                                                        <TextBlock Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <ToggleSwitch
+                                                Header="Exclusive mode"
+                                                IsOn="{x:Bind Playback.UseExclusiveMode, Mode=TwoWay}"
+                                                Margin="0,4,0,0" />
+                                            <TextBlock
+                                                Text="{x:Bind Playback.OutputModeDescription, Mode=OneWay}"
+                                                FontSize="12"
+                                                TextWrapping="Wrap"
+                                                Foreground="{StaticResource SecondaryTextBrush}" />
                                         </StackPanel>
                                     </Flyout>
                                 </Button.Flyout>
@@ -280,12 +299,16 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
+                    <!-- Pesan yang terpotong bisa dibaca utuh lewat tooltip. Rata kanan dan selebar teksnya,
+                         supaya saat tidak ada pesan, tidak ada area kosong yang memunculkan tooltip kosong. -->
                     <TextBlock
                         Text="{x:Bind Playback.StatusText, Mode=OneWay}"
+                        ToolTipService.ToolTip="{x:Bind Playback.StatusText, Mode=OneWay}"
                         FontSize="11"
                         Foreground="{StaticResource AccentRedBrush}"
                         TextTrimming="CharacterEllipsis"
                         TextAlignment="Right"
+                        HorizontalAlignment="Right"
                         VerticalAlignment="Center"
                         Margin="0,0,12,0" />
                     <StackPanel

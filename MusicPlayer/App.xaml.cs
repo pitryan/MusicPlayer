@@ -36,13 +36,20 @@ public partial class App : Application
         MainWindow.Activate();
     }
 
-    /// <summary>Volume, mute, shuffle, dan repeat diingat dari sesi sebelumnya, lalu disimpan setiap kali berubah.</summary>
+    /// <summary>
+    /// Volume, mute, shuffle, repeat, dan pilihan output diingat dari sesi sebelumnya, lalu disimpan setiap kali berubah.
+    /// </summary>
     private static void RestorePlaybackSettings()
     {
         Playback.Volume = AppSettings.Get("Volume", 100.0);
         Playback.IsMuted = AppSettings.Get("Muted", false);
         Playback.IsShuffle = AppSettings.Get("Shuffle", false);
         Playback.RepeatMode = (RepeatMode)AppSettings.Get("Repeat", (int)RepeatMode.Off);
+        Playback.UseExclusiveMode = AppSettings.Get("ExclusiveMode", true);
+
+        // ID kosong = "Windows default". Namanya ikut disimpan untuk pesan saat perangkat itu tidak tersambung.
+        string outputId = AppSettings.Get("OutputDeviceId", "");
+        Playback.SelectOutputDevice(outputId.Length > 0 ? outputId : null, AppSettings.Get("OutputDeviceName", ""));
 
         Playback.PropertyChanged += (_, e) =>
         {
@@ -52,6 +59,11 @@ public partial class App : Application
                 case nameof(PlaybackService.IsMuted): AppSettings.Set("Muted", Playback.IsMuted); break;
                 case nameof(PlaybackService.IsShuffle): AppSettings.Set("Shuffle", Playback.IsShuffle); break;
                 case nameof(PlaybackService.RepeatMode): AppSettings.Set("Repeat", (int)Playback.RepeatMode); break;
+                case nameof(PlaybackService.UseExclusiveMode): AppSettings.Set("ExclusiveMode", Playback.UseExclusiveMode); break;
+                case nameof(PlaybackService.OutputDeviceId):
+                    AppSettings.Set("OutputDeviceId", Playback.OutputDeviceId ?? "");
+                    AppSettings.Set("OutputDeviceName", Playback.OutputDeviceName);
+                    break;
             }
         };
     }
