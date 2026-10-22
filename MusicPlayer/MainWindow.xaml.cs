@@ -260,6 +260,7 @@ public sealed partial class MainWindow : Window
     {
         // Jendela ini akan disembunyikan, jadi efek hover-nya dimatikan dulu supaya tidak tertinggal saat muncul lagi
         LcdCoverOverlay.Visibility = Visibility.Collapsed;
+        SetLcdTimesVisible(false);
         ShowMiniPlayer();
     }
 
@@ -312,7 +313,14 @@ public sealed partial class MainWindow : Window
     /// <summary>Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya.</summary>
     public void ShowPage(Type page, object? parameter) => ContentFrame.Navigate(page, parameter);
 
-    private void LcdBorder_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void LcdBorder_RightTapped(object sender, RightTappedRoutedEventArgs e) =>
+        ShowLcdMenu(LcdBorder, e.GetPosition(LcdBorder));
+
+    private void LcdMore_Click(object sender, RoutedEventArgs e) =>
+        ShowLcdMenu(LcdMoreButton, new Point(0, LcdMoreButton.ActualHeight));
+
+    /// <summary>Menu LCD (klik kanan atau tombol •••): Go to Album, Go to Artist, Show in File Explorer.</summary>
+    private void ShowLcdMenu(UIElement target, Point position)
     {
         if (Playback.CurrentTrack is not { } track)
             return;
@@ -320,7 +328,19 @@ public sealed partial class MainWindow : Window
         var menu = new MenuFlyout();
         TrackMenu.AddGoToItems(menu, track);
         menu.Items.RemoveAt(0); // pemisah di awal tidak perlu karena tidak ada item lain di atasnya
-        menu.ShowAt(LcdBorder, e.GetPosition(LcdBorder));
+        menu.ShowAt(target, position);
+    }
+
+    // Waktu berjalan dan sisa waktu hanya tampil saat kursor di atas LCD, supaya LCD tetap lega seperti Apple Music
+    private void LcdBorder_PointerEntered(object sender, PointerRoutedEventArgs e) => SetLcdTimesVisible(true);
+
+    private void LcdBorder_PointerExited(object sender, PointerRoutedEventArgs e) => SetLcdTimesVisible(false);
+
+    private void SetLcdTimesVisible(bool visible)
+    {
+        var visibility = visible && Playback.CurrentTrack is not null ? Visibility.Visible : Visibility.Collapsed;
+        LcdElapsedText.Visibility = visibility;
+        LcdRemainingText.Visibility = visibility;
     }
 
 

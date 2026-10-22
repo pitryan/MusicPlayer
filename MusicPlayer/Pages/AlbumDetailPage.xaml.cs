@@ -10,6 +10,7 @@ using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
+using Windows.Foundation;
 
 namespace MusicPlayer.Pages;
 
@@ -75,8 +76,10 @@ public sealed partial class AlbumDetailPage : Page
         FooterCountText.Text = $"{Formatters.Count(album.TrackCount, "song")}, {Formatters.Count(minutes, "minute")}, "
             + Formatters.FileSize(_tracks.Sum(t => t.FileSize));
         string? copyright = _tracks.Select(t => t.Copyright).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
-        FooterCopyrightText.Text = copyright ?? "";
+        FooterCopyrightText.Text = copyright is null ? "" : Formatters.Copyright(copyright);
         FooterCopyrightText.Visibility = copyright is null ? Visibility.Collapsed : Visibility.Visible;
+
+        ShowMoreBy(album);
 
         // Tandai lagu yang sedang diputar, dan ikuti terus saat lagunya berganti
         App.Playback.PropertyChanged += Playback_PropertyChanged;
@@ -102,6 +105,42 @@ public sealed partial class AlbumDetailPage : Page
         string? playingPath = App.Playback.CurrentTrack?.FilePath;
         foreach (var row in _rows)
             row.IsPlaying = row.Track.FilePath == playingPath;
+    }
+
+    /// <summary>"More by": rilis lain dari artis yang sama, terbaru dulu. Disembunyikan kalau tidak ada.</summary>
+    private void ShowMoreBy(AlbumSummary album)
+    {
+        List<AlbumItem> others = _artist.Length == 0
+            ? new()
+            : App.Database.GetArtistAlbums(_artist)
+                .Where(a => !(a.Title == album.Title && a.DisplayArtist == album.DisplayArtist))
+                .OrderByDescending(a => a.Year ?? 0)
+                .Select(a => new AlbumItem(a))
+                .ToList();
+
+        MoreBySection.Visibility = others.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (others.Count == 0)
+            return;
+
+        MoreByTitle.Text = $"More by {album.DisplayArtist}";
+        MoreByList.ItemsSource = others;
+        foreach (var item in others)
+            item.EnsureCover();
+    }
+
+    private void MoreBy_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is AlbumItem item)
+            App.MainWindow.ShowPage(typeof(AlbumDetailPage), item.Summary);
+    }
+
+    private void AlbumMore_Click(object sender, RoutedEventArgs e) =>
+        TrackMenu.ShowForAlbum(AlbumMoreButton, new Point(0, AlbumMoreButton.ActualHeight), _tracks);
+
+    private void RowMore_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: TrackRow row } button)
+            TrackMenu.Show(button, new Point(0, button.ActualHeight), _tracks, _rows.IndexOf(row), goToAlbum: false);
     }
 
     private void ArtistLink_Click(object sender, RoutedEventArgs e)

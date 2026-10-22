@@ -95,7 +95,7 @@
                 SizeChanged="TopBar_SizeChanged">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" MinWidth="240" />
-                    <ColumnDefinition Width="3*" MaxWidth="600" />
+                    <ColumnDefinition Width="3*" MaxWidth="640" />
                     <ColumnDefinition Width="*" MinWidth="240" />
                     <ColumnDefinition x:Name="CaptionButtonsColumn" Width="138" />
                 </Grid.ColumnDefinitions>
@@ -150,6 +150,8 @@
                     x:Name="LcdBorder"
                     Grid.Column="1"
                     RightTapped="LcdBorder_RightTapped"
+                    PointerEntered="LcdBorder_PointerEntered"
+                    PointerExited="LcdBorder_PointerExited"
                     Height="52"
                     VerticalAlignment="Center"
                     CornerRadius="6"
@@ -183,66 +185,84 @@
                             </Grid>
                         </Grid>
 
-                        <Grid Grid.Column="1" Padding="8,4,8,3">
-                            <!-- Kolom kiri (badge) dan kanan sama lebar, supaya judul tetap di tengah -->
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="64" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="64" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <!-- Badge kualitas; diklik untuk melihat detail format dan jalur output -->
-                            <controls:QualityBadge HorizontalAlignment="Left" VerticalAlignment="Center" />
-
-                            <controls:MarqueeText
-                                Grid.Column="1"
-                                Text="{x:Bind Playback.TitleText, Mode=OneWay}"
-                                FontSize="12"
-                                FontWeight="SemiBold" />
-
-                            <controls:MarqueeText
-                                Grid.Row="1"
-                                Grid.ColumnSpan="3"
-                                Text="{x:Bind Playback.SubtitleText, Mode=OneWay}"
-                                FontSize="11"
-                                Foreground="{StaticResource SecondaryTextBrush}" />
-
-                            <Grid Grid.Row="2" Grid.ColumnSpan="3" ColumnSpacing="8" VerticalAlignment="Bottom">
+                        <!--
+                            Lega seperti Apple Music: dua baris (judul dan artis) di tengah, badge kecil di kiri, tombol •••
+                            di kanan. Garis progres tipis menempel di tepi bawah; waktu baru muncul saat kursor di atas LCD.
+                        -->
+                        <Grid Grid.Column="1">
+                            <Grid Padding="8,5,8,8">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="72" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="72" />
                                 </Grid.ColumnDefinitions>
-
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <!-- Badge kualitas; diklik untuk melihat detail format dan jalur output -->
+                                <controls:QualityBadge HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                <controls:MarqueeText
+                                    Grid.Column="1"
+                                    Text="{x:Bind Playback.TitleText, Mode=OneWay}"
+                                    FontSize="13"
+                                    FontWeight="SemiBold"
+                                    VerticalAlignment="Center" />
+                                <!-- Menu yang sama dengan klik kanan di LCD -->
+                                <Button
+                                    x:Name="LcdMoreButton"
+                                    Grid.Column="2"
+                                    Padding="6,0"
+                                    MinWidth="0"
+                                    MinHeight="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    ToolTipService.ToolTip="More"
+                                    Visibility="{x:Bind Playback.QualityVisibility, Mode=OneWay}"
+                                    Click="LcdMore_Click">
+                                    <FontIcon Glyph="&#xE712;" FontSize="12" Foreground="{StaticResource AccentRedBrush}" />
+                                </Button>
+                                <controls:MarqueeText
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Text="{x:Bind Playback.SubtitleText, Mode=OneWay}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    VerticalAlignment="Center" />
                                 <TextBlock
+                                    x:Name="LcdElapsedText"
+                                    Grid.Row="1"
                                     Text="{x:Bind Playback.ElapsedText, Mode=OneWay}"
                                     FontSize="10"
-                                    Foreground="{StaticResource SecondaryTextBrush}" />
-
-                                <!-- Area transparan yang lebih tinggi dari garis progres, supaya mudah diklik -->
-                                <Grid
-                                    Grid.Column="1"
-                                    Height="12"
-                                    Background="Transparent"
-                                    PointerPressed="SeekBar_PointerPressed">
-                                    <ProgressBar
-                                        Minimum="0"
-                                        Maximum="{x:Bind Playback.DurationSeconds, Mode=OneWay}"
-                                        Value="{x:Bind Playback.PositionSeconds, Mode=OneWay}"
-                                        Foreground="#CCFFFFFF"
-                                        VerticalAlignment="Center" />
-                                </Grid>
-
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Bottom"
+                                    Visibility="Collapsed" />
                                 <TextBlock
+                                    x:Name="LcdRemainingText"
+                                    Grid.Row="1"
                                     Grid.Column="2"
                                     Text="{x:Bind Playback.RemainingText, Mode=OneWay}"
                                     FontSize="10"
-                                    Foreground="{StaticResource SecondaryTextBrush}" />
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Visibility="Collapsed" />
+                            </Grid>
+                            <!-- Garis progres tipis di tepi bawah. Area kliknya lebih tinggi dari garisnya, supaya mudah diklik. -->
+                            <Grid
+                                Height="10"
+                                VerticalAlignment="Bottom"
+                                Background="Transparent"
+                                PointerPressed="SeekBar_PointerPressed">
+                                <ProgressBar
+                                    Minimum="0"
+                                    Maximum="{x:Bind Playback.DurationSeconds, Mode=OneWay}"
+                                    Value="{x:Bind Playback.PositionSeconds, Mode=OneWay}"
+                                    Foreground="#CCFFFFFF"
+                                    VerticalAlignment="Bottom" />
                             </Grid>
                         </Grid>
                     </Grid>

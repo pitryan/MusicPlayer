@@ -105,6 +105,20 @@
                         </StackPanel>
                     </StackPanel>
 
+                    <!-- Menu satu album: Play Next, Add to Queue, Go to Artist, Show in File Explorer -->
+                    <Button
+                        x:Name="AlbumMoreButton"
+                        Grid.Row="5"
+                        Padding="8,4"
+                        MinWidth="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="More"
+                        Click="AlbumMore_Click">
+                        <FontIcon Glyph="&#xE712;" FontSize="14" Foreground="{StaticResource AccentRedBrush}" />
+                    </Button>
                     <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="12">
                         <Button Style="{StaticResource AccentButtonStyle}" Padding="20,6" Click="Play_Click">
                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -145,6 +159,7 @@
                         <ColumnDefinition Width="28" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="48" />
+                        <ColumnDefinition Width="36" />
                     </Grid.ColumnDefinitions>
 
                     <!-- Nomor track, atau ikon play merah kalau lagu ini sedang diputar -->
@@ -178,20 +193,63 @@
                         Style="{StaticResource CellStyle}"
                         Foreground="{StaticResource SecondaryTextBrush}"
                         HorizontalAlignment="Right" />
+                    <!-- Menu yang sama dengan klik kanan, seperti tombol ••• di Apple Music -->
+                    <Button
+                        Grid.Column="3"
+                        Padding="6,2"
+                        MinWidth="0"
+                        MinHeight="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        HorizontalAlignment="Right"
+                        ToolTipService.ToolTip="More"
+                        Click="RowMore_Click">
+                        <FontIcon Glyph="&#xE712;" FontSize="12" Foreground="{StaticResource AccentRedBrush}" />
+                    </Button>
                 </Grid>
             </DataTemplate>
         </ListView.ItemTemplate>
 
         <!-- Kaki halaman seperti Apple Music: tanggal rilis, jumlah lagu, durasi, ukuran file, dan copyright -->
         <ListView.Footer>
-            <StackPanel Margin="12,20,0,40" Spacing="2">
-                <TextBlock x:Name="FooterYearText" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
-                <TextBlock x:Name="FooterCountText" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+            <StackPanel Margin="12,20,0,40" Spacing="2" VerticalAlignment="Top">
+                <TextBlock x:Name="FooterYearText" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock x:Name="FooterCountText" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
                 <TextBlock
                     x:Name="FooterCopyrightText"
+                    FontWeight="SemiBold"
                     FontSize="12"
                     TextWrapping="Wrap"
                     Foreground="{StaticResource SecondaryTextBrush}" />
+                <!-- "More by": rilis lain dari artis yang sama, terbaru dulu; disembunyikan kalau tidak ada -->
+                <StackPanel x:Name="MoreBySection" Margin="0,32,0,0" Spacing="12" Visibility="Collapsed">
+                    <TextBlock x:Name="MoreByTitle" FontSize="20" FontWeight="SemiBold" />
+                    <GridView
+                        x:Name="MoreByList"
+                        SelectionMode="None"
+                        IsItemClickEnabled="True"
+                        ItemClick="MoreBy_ItemClick"
+                        ScrollViewer.HorizontalScrollMode="Enabled"
+                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                        ScrollViewer.VerticalScrollMode="Disabled">
+                        <GridView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </GridView.ItemsPanel>
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AlbumItem">
+                                <StackPanel Width="180" Spacing="2" Margin="0,0,8,8">
+                                    <Border Width="180" Height="180" CornerRadius="6" Background="{StaticResource CoverPlaceholderBrush}">
+                                        <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <TextBlock Text="{x:Bind Title}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind YearText}" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+                </StackPanel>
             </StackPanel>
         </ListView.Footer>
     </ListView>

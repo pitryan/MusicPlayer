@@ -41,13 +41,13 @@
                 <Setter Property="MinHeight" Value="40" />
             </Style>
 
-            <!-- Badge kualitas kecil (ikon dan teks): "Hi-Res", "Lossless", atau codec lossy seperti "MP3" -->
+            <!-- Badge kualitas kecil (ikon dan teks, tanpa kotak seperti Apple Music): "Hi-Res", "Lossless", atau codec lossy -->
             <Style x:Key="QualityBadgeButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderBrush" Value="#66FFFFFF" />
-                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="CornerRadius" Value="3" />
-                <Setter Property="Padding" Value="5,0,5,1" />
+                <Setter Property="Padding" Value="1,0,3,1" />
                 <Setter Property="FontSize" Value="10" />
                 <Setter Property="MinWidth" Value="0" />
                 <Setter Property="MinHeight" Value="0" />

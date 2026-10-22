@@ -33,6 +33,32 @@ public static class TrackMenu
     }
 
     /// <summary>
+    /// Menu untuk satu album (tombol ••• di header halaman album): Play Next, Add to Queue, Go to Artist, dan
+    /// Show in File Explorer.
+    /// </summary>
+    public static void ShowForAlbum(UIElement target, Point position, IReadOnlyList<Track> tracks)
+    {
+        if (tracks.Count == 0)
+            return;
+
+        var menu = new MenuFlyout();
+
+        // Play Next dari lagu terakhir ke pertama: setiap lagu masuk ke depan antrean, jadi urutan album tetap terjaga
+        menu.Items.Add(CreateItem("Play Next", "\uE893", () =>
+        {
+            for (int i = tracks.Count - 1; i >= 0; i--)
+                App.Playback.PlayNext(tracks[i]);
+        }));
+        menu.Items.Add(CreateItem("Add to Queue", "\uE710", () =>
+        {
+            foreach (var track in tracks)
+                App.Playback.AddToQueue(track);
+        }));
+        AddGoToItems(menu, tracks[0], goToAlbum: false);
+        menu.ShowAt(target, position);
+    }
+
+    /// <summary>
     /// Menambahkan "Go to Album", "Go to Artist", dan "Show in File Explorer" ke sebuah menu.
     /// Dipakai juga oleh menu di panel antrean, History, dan LCD.
     /// </summary>

@@ -24,6 +24,8 @@ public sealed class AlbumItem : ObservableObject
 
     public string Artist => Summary.DisplayArtist;
 
+    public string YearText => Summary.Year?.ToString() ?? "";
+
     public ImageSource? Cover
     {
         get => _cover;

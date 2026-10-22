@@ -60,6 +60,10 @@ public static class Formatters
         return year?.ToString() ?? "";
     }
 
+    /// <summary>Copyright dari tag: "(P)" dan "(C)" ditampilkan sebagai ℗ dan ©, seperti di Apple Music.</summary>
+    public static string Copyright(string text) =>
+        Regex.Replace(Regex.Replace(text.Trim(), @"\(\s*[Pp]\s*\)", "℗"), @"\(\s*[Cc]\s*\)", "©");
+
     /// <summary>Ukuran file: "850 KB", "23.4 MB", "1.2 GB" (pemisah desimal mengikuti pengaturan Windows).</summary>
     public static string FileSize(long bytes) => bytes switch
     {
