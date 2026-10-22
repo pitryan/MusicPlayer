@@ -803,13 +803,24 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         Play(previous);
     }
 
+    /// <summary>
+    /// Posisi lagu saat ini, dibaca langsung dari engine. PositionSeconds hanya diperbarui 4 kali per detik, terlalu
+    /// jarang untuk menyorot baris lirik tepat waktu.
+    /// </summary>
+    public TimeSpan Position => CurrentTrack is null ? TimeSpan.Zero : _engine.Position;
+
     /// <summary>Lompat ke posisi tertentu, dari 0 (awal lagu) sampai 1 (akhir lagu).</summary>
-    public void SeekToFraction(double fraction)
+    public void SeekToFraction(double fraction) =>
+        SeekTo(TimeSpan.FromSeconds(Math.Clamp(fraction, 0, 1) * _engine.Duration.TotalSeconds));
+
+    /// <summary>Lompat ke waktu tertentu di lagu ini, misalnya saat baris lirik diklik.</summary>
+    public void SeekTo(TimeSpan position)
     {
         if (CurrentTrack is null)
             return;
 
-        _engine.Seek(TimeSpan.FromSeconds(Math.Clamp(fraction, 0, 1) * _engine.Duration.TotalSeconds));
+        var duration = _engine.Duration;
+        _engine.Seek(position < TimeSpan.Zero ? TimeSpan.Zero : position > duration ? duration : position);
         RefreshPosition();
     }
 

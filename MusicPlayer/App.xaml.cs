@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+using System.Net.Http;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using MusicPlayer.Helpers;
@@ -19,6 +21,9 @@ public partial class App : Application
     /// <summary>Pemutar dan antrean lagu yang dipakai bersama oleh semua halaman.</summary>
     public static PlaybackService Playback { get; private set; } = null!;
 
+    /// <summary>Lirik lagu yang sedang diputar, dipakai bersama panel lirik dan layar penuh.</summary>
+    public static LyricsController Lyrics { get; private set; } = null!;
+
     public App()
     {
         InitializeComponent();
@@ -31,9 +36,22 @@ public partial class App : Application
         Database = new LibraryDatabase(databasePath);
         Playback = new PlaybackService(DispatcherQueue.GetForCurrentThread(), Database);
         RestorePlaybackSettings();
+        Lyrics = CreateLyrics();
 
         MainWindow = new MainWindow();
         MainWindow.Activate();
+    }
+
+    /// <summary>
+    /// Lirik dicari di tag, file .lrc, lalu LRCLIB. Hasil LRCLIB disimpan di folder Lyrics di samping database, jadi
+    /// lagu yang sama tidak butuh internet lagi.
+    /// </summary>
+    private static LyricsController CreateLyrics()
+    {
+        string cacheFolder = Path.Combine(ApplicationData.Current.LocalFolder.Path, "Lyrics");
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        var finder = new LyricsFinder(new LyricsCache(cacheFolder), new LrclibClient(http));
+        return new LyricsController(Playback, finder);
     }
 
     /// <summary>

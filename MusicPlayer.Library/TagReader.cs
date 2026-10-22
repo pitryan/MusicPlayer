@@ -94,6 +94,51 @@ public static class TagReader
         return null;
     }
 
+    // Nama field lirik selain LYRICS: Mp3tag menulis lirik ke UNSYNCEDLYRICS di FLAC/Ogg, dan aplikasi lain kadang
+    // menyimpannya di field teks bebas (TXXX) MP3 dengan nama yang sama
+    private static readonly string[] LyricsFieldNames = ["LYRICS", "UNSYNCEDLYRICS", "UNSYNCED LYRICS"];
+
+    /// <summary>
+    /// Lirik dari tag file, bisa teks biasa atau teks LRC bertanda waktu. Dibaca saat dibutuhkan (bukan saat scan),
+    /// supaya database tetap kecil. Null kalau tidak ada atau file tidak bisa dibaca.
+    /// </summary>
+    public static string? ReadLyrics(string filePath)
+    {
+        try
+        {
+            using var file = TagLib.File.Create(filePath);
+
+            if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph)
+            {
+                foreach (string name in LyricsFieldNames)
+                {
+                    if (Clean(xiph.GetFirstField(name)) is { } value)
+                        return value;
+                }
+            }
+
+            // USLT (MP3 dan WAV), ©lyr (M4A), dan field lirik format lain
+            if (Clean(file.Tag.Lyrics) is { } lyrics)
+                return lyrics;
+
+            if (file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag id3)
+            {
+                foreach (string name in LyricsFieldNames)
+                {
+                    var frame = TagLib.Id3v2.UserTextInformationFrame.Get(id3, name, TagLib.StringType.UTF8, false, false);
+                    if (frame?.Text is { Length: > 0 } text && Clean(string.Join("\n", text)) is { } value)
+                        return value;
+                }
+            }
+
+            return null;
+        }
+        catch (Exception)
+        {
+            return null; // file hilang, rusak, atau terkunci: anggap tidak ada lirik di tag
+        }
+    }
+
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static int? PositiveOrNull(uint value) => value > 0 ? (int)value : null;

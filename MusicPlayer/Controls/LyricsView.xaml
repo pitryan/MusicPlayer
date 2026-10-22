@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Lirik lagu yang sedang diputar, seperti Apple Music: baris yang sedang dinyanyikan menyala dan bergulir ke posisinya,
+    baris lain redup. Klik baris untuk lompat ke bagian itu. Dipakai di panel kanan jendela utama dan di layar penuh.
+    Baris-barisnya dibuat dari kode (LyricsView.xaml.cs), karena kecerahan dan posisi gulirnya diatur per baris.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.LyricsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <ScrollViewer
+            x:Name="Scroller"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            SizeChanged="Scroller_SizeChanged">
+            <StackPanel x:Name="LinesPanel" Margin="8,0" />
+        </ScrollViewer>
+
+        <ProgressRing
+            x:Name="LoadingRing"
+            Width="32"
+            Height="32"
+            IsActive="False"
+            Visibility="Collapsed" />
+
+        <!-- Saat tidak ada lirik: apa yang terjadi dan apa yang bisa dilakukan -->
+        <StackPanel
+            x:Name="MessagePanel"
+            Spacing="6"
+            Margin="24,0"
+            VerticalAlignment="Center"
+            Visibility="Collapsed">
+            <TextBlock
+                x:Name="MessageTitle"
+                FontSize="15"
+                FontWeight="SemiBold"
+                TextAlignment="Center"
+                TextWrapping="Wrap" />
+            <TextBlock
+                x:Name="MessageDetail"
+                FontSize="13"
+                Foreground="{StaticResource SecondaryTextBrush}"
+                TextAlignment="Center"
+                TextWrapping="Wrap" />
+            <Button
+                x:Name="RetryButton"
+                Content="Try Again"
+                HorizontalAlignment="Center"
+                Margin="0,8,0,0"
+                Visibility="Collapsed"
+                Click="RetryButton_Click" />
+        </StackPanel>
+    </Grid>
+</UserControl>

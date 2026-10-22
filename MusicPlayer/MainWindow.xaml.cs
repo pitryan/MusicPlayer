@@ -150,11 +150,27 @@ public sealed partial class MainWindow : Window
 
     private bool IsHistoryTabSelected => QueueTabs.SelectedItem == HistoryTab;
 
-    private void QueueToggle_Click(object sender, RoutedEventArgs e)
+    private void QueueToggle_Click(object sender, RoutedEventArgs e) =>
+        ShowRightPanel(queue: QueueToggle.IsChecked == true, lyrics: false);
+
+    private void LyricsToggle_Click(object sender, RoutedEventArgs e) =>
+        ShowRightPanel(queue: false, lyrics: LyricsToggle.IsChecked == true);
+
+    /// <summary>
+    /// Panel lirik dan panel Playing Next berbagi tempat di kanan, seperti Apple Music: membuka yang satu menutup yang
+    /// lain, dan hanya tombol panel yang terbuka yang menyala.
+    /// </summary>
+    private void ShowRightPanel(bool queue, bool lyrics)
     {
-        bool open = QueueToggle.IsChecked == true;
-        QueuePanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-        if (open && IsHistoryTabSelected)
+        QueueToggle.IsChecked = queue;
+        LyricsToggle.IsChecked = lyrics;
+        QueuePanel.Visibility = queue ? Visibility.Visible : Visibility.Collapsed;
+        LyricsPanel.Visibility = lyrics ? Visibility.Visible : Visibility.Collapsed;
+
+        // Lirik hanya dicari selama panelnya terbuka
+        LyricsPanelView.IsActive = lyrics;
+
+        if (queue && IsHistoryTabSelected)
             LoadHistory();
     }
 
