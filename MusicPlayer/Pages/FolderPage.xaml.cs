@@ -56,6 +56,7 @@ public sealed partial class FolderPage : Page
             $"{Formatters.Count(subfolders.Count, "folder")}, {Formatters.Count(totalSongs, "song")}";
 
         App.Playback.PropertyChanged += Playback_PropertyChanged;
+        App.Favourites.Changed += Favourites_Changed;
         MarkNowPlaying();
     }
 
@@ -63,7 +64,11 @@ public sealed partial class FolderPage : Page
     {
         base.OnNavigatedFrom(e);
         App.Playback.PropertyChanged -= Playback_PropertyChanged;
+        App.Favourites.Changed -= Favourites_Changed;
     }
+
+    // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
+    private void Favourites_Changed(object? sender, EventArgs e) => TrackRow.RefreshFavourites(_rows);
 
     /// <summary>Jalur dari folder library sampai folder ini, misalnya "music" › "Japan" › "YOASOBI".</summary>
     private static List<FolderCrumb> BuildCrumbs(string folder)

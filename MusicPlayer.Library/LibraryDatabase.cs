@@ -522,6 +522,254 @@ public sealed class LibraryDatabase
         return result;
     }
 
+    // ── Favorit ──────────────────────────────────────────────
+
+    /// <summary>Path semua lagu favorit, termasuk yang filenya sedang tidak ada di library.</summary>
+    public IReadOnlyList<string> GetFavouritePaths()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT path FROM favourites";
+        using var reader = command.ExecuteReader();
+
+        var paths = new List<string>();
+        while (reader.Read())
+            paths.Add(reader.GetString(0));
+        return paths;
+    }
+
+    /// <summary>Lagu favorit yang ada di library, yang terakhir difavoritkan lebih dulu.</summary>
+    public IReadOnlyList<Track> GetFavouriteTracks()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {TrackColumnsT}
+            FROM favourites f JOIN tracks t ON t.path = f.path
+            ORDER BY f.added_utc DESC, t.path
+            """;
+        return ReadTracks(command);
+    }
+
+    /// <summary>
+    /// Menandai atau melepas favorit. Menandai lagu yang sudah favorit tidak mengubah waktunya, jadi urutan di
+    /// Favourite Songs tetap.
+    /// </summary>
+    public void SetFavourite(string path, bool favourite, DateTime nowUtc)
+    {
+        using var connection = Open();
+        if (favourite)
+        {
+            Execute(connection, "INSERT INTO favourites (path, added_utc) VALUES ($path, $time) ON CONFLICT(path) DO NOTHING",
+                ("$path", path), ("$time", nowUtc.Ticks));
+        }
+        else
+        {
+            Execute(connection, "DELETE FROM favourites WHERE path = $path", ("$path", path));
+        }
+    }
+
+    // ── Playlist ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Semua playlist, urut nama. Jumlah lagu, durasi, dan cover hanya menghitung lagu yang ada di library; isi yang
+    /// filenya sedang tidak ada tetap tersimpan dan kembali kalau filenya kembali.
+    /// </summary>
+    public IReadOnlyList<PlaylistSummary> GetPlaylists()
+    {
+        using var connection = Open();
+        var playlists = new List<(long Id, string Name, DateTime Modified)>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT id, name, modified_utc FROM playlists ORDER BY name COLLATE NOCASE, id";
+            using var r = command.ExecuteReader();
+            while (r.Read())
+                playlists.Add((r.GetInt64(0), r.GetString(1), new DateTime(r.GetInt64(2), DateTimeKind.Utc)));
+        }
+
+        var contents = playlists.ToDictionary(p => p.Id, _ => (Count: 0, DurationMs: 0L, Albums: new List<string>(), Covers: new List<string>()));
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT i.playlist_id, t.path, coalesce(t.album_artist, t.artist, '') || '|' || coalesce(t.album, ''), t.duration_ms
+                FROM playlist_items i JOIN tracks t ON t.path = i.path
+                ORDER BY i.playlist_id, i.position, i.id
+                """;
+            using var r = command.ExecuteReader();
+            while (r.Read())
+            {
+                if (!contents.TryGetValue(r.GetInt64(0), out var c))
+                    continue;
+                c.Count++;
+                c.DurationMs += r.GetInt64(3);
+                // Cover playlist diambil dari album yang berbeda, paling banyak 4, seperti mozaik Apple Music
+                string album = r.GetString(2);
+                if (c.Covers.Count < 4 && !c.Albums.Contains(album, StringComparer.OrdinalIgnoreCase))
+                {
+                    c.Albums.Add(album);
+                    c.Covers.Add(r.GetString(1));
+                }
+                contents[r.GetInt64(0)] = c;
+            }
+        }
+
+        return playlists.Select(p => new PlaylistSummary(
+            p.Id, p.Name, contents[p.Id].Count, TimeSpan.FromMilliseconds(contents[p.Id].DurationMs),
+            contents[p.Id].Covers, p.Modified)).ToList();
+    }
+
+    public long CreatePlaylist(string name, DateTime nowUtc)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO playlists (name, created_utc, modified_utc) VALUES ($name, $time, $time) RETURNING id";
+        command.Parameters.AddWithValue("$name", name);
+        command.Parameters.AddWithValue("$time", nowUtc.Ticks);
+        return (long)command.ExecuteScalar()!;
+    }
+
+    public void RenamePlaylist(long id, string name, DateTime nowUtc)
+    {
+        using var connection = Open();
+        Execute(connection, "UPDATE playlists SET name = $name, modified_utc = $time WHERE id = $id",
+            ("$name", name), ("$time", nowUtc.Ticks), ("$id", id));
+    }
+
+    /// <summary>Menghapus playlist beserta isinya. Lagunya sendiri tetap ada di library.</summary>
+    public void DeletePlaylist(long id)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        Execute(connection, "DELETE FROM playlist_items WHERE playlist_id = $id", ("$id", id));
+        Execute(connection, "DELETE FROM playlists WHERE id = $id", ("$id", id));
+        transaction.Commit();
+    }
+
+    /// <summary>Isi playlist yang ada di library, sesuai urutannya.</summary>
+    public IReadOnlyList<PlaylistEntry> GetPlaylistEntries(long id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {TrackColumnsT}, i.id
+            FROM playlist_items i JOIN tracks t ON t.path = i.path
+            WHERE i.playlist_id = $id
+            ORDER BY i.position, i.id
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        using var r = command.ExecuteReader();
+
+        var entries = new List<PlaylistEntry>();
+        while (r.Read())
+            entries.Add(new PlaylistEntry(r.GetInt64(TrackColumnCount), ReadTrack(r)));
+        return entries;
+    }
+
+    /// <summary>Path semua isi playlist, termasuk yang filenya sedang tidak ada. Dipakai untuk mengecek lagu ganda.</summary>
+    public IReadOnlyList<string> GetPlaylistPaths(long id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT path FROM playlist_items WHERE playlist_id = $id";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+
+        var paths = new List<string>();
+        while (reader.Read())
+            paths.Add(reader.GetString(0));
+        return paths;
+    }
+
+    /// <summary>Menambahkan lagu ke akhir playlist, sesuai urutan yang diberikan.</summary>
+    public void AddToPlaylist(long id, IReadOnlyList<string> paths, DateTime nowUtc)
+    {
+        if (paths.Count == 0)
+            return;
+
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using var maxCommand = connection.CreateCommand();
+        maxCommand.CommandText = "SELECT coalesce(max(position), -1) FROM playlist_items WHERE playlist_id = $id";
+        maxCommand.Parameters.AddWithValue("$id", id);
+        long position = (long)maxCommand.ExecuteScalar()!;
+
+        using var insert = connection.CreateCommand();
+        insert.CommandText = "INSERT INTO playlist_items (playlist_id, position, path, added_utc) VALUES ($id, $position, $path, $time)";
+        insert.Parameters.AddWithValue("$id", id);
+        insert.Parameters.Add("$position", SqliteType.Integer);
+        insert.Parameters.Add("$path", SqliteType.Text);
+        insert.Parameters.AddWithValue("$time", nowUtc.Ticks);
+        foreach (string path in paths)
+        {
+            Set(insert, "$position", ++position);
+            Set(insert, "$path", path);
+            insert.ExecuteNonQuery();
+        }
+
+        Touch(connection, id, nowUtc);
+        transaction.Commit();
+    }
+
+    public void RemoveFromPlaylist(long id, IReadOnlyCollection<long> itemIds, DateTime nowUtc)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        foreach (long itemId in itemIds)
+            Execute(connection, "DELETE FROM playlist_items WHERE id = $item AND playlist_id = $id", ("$item", itemId), ("$id", id));
+        Touch(connection, id, nowUtc);
+        transaction.Commit();
+    }
+
+    /// <summary>
+    /// Menyimpan urutan baru setelah lagu diseret. <paramref name="itemIdsInOrder"/> berisi semua isi yang tampil
+    /// (GetPlaylistEntries) dalam urutan baru. Isi yang filenya sedang tidak ada tetap di tempatnya: posisi-posisi yang
+    /// dipakai isi yang tampil dibagi ulang sesuai urutan baru.
+    /// </summary>
+    public void ReorderPlaylist(long id, IReadOnlyList<long> itemIdsInOrder, DateTime nowUtc)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+
+        var visible = new List<(long ItemId, long Position)>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT i.id, i.position FROM playlist_items i JOIN tracks t ON t.path = i.path
+                WHERE i.playlist_id = $id ORDER BY i.position, i.id
+                """;
+            command.Parameters.AddWithValue("$id", id);
+            using var r = command.ExecuteReader();
+            while (r.Read())
+                visible.Add((r.GetInt64(0), r.GetInt64(1)));
+        }
+
+        // Daftar dari halaman harus berisi tepat isi yang tampil; kalau tidak (misalnya isinya berubah di tempat lain),
+        // urutan lama dipertahankan daripada mengacak playlist
+        if (itemIdsInOrder.Count != visible.Count || !itemIdsInOrder.OrderBy(x => x).SequenceEqual(visible.Select(v => v.ItemId).OrderBy(x => x)))
+            throw new ArgumentException("The new order must contain exactly the visible playlist items.", nameof(itemIdsInOrder));
+
+        // Posisi dalam satu playlist selalu berbeda (AddToPlaylist selalu menambah dari posisi terbesar), jadi
+        // posisi-posisi itu cukup dibagikan ulang sesuai urutan baru
+        var slots = visible.Select(v => v.Position).ToList();
+
+        using var update = connection.CreateCommand();
+        update.CommandText = "UPDATE playlist_items SET position = $position WHERE id = $item";
+        update.Parameters.Add("$position", SqliteType.Integer);
+        update.Parameters.Add("$item", SqliteType.Integer);
+        for (int i = 0; i < itemIdsInOrder.Count; i++)
+        {
+            Set(update, "$position", slots[i]);
+            Set(update, "$item", itemIdsInOrder[i]);
+            update.ExecuteNonQuery();
+        }
+
+        Touch(connection, id, nowUtc);
+        transaction.Commit();
+    }
+
+    private static void Touch(SqliteConnection connection, long playlistId, DateTime nowUtc) =>
+        Execute(connection, "UPDATE playlists SET modified_utc = $time WHERE id = $id", ("$time", nowUtc.Ticks), ("$id", playlistId));
+
     // ── Bagian internal ──────────────────────────────────────
 
     private SqliteConnection Open()
@@ -581,6 +829,30 @@ public sealed class LibraryDatabase
             );
             CREATE INDEX IF NOT EXISTS ix_plays_path ON plays(path);
             CREATE INDEX IF NOT EXISTS ix_plays_time ON plays(played_utc);
+
+            -- Lagu favorit (bintang ☆). Sama seperti riwayat putar, disambungkan lewat path: favorit tetap ada
+            -- walaupun lagunya di-scan ulang, atau foldernya sempat dihapus dari library lalu ditambahkan lagi.
+            CREATE TABLE IF NOT EXISTS favourites (
+                path      TEXT PRIMARY KEY COLLATE NOCASE,
+                added_utc INTEGER NOT NULL
+            );
+
+            -- Playlist buatan sendiri. Isinya juga disambungkan lewat path; lagu yang sama boleh muncul lebih dari
+            -- sekali, jadi setiap baris isi punya id sendiri untuk dihapus atau dipindah.
+            CREATE TABLE IF NOT EXISTS playlists (
+                id           INTEGER PRIMARY KEY,
+                name         TEXT NOT NULL,
+                created_utc  INTEGER NOT NULL,
+                modified_utc INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS playlist_items (
+                id          INTEGER PRIMARY KEY,
+                playlist_id INTEGER NOT NULL,
+                position    INTEGER NOT NULL,
+                path        TEXT NOT NULL COLLATE NOCASE,
+                added_utc   INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_playlist_items ON playlist_items(playlist_id, position);
             """);
 
         // Migrasi: setiap perubahan skema menaikkan user_version satu angka

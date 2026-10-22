@@ -82,6 +82,17 @@ public static class Formatters
     /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
     public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
+    /// <summary>Durasi total playlist seperti Apple Music: "47 minutes", "1 hour", "3 hours, 46 minutes".</summary>
+    public static string LongDuration(TimeSpan total)
+    {
+        int minutes = (int)Math.Round(total.TotalMinutes);
+        int hours = minutes / 60;
+        minutes %= 60;
+        if (hours == 0)
+            return Count(minutes, "minute");
+        return minutes == 0 ? Count(hours, "hour") : $"{Count(hours, "hour")}, {Count(minutes, "minute")}";
+    }
+
     /// <summary>Contoh: "YOASOBI — THE BOOK 3".</summary>
     public static string ArtistAndAlbum(string artist, string album) => $"{artist} — {album}";
 

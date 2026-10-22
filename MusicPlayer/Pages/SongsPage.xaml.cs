@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.UI.Xaml;
@@ -6,12 +7,14 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
+using MusicPlayer.ViewModels;
 
 namespace MusicPlayer.Pages;
 
 public sealed partial class SongsPage : Page
 {
     private List<Track> _tracks = [];
+    private List<TrackRow> _rows = [];
 
     public SongsPage()
     {
@@ -23,23 +26,34 @@ public sealed partial class SongsPage : Page
         base.OnNavigatedTo(e);
 
         _tracks = App.Database.GetTracks().ToList();
-        SongsList.ItemsSource = _tracks;
+        _rows = _tracks.Select((track, index) => new TrackRow(track, index)).ToList();
+        SongsList.ItemsSource = _rows;
         CountText.Text = $"{_tracks.Count} songs";
         EmptyState.Visibility = _tracks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        App.Favourites.Changed += Favourites_Changed;
     }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        App.Favourites.Changed -= Favourites_Changed;
+    }
+
+    // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
+    private void Favourites_Changed(object? sender, EventArgs e) => TrackRow.RefreshFavourites(_rows);
 
     private void SongsList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is Track track)
-            TrackMenu.Show(SongsList, e.GetPosition(SongsList), _tracks, _tracks.IndexOf(track));
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is TrackRow row)
+            TrackMenu.Show(SongsList, e.GetPosition(SongsList), _tracks, _rows.IndexOf(row));
     }
 
     private void SongsList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
         // Klik dua kali: putar lagu itu, dengan seluruh daftar ini sebagai antrean
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is Track track)
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is TrackRow row)
         {
-            int index = _tracks.IndexOf(track);
+            int index = _rows.IndexOf(row);
             if (index >= 0)
                 App.Playback.PlayQueue(_tracks, index);
         }

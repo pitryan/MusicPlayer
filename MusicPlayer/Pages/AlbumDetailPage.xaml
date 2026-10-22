@@ -156,12 +156,20 @@
                     CornerRadius="4"
                     Background="{x:Bind RowBackground}">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="40" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="48" />
                         <ColumnDefinition Width="36" />
                     </Grid.ColumnDefinitions>
 
+                    <!-- Bintang merah untuk lagu favorit, di kiri nomor track seperti Apple Music -->
+                    <FontIcon
+                        Glyph="&#xE735;"
+                        FontSize="10"
+                        Foreground="{StaticResource AccentRedBrush}"
+                        Visibility="{x:Bind FavouriteVisibility, Mode=OneWay}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center" />
                     <!-- Nomor track, atau ikon play merah kalau lagu ini sedang diputar -->
                     <TextBlock
                         Text="{x:Bind NumberText}"

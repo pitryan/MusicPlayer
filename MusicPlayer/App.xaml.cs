@@ -24,6 +24,12 @@ public partial class App : Application
     /// <summary>Lirik lagu yang sedang diputar, dipakai bersama panel lirik dan layar penuh.</summary>
     public static LyricsController Lyrics { get; private set; } = null!;
 
+    /// <summary>Lagu favorit (bintang ☆), dipakai bersama LCD, menu, dan semua daftar lagu.</summary>
+    public static FavouritesService Favourites { get; private set; } = null!;
+
+    /// <summary>Playlist buatan sendiri, dipakai bersama sidebar, menu, dan halaman playlist.</summary>
+    public static PlaylistsService Playlists { get; private set; } = null!;
+
     public App()
     {
         InitializeComponent();
@@ -34,6 +40,8 @@ public partial class App : Application
         // Aplikasi packaged punya folder data sendiri, terpisah dari database LibraryLab
         string databasePath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "library.db");
         Database = new LibraryDatabase(databasePath);
+        Favourites = new FavouritesService(Database);
+        Playlists = new PlaylistsService(Database);
         Playback = new PlaybackService(DispatcherQueue.GetForCurrentThread(), Database);
         RestorePlaybackSettings();
         Lyrics = CreateLyrics();

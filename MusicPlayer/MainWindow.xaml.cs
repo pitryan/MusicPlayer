@@ -61,6 +61,19 @@ public sealed partial class MainWindow : Window
         Playback.PlayRecorded += (_, _) => { if (IsHistoryTabSelected) LoadHistory(); };
         UpdateQueueTexts();
 
+        // Bintang di LCD mengikuti lagu yang sedang diputar, dan perubahan favorit dari mana pun
+        Playback.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PlaybackService.CurrentTrack))
+                UpdateLcdFavourite();
+        };
+        App.Favourites.Changed += (_, _) => UpdateLcdFavourite();
+        UpdateLcdFavourite();
+
+        // Daftar playlist di sidebar mengikuti playlist yang dibuat, diganti nama, atau dihapus
+        RefreshPlaylistItems();
+        App.Playlists.Changed += (_, _) => RefreshPlaylistItems();
+
         // Halaman pertama: Recently Added
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
         NavigateToSection("recent");
@@ -230,6 +243,8 @@ public sealed partial class MainWindow : Window
         menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayNow(entry.Track)));
         menu.Items.Add(TrackMenu.CreateItem("Play Next", "\uE893", () => Playback.PlayNext(entry.Track)));
         menu.Items.Add(TrackMenu.CreateItem("Add to Queue", "\uE710", () => Playback.AddToQueue(entry.Track)));
+        TrackMenu.AddPlaylistItem(menu, [entry.Track]);
+        TrackMenu.AddFavouriteItem(menu, entry.Track);
         TrackMenu.AddGoToItems(menu, entry.Track);
         menu.ShowAt(HistoryList, e.GetPosition(HistoryList));
     }
@@ -256,6 +271,8 @@ public sealed partial class MainWindow : Window
         var menu = new MenuFlyout();
         menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayFromQueue(entry)));
         menu.Items.Add(TrackMenu.CreateItem("Remove from Queue", "\uE711", () => Playback.RemoveFromQueue(entry)));
+        TrackMenu.AddPlaylistItem(menu, [entry.Track]);
+        TrackMenu.AddFavouriteItem(menu, entry.Track);
         TrackMenu.AddGoToItems(menu, entry.Track);
         menu.ShowAt(UpNextList, e.GetPosition(UpNextList));
     }
@@ -335,16 +352,31 @@ public sealed partial class MainWindow : Window
     private void LcdMore_Click(object sender, RoutedEventArgs e) =>
         ShowLcdMenu(LcdMoreButton, new Point(0, LcdMoreButton.ActualHeight));
 
-    /// <summary>Menu LCD (klik kanan atau tombol •••): Go to Album, Go to Artist, Show in File Explorer.</summary>
+    /// <summary>Menu LCD (klik kanan atau tombol •••): Add to Playlist, Favourite, Go to Album, Go to Artist, Show in File Explorer.</summary>
     private void ShowLcdMenu(UIElement target, Point position)
     {
         if (Playback.CurrentTrack is not { } track)
             return;
 
         var menu = new MenuFlyout();
+        TrackMenu.AddPlaylistItem(menu, [track]);
+        TrackMenu.AddFavouriteItem(menu, track);
         TrackMenu.AddGoToItems(menu, track);
-        menu.Items.RemoveAt(0); // pemisah di awal tidak perlu karena tidak ada item lain di atasnya
         menu.ShowAt(target, position);
+    }
+
+    private void LcdFavourite_Click(object sender, RoutedEventArgs e)
+    {
+        if (Playback.CurrentTrack is { } track)
+            App.Favourites.Toggle(track);
+    }
+
+    private void UpdateLcdFavourite()
+    {
+        bool favourite = App.Favourites.IsFavourite(Playback.CurrentTrack);
+        LcdStarOutline.Visibility = favourite ? Visibility.Collapsed : Visibility.Visible;
+        LcdStarFilled.Visibility = favourite ? Visibility.Visible : Visibility.Collapsed;
+        ToolTipService.SetToolTip(LcdFavouriteButton, favourite ? "Remove from Favourites" : "Favourite");
     }
 
     // Waktu berjalan dan sisa waktu hanya tampil saat kursor di atas LCD, supaya LCD tetap lega seperti Apple Music
@@ -364,8 +396,71 @@ public sealed partial class MainWindow : Window
 
     private string _currentSection = "";
     private readonly List<object> _folderMenuItems = [];
+    private readonly List<object> _playlistMenuItems = [];
 
     private const string FolderTagPrefix = "folder:";
+    private const string PlaylistTagPrefix = "playlist:";
+    private const string NewPlaylistTag = "newplaylist";
+
+    /// <summary>Tag sidebar untuk All Playlists, misalnya untuk kembali ke sana setelah playlist dihapus.</summary>
+    public const string AllPlaylistsTag = "playlists";
+
+    /// <summary>
+    /// Membuat ulang daftar playlist di sidebar, tepat di bawah Favourite Songs, diakhiri "New Playlist".
+    /// Dipanggil saat aplikasi dibuka dan setiap kali playlist dibuat, diganti nama, atau dihapus.
+    /// </summary>
+    private void RefreshPlaylistItems()
+    {
+        foreach (object item in _playlistMenuItems)
+            NavView.MenuItems.Remove(item);
+        _playlistMenuItems.Clear();
+
+        foreach (var playlist in App.Playlists.GetAll())
+        {
+            _playlistMenuItems.Add(new NavigationViewItem
+            {
+                Content = playlist.Name,
+                Tag = PlaylistTagPrefix + playlist.Id,
+                Icon = new FontIcon { Glyph = "\uE8D6" },
+            });
+        }
+
+        // "New Playlist" membuka dialog nama, bukan halaman, jadi tidak ikut terpilih saat diklik
+        _playlistMenuItems.Add(new NavigationViewItem
+        {
+            Content = "New Playlist",
+            Tag = NewPlaylistTag,
+            Icon = new FontIcon { Glyph = "\uE710" },
+            SelectsOnInvoked = false,
+        });
+
+        int index = NavView.MenuItems.IndexOf(FindNavItem("favourites")!) + 1;
+        foreach (object item in _playlistMenuItems)
+            NavView.MenuItems.Insert(index++, item);
+
+        // Playlist yang sedang terbuka tetap terpilih walaupun item sidebar-nya baru dibuat ulang
+        if (_currentSection.StartsWith(PlaylistTagPrefix, StringComparison.Ordinal) && FindNavItem(_currentSection) is { } current)
+            NavView.SelectedItem = current;
+    }
+
+    private NavigationViewItem? FindNavItem(string tag) =>
+        NavView.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == tag);
+
+    /// <summary>Pindah ke salah satu menu sidebar dari kode, dan menandainya terpilih.</summary>
+    public void ShowSection(string tag)
+    {
+        if (FindNavItem(tag) is { } item)
+            NavView.SelectedItem = item;
+        NavigateToSection(tag);
+    }
+
+    public void ShowPlaylist(long id) => ShowSection(PlaylistTagPrefix + id);
+
+    private async System.Threading.Tasks.Task CreatePlaylistAsync()
+    {
+        if (await Dialogs.AskNameAsync("New Playlist", "Create") is { } name)
+            ShowPlaylist(App.Playlists.Create(name));
+    }
 
     /// <summary>
     /// Membuat ulang grup "Folders" di sidebar dari daftar folder di Settings.
@@ -409,6 +504,12 @@ public sealed partial class MainWindow : Window
             ? "settings"
             : args.InvokedItemContainer?.Tag as string ?? "songs";
 
+        if (tag == NewPlaylistTag)
+        {
+            _ = CreatePlaylistAsync();
+            return;
+        }
+
         if (tag == _currentSection)
         {
             // Menu yang sama diklik lagi, misalnya Albums saat membuka detail album:
@@ -438,6 +539,16 @@ public sealed partial class MainWindow : Window
                 break;
             case "genres":
                 ContentFrame.Navigate(typeof(GenresPage));
+                break;
+            case "favourites":
+                ContentFrame.Navigate(typeof(PlaylistPage), PlaylistPage.Favourites);
+                break;
+            case AllPlaylistsTag:
+                ContentFrame.Navigate(typeof(AllPlaylistsPage));
+                break;
+            case not null when tag.StartsWith(PlaylistTagPrefix, StringComparison.Ordinal)
+                               && long.TryParse(tag[PlaylistTagPrefix.Length..], out long playlistId):
+                ContentFrame.Navigate(typeof(PlaylistPage), playlistId);
                 break;
             case not null when tag.StartsWith(FolderTagPrefix, StringComparison.Ordinal):
                 ContentFrame.Navigate(typeof(FolderPage), tag[FolderTagPrefix.Length..]);

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- All Playlists seperti Apple Music (screenshot 6): Favourite Songs dulu, lalu playlist buatan sendiri urut nama -->
+<Page
+    x:Class="MusicPlayer.Pages.AllPlaylistsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels">
+
+    <Grid Padding="24,20,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="0,0,24,16">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="All Playlists" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock
+                    x:Name="CountText"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,4"
+                    Foreground="{StaticResource SecondaryTextBrush}" />
+            </StackPanel>
+            <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="NewPlaylist_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE710;" FontSize="14" />
+                    <TextBlock Text="New Playlist" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <GridView
+            x:Name="PlaylistGrid"
+            Grid.Row="1"
+            Padding="0,0,24,24"
+            SelectionMode="None"
+            IsItemClickEnabled="True"
+            ItemClick="PlaylistGrid_ItemClick"
+            ContainerContentChanging="PlaylistGrid_ContainerContentChanging">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaylistItem">
+                    <StackPanel Width="180" Margin="0,0,0,12">
+                        <Grid
+                            Width="180"
+                            Height="180"
+                            CornerRadius="6"
+                            Background="{StaticResource CoverPlaceholderBrush}">
+                            <FontIcon Glyph="&#xE8D6;" FontSize="40" Foreground="{StaticResource SecondaryTextBrush}" />
+                            <!-- Favourite Songs: bintang merah di latar terang -->
+                            <Grid Background="#FFEFEFEF" Visibility="{x:Bind StarVisibility}">
+                                <FontIcon Glyph="&#xE735;" FontSize="72" Foreground="{StaticResource AccentRedBrush}" />
+                            </Grid>
+                            <Border Visibility="{x:Bind SingleVisibility}">
+                                <Border.Background>
+                                    <ImageBrush ImageSource="{x:Bind Cover1, Mode=OneWay}" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                            <!-- Mozaik 2×2 dari empat album yang berbeda -->
+                            <Grid Visibility="{x:Bind MosaicVisibility}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Border>
+                                    <Border.Background>
+                                        <ImageBrush ImageSource="{x:Bind Cover1, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                                <Border Grid.Column="1">
+                                    <Border.Background>
+                                        <ImageBrush ImageSource="{x:Bind Cover2, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                                <Border Grid.Row="1">
+                                    <Border.Background>
+                                        <ImageBrush ImageSource="{x:Bind Cover3, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                                <Border Grid.Row="1" Grid.Column="1">
+                                    <Border.Background>
+                                        <ImageBrush ImageSource="{x:Bind Cover4, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                            </Grid>
+                        </Grid>
+                        <TextBlock
+                            Text="{x:Bind Name}"
+                            FontSize="13"
+                            Margin="0,8,0,0"
+                            TextTrimming="CharacterEllipsis"
+                            MaxLines="1" />
+                        <TextBlock
+                            Text="{x:Bind CountText}"
+                            FontSize="12"
+                            Foreground="{StaticResource SecondaryTextBrush}"
+                            TextTrimming="CharacterEllipsis"
+                            MaxLines="1" />
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+    </Grid>
+</Page>

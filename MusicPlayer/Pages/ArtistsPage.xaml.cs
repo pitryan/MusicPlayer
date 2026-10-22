@@ -29,11 +29,14 @@ public sealed partial class ArtistsPage : Page
     {
         base.OnNavigatedTo(e);
         App.Playback.PropertyChanged += Playback_PropertyChanged;
+        App.Favourites.Changed += Favourites_Changed;
 
-        // Kembali dari halaman album: artis yang dipilih dan posisi scroll dipertahankan
+        // Kembali dari halaman album: artis yang dipilih dan posisi scroll dipertahankan. Favorit bisa saja berubah
+        // selama di halaman lain, jadi bintangnya disamakan lagi.
         if (e.NavigationMode == NavigationMode.Back && _artists.Count > 0)
         {
             MarkNowPlaying();
+            TrackRow.RefreshFavourites(_blocks.SelectMany(b => b.Rows));
             return;
         }
 
@@ -58,7 +61,12 @@ public sealed partial class ArtistsPage : Page
     {
         base.OnNavigatedFrom(e);
         App.Playback.PropertyChanged -= Playback_PropertyChanged;
+        App.Favourites.Changed -= Favourites_Changed;
     }
+
+    // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
+    private void Favourites_Changed(object? sender, EventArgs e) =>
+        TrackRow.RefreshFavourites(_blocks.SelectMany(b => b.Rows));
 
     private void ArtistList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {

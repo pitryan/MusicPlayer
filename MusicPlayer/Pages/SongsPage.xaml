@@ -3,8 +3,7 @@
     x:Class="MusicPlayer.Pages.SongsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:lib="using:MusicPlayer.Library"
-    xmlns:helpers="using:MusicPlayer.Helpers">
+    xmlns:vm="using:MusicPlayer.ViewModels">
 
     <Page.Resources>
         <Style x:Key="ColumnHeaderStyle" TargetType="TextBlock">
@@ -39,6 +38,7 @@
         <!-- Judul kolom. Lebar kolomnya harus sama dengan template baris di bawah -->
         <Grid Grid.Row="1" Padding="16,0,16,8" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="10" />
                 <ColumnDefinition Width="3*" />
                 <ColumnDefinition Width="56" />
                 <ColumnDefinition Width="2*" />
@@ -46,12 +46,12 @@
                 <ColumnDefinition Width="110" />
                 <ColumnDefinition Width="100" />
             </Grid.ColumnDefinitions>
-            <TextBlock Text="Title" Style="{StaticResource ColumnHeaderStyle}" />
-            <TextBlock Grid.Column="1" Text="Time" Style="{StaticResource ColumnHeaderStyle}" />
-            <TextBlock Grid.Column="2" Text="Artist" Style="{StaticResource ColumnHeaderStyle}" />
-            <TextBlock Grid.Column="3" Text="Album" Style="{StaticResource ColumnHeaderStyle}" />
-            <TextBlock Grid.Column="4" Text="Genre" Style="{StaticResource ColumnHeaderStyle}" />
-            <TextBlock Grid.Column="5" Text="Quality" Style="{StaticResource ColumnHeaderStyle}" />
+            <TextBlock Grid.Column="1" Text="Title" Style="{StaticResource ColumnHeaderStyle}" />
+            <TextBlock Grid.Column="2" Text="Time" Style="{StaticResource ColumnHeaderStyle}" />
+            <TextBlock Grid.Column="3" Text="Artist" Style="{StaticResource ColumnHeaderStyle}" />
+            <TextBlock Grid.Column="4" Text="Album" Style="{StaticResource ColumnHeaderStyle}" />
+            <TextBlock Grid.Column="5" Text="Genre" Style="{StaticResource ColumnHeaderStyle}" />
+            <TextBlock Grid.Column="6" Text="Quality" Style="{StaticResource ColumnHeaderStyle}" />
         </Grid>
 
         <ListView
@@ -67,9 +67,10 @@
                 </Style>
             </ListView.ItemContainerStyle>
             <ListView.ItemTemplate>
-                <DataTemplate x:DataType="lib:Track">
+                <DataTemplate x:DataType="vm:TrackRow">
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="10" />
                             <ColumnDefinition Width="3*" />
                             <ColumnDefinition Width="56" />
                             <ColumnDefinition Width="2*" />
@@ -77,22 +78,29 @@
                             <ColumnDefinition Width="110" />
                             <ColumnDefinition Width="100" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="{x:Bind DisplayTitle}" Style="{StaticResource CellStyle}" />
+                        <!-- Bintang merah untuk lagu favorit -->
+                        <FontIcon
+                            Glyph="&#xE735;"
+                            FontSize="10"
+                            Foreground="{StaticResource AccentRedBrush}"
+                            Visibility="{x:Bind FavouriteVisibility, Mode=OneWay}"
+                            VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
                         <TextBlock
-                            Grid.Column="1"
-                            Text="{x:Bind helpers:Formatters.Time(Duration)}"
+                            Grid.Column="2"
+                            Text="{x:Bind DurationText}"
                             Style="{StaticResource CellStyle}"
                             Foreground="{StaticResource SecondaryTextBrush}" />
-                        <TextBlock Grid.Column="2" Text="{x:Bind DisplayArtist}" Style="{StaticResource CellStyle}" />
-                        <TextBlock Grid.Column="3" Text="{x:Bind DisplayAlbum}" Style="{StaticResource CellStyle}" />
-                        <TextBlock
-                            Grid.Column="4"
-                            Text="{x:Bind Genre}"
-                            Style="{StaticResource CellStyle}"
-                            Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBlock Grid.Column="3" Text="{x:Bind ArtistText}" Style="{StaticResource CellStyle}" />
+                        <TextBlock Grid.Column="4" Text="{x:Bind AlbumText}" Style="{StaticResource CellStyle}" />
                         <TextBlock
                             Grid.Column="5"
-                            Text="{x:Bind QualityLabel}"
+                            Text="{x:Bind Track.Genre}"
+                            Style="{StaticResource CellStyle}"
+                            Foreground="{StaticResource SecondaryTextBrush}" />
+                        <TextBlock
+                            Grid.Column="6"
+                            Text="{x:Bind Track.QualityLabel}"
                             Style="{StaticResource CellStyle}"
                             Foreground="{StaticResource SecondaryTextBrush}" />
                     </Grid>

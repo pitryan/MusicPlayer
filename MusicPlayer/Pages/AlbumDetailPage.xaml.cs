@@ -83,6 +83,7 @@ public sealed partial class AlbumDetailPage : Page
 
         // Tandai lagu yang sedang diputar, dan ikuti terus saat lagunya berganti
         App.Playback.PropertyChanged += Playback_PropertyChanged;
+        App.Favourites.Changed += Favourites_Changed;
         MarkNowPlaying();
 
         CoverBrush.ImageSource = await CoverCache.GetAsync(album.CoverTrackPath, CoverPixelWidth);
@@ -92,7 +93,11 @@ public sealed partial class AlbumDetailPage : Page
     {
         base.OnNavigatedFrom(e);
         App.Playback.PropertyChanged -= Playback_PropertyChanged;
+        App.Favourites.Changed -= Favourites_Changed;
     }
+
+    // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
+    private void Favourites_Changed(object? sender, EventArgs e) => TrackRow.RefreshFavourites(_rows);
 
     private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
