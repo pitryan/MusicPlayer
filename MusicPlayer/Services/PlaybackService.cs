@@ -936,6 +936,107 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         RefreshPosition();
     }
 
+    /// <summary>
+    /// Menjalankan <paramref name="write"/> (menulis tag) dengan file lagu yang sedang dimuat dilepas lebih dulu, karena
+    /// Windows tidak mengizinkan file yang sedang dibuka diganti. Setelah selesai, lagu itu dimuat lagi di posisi yang
+    /// sama dan lanjut berbunyi kalau tadinya berbunyi. Lagu lain tidak terpengaruh.
+    /// </summary>
+    public async Task WithFilesReleasedAsync(IReadOnlyCollection<string> paths, Func<Task> write)
+    {
+        var track = CurrentTrack;
+        if (track is null || !paths.Contains(track.FilePath, StringComparer.OrdinalIgnoreCase))
+        {
+            await write();
+            return;
+        }
+
+        var position = _engine.Position;
+        bool wasPlaying = _engine.State == PlaybackState.Playing;
+        _releaseTimer.Stop();
+        _engine.Close();
+        try
+        {
+            await write();
+        }
+        finally
+        {
+            ReopenAfterEdit(track, position, wasPlaying);
+        }
+    }
+
+    private void ReopenAfterEdit(Track track, TimeSpan position, bool wasPlaying)
+    {
+        MMDevice? device = null;
+        try
+        {
+            if (wasPlaying)
+            {
+                device = GetOutputDevice();
+                _engine.Open(track.FilePath, device, UseExclusiveMode);
+                DetachDeviceVolume();
+                _device?.Dispose();
+                _device = device;
+                AttachVolume(device);
+                _engine.Seek(position);
+                _engine.Play();
+                UpdateQualityInfo(track, device);
+            }
+            else
+            {
+                // Sedang di-pause: file dimuat tanpa perangkat, jadi DAC tetap bebas; Play membukanya lagi seperti biasa
+                _engine.OpenWithoutDevice(track.FilePath);
+                _engine.Seek(position);
+            }
+        }
+        catch (OutputDeviceUnavailableException ex)
+        {
+            if (!ReferenceEquals(device, _device))
+                device?.Dispose();
+            _engine.OpenWithoutDevice(track.FilePath);
+            _engine.Seek(position);
+            _interruptedByDevice = true;
+            StatusText = $"{ex.DeviceName} isn't connected. Plug it in, or choose another output from the quality badge.";
+        }
+        catch (Exception ex)
+        {
+            if (!ReferenceEquals(device, _device))
+                device?.Dispose();
+            StatusText = $"Couldn't resume \"{track.DisplayTitle}\": {ex.Message}";
+        }
+
+        RefreshPosition();
+    }
+
+    /// <summary>
+    /// Data lagu yang baru (setelah tag-nya diedit) menggantikan data lama di lagu yang sedang diputar, antrean, dan
+    /// daftar Previous, supaya LCD dan panel antrean langsung menampilkan judul yang baru.
+    /// </summary>
+    public void UpdateTrackInfo(IReadOnlyList<Track> tracks)
+    {
+        var byPath = new Dictionary<string, Track>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in tracks)
+            byPath[t.FilePath] = t;
+
+        for (int i = 0; i < _previous.Count; i++)
+        {
+            if (byPath.TryGetValue(_previous[i].FilePath, out var updated))
+                _previous[i] = updated;
+        }
+        foreach (var entry in UpNext.Concat(_originalOrder))
+        {
+            if (byPath.TryGetValue(entry.Track.FilePath, out var updated))
+                entry.UpdateTrack(updated);
+        }
+
+        if (CurrentTrack is { } current && byPath.TryGetValue(current.FilePath, out var now))
+        {
+            CurrentTrack = now;
+            TitleText = now.DisplayTitle;
+            SubtitleText = $"{now.DisplayArtist} — {now.DisplayAlbum}";
+            _ = LoadCoverAsync(now);
+        }
+    }
+
     private void ShowTrack(Track track)
     {
         CurrentTrack = track;

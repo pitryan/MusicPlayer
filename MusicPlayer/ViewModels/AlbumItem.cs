@@ -26,6 +26,18 @@ public sealed class AlbumItem : ObservableObject
 
     public string YearText => Summary.Year?.ToString() ?? "";
 
+    /// <summary>
+    /// Baris kedua di bawah judul. Biasanya nama artis; di halaman artis diganti tahun (dan jenis rilis), karena
+    /// artisnya sudah jelas.
+    /// </summary>
+    public string Subtitle
+    {
+        get => _subtitle ?? Artist;
+        init => _subtitle = value;
+    }
+
+    private readonly string? _subtitle;
+
     public ImageSource? Cover
     {
         get => _cover;

@@ -55,6 +55,16 @@
                     <FontIcon Glyph="&#xE823;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <NavigationViewItem Content="Recently Played" Tag="recentlyplayed">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE81C;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
+            <NavigationViewItem Content="Most Played" Tag="mostplayed">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE8E1;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <NavigationViewItem Content="Artists" Tag="artists">
                 <NavigationViewItem.Icon>
                     <SymbolIcon Symbol="Contact" />

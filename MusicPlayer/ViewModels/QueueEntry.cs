@@ -21,7 +21,16 @@ public sealed class QueueEntry : ObservableObject
         Track = track;
     }
 
-    public Track Track { get; }
+    public Track Track { get; private set; }
+
+    /// <summary>Data lagu baru setelah tag-nya diedit; judul dan artis di panel antrean ikut berubah.</summary>
+    public void UpdateTrack(Track track)
+    {
+        Track = track;
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(Subtitle));
+        OnPropertyChanged(nameof(DurationText));
+    }
 
     public string Title => Track.DisplayTitle;
 

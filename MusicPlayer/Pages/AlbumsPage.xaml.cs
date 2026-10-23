@@ -9,12 +9,13 @@ using MusicPlayer.ViewModels;
 namespace MusicPlayer.Pages;
 
 /// <summary>
-/// Grid album. Parameter navigasi "recent" menampilkan Recently Added, "genre:&lt;nama&gt;" menampilkan
-/// album dari satu genre, dan selain itu menampilkan semua album.
+/// Grid album. Parameter navigasi "recent" menampilkan Recently Added, "recentlyplayed" menampilkan Recently Played,
+/// "genre:&lt;nama&gt;" menampilkan album dari satu genre, dan selain itu menampilkan semua album.
 /// </summary>
 public sealed partial class AlbumsPage : Page
 {
     private string? _mode;
+    private int _libraryVersion;
 
     public AlbumsPage()
     {
@@ -26,18 +27,35 @@ public sealed partial class AlbumsPage : Page
         base.OnNavigatedTo(e);
         string mode = e.Parameter as string ?? "albums";
 
-        // Kembali dari detail album: isi dan posisi scroll dipertahankan (halaman ini di-cache)
-        if (e.NavigationMode == NavigationMode.Back && mode == _mode)
+        // Kembali dari detail album: isi dan posisi scroll dipertahankan (halaman ini di-cache), kecuali tag lagu
+        // diedit selama di halaman lain
+        if (e.NavigationMode == NavigationMode.Back && mode == _mode && _libraryVersion == App.TagEdits.Version)
             return;
 
         _mode = mode;
+        _libraryVersion = App.TagEdits.Version;
         LoadAlbums();
     }
 
     private const string GenrePrefix = "genre:";
 
+    /// <summary>Parameter navigasi untuk Recently Played.</summary>
+    public const string RecentlyPlayedMode = "recentlyplayed";
+
+    // Jumlah album di Recently Played; lebih dari ini jarang dicari lagi lewat halaman ini
+    private const int RecentlyPlayedLimit = 60;
+
     private void LoadAlbums()
     {
+        EmptyTitle.Text = "No albums yet";
+        EmptyDetail.Text = "Add a music folder in Settings (the gear icon at the bottom left).";
+
+        if (_mode == RecentlyPlayedMode)
+        {
+            LoadRecentlyPlayed();
+            return;
+        }
+
         string? genre = _mode is not null && _mode.StartsWith(GenrePrefix, StringComparison.Ordinal)
             ? _mode[GenrePrefix.Length..]
             : null;
@@ -61,6 +79,25 @@ public sealed partial class AlbumsPage : Page
             PageTitle.Text = genre ?? "Albums";
             AlbumGrid.ItemsSource = albums;
         }
+    }
+
+    private void LoadRecentlyPlayed()
+    {
+        PageTitle.Text = "Recently Played";
+        var recent = App.Database.GetRecentlyPlayedAlbums(RecentlyPlayedLimit)
+            .Select(r => (Item: new AlbumItem(r.Album), r.LastPlayedUtc))
+            .ToList();
+        CountText.Text = $"{recent.Count} albums";
+
+        EmptyTitle.Text = "Nothing played yet";
+        EmptyDetail.Text = "Albums appear here after you've listened to a song from them.";
+        EmptyState.Visibility = recent.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        AlbumGrid.ItemsSource = new CollectionViewSource
+        {
+            IsSourceGrouped = true,
+            Source = AlbumGroup.ByLastPlayed(recent, DateTime.UtcNow),
+        }.View;
     }
 
     private void AlbumGrid_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)

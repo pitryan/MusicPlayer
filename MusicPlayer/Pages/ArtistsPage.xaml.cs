@@ -33,13 +33,15 @@ public sealed partial class ArtistsPage : Page
 
         // Kembali dari halaman album: artis yang dipilih dan posisi scroll dipertahankan. Favorit bisa saja berubah
         // selama di halaman lain, jadi bintangnya disamakan lagi.
-        if (e.NavigationMode == NavigationMode.Back && _artists.Count > 0)
+        if (e.NavigationMode == NavigationMode.Back && _artists.Count > 0 && _libraryVersion == App.TagEdits.Version)
         {
             MarkNowPlaying();
             TrackRow.RefreshFavourites(_blocks.SelectMany(b => b.Rows));
             return;
         }
 
+        // Tag lagu diedit selama di halaman lain: daftar artis dan albumnya dimuat ulang
+        _libraryVersion = App.TagEdits.Version;
         _artists = App.Database.GetArtists().Select(a => new ArtistItem(a)).ToList();
         ArtistList.ItemsSource = _artists;
         EmptyState.Visibility = _artists.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -80,6 +82,12 @@ public sealed partial class ArtistsPage : Page
             ShowArtist(artist);
     }
 
+    // Artis yang sedang tampil di kanan, untuk tombol nama artis
+    private string _shownArtist = "";
+    private int _libraryVersion;
+
+    private void ArtistName_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(ArtistPage), _shownArtist);
+
     private void ShowArtist(ArtistItem artist)
     {
         var albums = App.Database.GetArtistAlbums(artist.Summary.Name);
@@ -88,6 +96,7 @@ public sealed partial class ArtistsPage : Page
             .ToList();
 
         ArtistNameText.Text = artist.Name;
+        _shownArtist = artist.Summary.Name; // nama kunci (kosong untuk Unknown Artist), sama dengan halaman artis
         ArtistCountText.Text =
             $"{Formatters.Count(_blocks.Count, "album")}, {Formatters.Count(_blocks.Sum(b => b.Tracks.Count), "song")}";
         AlbumRepeater.ItemsSource = _blocks;

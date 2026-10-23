@@ -28,6 +28,8 @@ public sealed partial class MiniPlayerWindow : Window
     public MiniPlayerWindow()
     {
         InitializeComponent();
+        if (Content is UIElement root)
+            PlaybackShortcuts.Attach(root); // Spasi, Ctrl+←/→, Ctrl+↑/↓
 
         // Selalu di atas, ukuran tetap, tanpa minimize/maximize: di pojok kanan atas hanya tersisa tombol ×
         if (AppWindow.Presenter is OverlappedPresenter presenter)

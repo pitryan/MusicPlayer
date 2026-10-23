@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml;
+using MusicPlayer.Library;
 
 namespace MusicPlayer.Helpers;
 
@@ -81,6 +82,13 @@ public static class Formatters
 
     /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
     public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    public static string ReleaseKindLabel(ReleaseKind kind) => kind switch
+    {
+        ReleaseKind.Single => "Single",
+        ReleaseKind.EP => "EP",
+        _ => "Album",
+    };
 
     /// <summary>Durasi total playlist seperti Apple Music: "47 minutes", "1 hour", "3 hours, 46 minutes".</summary>
     public static string LongDuration(TimeSpan total)

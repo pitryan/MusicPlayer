@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -35,7 +36,19 @@ public static class TrackMenu
             menu.Items.Add(CreateItem("Remove from Playlist", "\uE711", removeFromPlaylist));
         AddFavouriteItem(menu, track);
         AddGoToItems(menu, track, goToAlbum, goToArtist);
+        AddInfoItem(menu, [track]);
         menu.ShowAt(target, position);
+    }
+
+    /// <summary>
+    /// "Get Info…" untuk satu lagu, atau "Get Album Info…" untuk semua lagu satu album: membuka editor tag.
+    /// Dipakai juga oleh menu LCD, panel antrean, History, dan header album.
+    /// </summary>
+    public static void AddInfoItem(MenuFlyout menu, IReadOnlyList<Track> tracks, bool album = false)
+    {
+        var request = new TagEditorRequest(tracks.Select(t => t.FilePath).ToList(), album ? "Album Info" : "Song Info", FromAlbum: album);
+        menu.Items.Add(CreateItem(album ? "Get Album Info…" : "Get Info…", "\uE946",
+            () => App.MainWindow.ShowPage(typeof(TagEditorPage), request)));
     }
 
     /// <summary>
@@ -110,6 +123,7 @@ public static class TrackMenu
         }));
         AddPlaylistItem(menu, tracks, tracks[0].DisplayAlbum);
         AddGoToItems(menu, tracks[0], goToAlbum: false);
+        AddInfoItem(menu, tracks, album: true);
         menu.ShowAt(target, position);
     }
 
@@ -124,10 +138,10 @@ public static class TrackMenu
         if (goToAlbum && App.Database.FindAlbum(track) is { } album)
             menu.Items.Add(CreateItem("Go to Album", "\uE93C", () => App.MainWindow.ShowPage(typeof(AlbumDetailPage), album)));
 
-        // Nama artis utama, dengan aturan yang sama seperti halaman Artists (tanpa bagian "feat.")
+        // Halaman artis utama, dengan aturan yang sama seperti halaman Artists (tanpa bagian "feat.")
         string artist = ArtistNames.Primary(track.AlbumArtist ?? track.Artist);
         if (goToArtist && artist.Length > 0)
-            menu.Items.Add(CreateItem("Go to Artist", "\uE77B", () => App.MainWindow.ShowPage(typeof(ArtistsPage), artist)));
+            menu.Items.Add(CreateItem("Go to Artist", "\uE77B", () => App.MainWindow.ShowPage(typeof(ArtistPage), artist)));
 
         menu.Items.Add(CreateItem("Show in File Explorer", "\uE838", () => ShowInExplorer(track.FilePath)));
     }

@@ -17,9 +17,12 @@ public static class CoverImageLoader
     public static async Task<BitmapImage?> LoadAsync(string trackPath, int decodePixelWidth)
     {
         byte[]? data = await Task.Run(() => CoverArt.TryRead(trackPath));
-        if (data is null)
-            return null;
+        return data is null ? null : await FromBytesAsync(data, decodePixelWidth);
+    }
 
+    /// <summary>Gambar dari isi file gambar (JPEG/PNG), misalnya cover di editor tag. Harus dipanggil dari UI thread.</summary>
+    public static async Task<BitmapImage?> FromBytesAsync(byte[] data, int decodePixelWidth)
+    {
         try
         {
             using var stream = new InMemoryRandomAccessStream();

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Media;
@@ -36,5 +38,13 @@ public static class CoverCache
         {
             Gate.Release();
         }
+    }
+
+    /// <summary>Melupakan cover lagu-lagu ini (semua ukuran), misalnya setelah cover-nya diganti di editor tag.</summary>
+    public static void Invalidate(IEnumerable<string> trackPaths)
+    {
+        var paths = new HashSet<string>(trackPaths, StringComparer.OrdinalIgnoreCase);
+        foreach (string key in Cache.Keys.Where(k => paths.Contains(k[(k.IndexOf('|') + 1)..])).ToList())
+            Cache.Remove(key);
     }
 }

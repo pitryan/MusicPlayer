@@ -151,7 +151,7 @@ public sealed partial class AlbumDetailPage : Page
     private void ArtistLink_Click(object sender, RoutedEventArgs e)
     {
         if (_artist.Length > 0)
-            App.MainWindow.ShowPage(typeof(ArtistsPage), _artist);
+            App.MainWindow.ShowPage(typeof(ArtistPage), _artist);
     }
 
     private void Play_Click(object sender, RoutedEventArgs e)

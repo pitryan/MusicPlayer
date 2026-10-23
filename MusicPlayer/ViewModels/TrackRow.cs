@@ -66,6 +66,12 @@ public sealed class TrackRow : ObservableObject
 
     public string AlbumText => Track.DisplayAlbum;
 
+    /// <summary>Peringkat di Most Played ("1", "2", ...); kosong di halaman lain.</summary>
+    public string RankText { get; init; } = "";
+
+    /// <summary>Berapa kali sudah diputar, untuk kolom Plays di Most Played; kosong di halaman lain.</summary>
+    public string PlaysText { get; init; } = "";
+
     /// <summary>
     /// Latar belang dipasang di dalam template baris, bukan di kotak ListViewItem-nya.
     /// Latar kotak ListViewItem ikut diubah oleh efek hover, sehingga belangnya bisa hilang.

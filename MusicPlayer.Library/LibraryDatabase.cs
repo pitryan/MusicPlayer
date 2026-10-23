@@ -19,7 +19,7 @@ public sealed class LibraryDatabase
     private const string TrackColumns =
         "id, path, folder, file_size, modified_utc, title, artist, album, album_artist, genre, year, " +
         "track_number, track_count, disc_number, disc_count, duration_ms, codec, sample_rate, " +
-        "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, release_date, copyright";
+        "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, release_date, copyright, release_type";
 
     // Disc kosong dianggap disc 1, dan lagu tanpa nomor track ditaruh di akhir albumnya
     // Kolom yang sama dengan TrackColumns, tapi diawali "t." untuk query yang menggabungkan dua tabel
@@ -132,11 +132,11 @@ public sealed class LibraryDatabase
             INSERT INTO tracks (
                 path, folder, file_size, modified_utc, title, artist, album, album_artist, genre, year,
                 track_number, track_count, disc_number, disc_count, duration_ms, codec, sample_rate,
-                bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, added_utc, release_date, copyright)
+                bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, added_utc, release_date, copyright, release_type)
             VALUES (
                 $path, $folder, $file_size, $modified_utc, $title, $artist, $album, $album_artist, $genre, $year,
                 $track_number, $track_count, $disc_number, $disc_count, $duration_ms, $codec, $sample_rate,
-                $bits_per_sample, $channels, $bitrate_kbps, $has_cover, $has_lyrics, $added_utc, $release_date, $copyright)
+                $bits_per_sample, $channels, $bitrate_kbps, $has_cover, $has_lyrics, $added_utc, $release_date, $copyright, $release_type)
             ON CONFLICT(path) DO UPDATE SET
                 folder = excluded.folder, file_size = excluded.file_size, modified_utc = excluded.modified_utc,
                 title = excluded.title, artist = excluded.artist, album = excluded.album,
@@ -146,7 +146,8 @@ public sealed class LibraryDatabase
                 duration_ms = excluded.duration_ms, codec = excluded.codec, sample_rate = excluded.sample_rate,
                 bits_per_sample = excluded.bits_per_sample, channels = excluded.channels,
                 bitrate_kbps = excluded.bitrate_kbps, has_cover = excluded.has_cover,
-                has_lyrics = excluded.has_lyrics, release_date = excluded.release_date, copyright = excluded.copyright
+                has_lyrics = excluded.has_lyrics, release_date = excluded.release_date, copyright = excluded.copyright,
+                release_type = excluded.release_type
             """;
 
         // Parameter dibuat sekali lalu diisi ulang untuk tiap lagu: jauh lebih cepat untuk ribuan baris
@@ -155,7 +156,7 @@ public sealed class LibraryDatabase
             "$path", "$folder", "$file_size", "$modified_utc", "$title", "$artist", "$album", "$album_artist",
             "$genre", "$year", "$track_number", "$track_count", "$disc_number", "$disc_count", "$duration_ms",
             "$codec", "$sample_rate", "$bits_per_sample", "$channels", "$bitrate_kbps", "$has_cover",
-            "$has_lyrics", "$added_utc", "$release_date", "$copyright",
+            "$has_lyrics", "$added_utc", "$release_date", "$copyright", "$release_type",
         ];
         foreach (string name in names)
             command.Parameters.AddWithValue(name, DBNull.Value);
@@ -178,6 +179,7 @@ public sealed class LibraryDatabase
             Set(command, "$disc_count", t.DiscCount);
             Set(command, "$release_date", t.ReleaseDate);
             Set(command, "$copyright", t.Copyright);
+            Set(command, "$release_type", t.ReleaseType);
             Set(command, "$duration_ms", (long)t.Duration.TotalMilliseconds);
             Set(command, "$codec", t.Codec);
             Set(command, "$sample_rate", t.SampleRate);
@@ -245,7 +247,11 @@ public sealed class LibraryDatabase
                    sum(duration_ms),
                    max(genre),
                    max(CASE WHEN rn = 1 THEN path END),
-                   max(added_utc)
+                   max(added_utc),
+                   max(release_type),
+                   max(track_count),
+                   max(duration_ms),
+                   max(release_date)
             FROM ranked
             GROUP BY album_key COLLATE NOCASE, album COLLATE NOCASE
             ORDER BY album_key COLLATE NOCASE, max(year), album COLLATE NOCASE
@@ -263,7 +269,13 @@ public sealed class LibraryDatabase
                 Duration: TimeSpan.FromMilliseconds(r.GetInt64(4)),
                 Genre: Text(r, 5),
                 CoverTrackPath: r.GetString(6),
-                AddedUtc: new DateTime(r.GetInt64(7), DateTimeKind.Utc)));
+                AddedUtc: new DateTime(r.GetInt64(7), DateTimeKind.Utc))
+            {
+                ReleaseTypeTag = Text(r, 8),
+                TrackTotal = Number(r, 9),
+                LongestTrack = TimeSpan.FromMilliseconds(r.GetInt64(10)),
+                ReleaseDate = Text(r, 11),
+            });
         }
         return albums;
     }
@@ -291,6 +303,59 @@ public sealed class LibraryDatabase
             .OrderByDescending(a => a.Year ?? 0)
             .ThenBy(a => a.Title, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+
+    /// <summary>
+    /// Isi halaman artis: rilis terbaru, lagu paling sering diputar (dari History), album, single dan EP, serta album
+    /// artis lain tempat artis ini ikut tercantum (Appears On). Semua daftar rilis urut dari yang terbaru.
+    /// </summary>
+    public ArtistOverview GetArtistOverview(string artistName, int topSongLimit = 10)
+    {
+        bool IsOwn(string? albumArtist) =>
+            string.Equals(ArtistNames.Primary(albumArtist), artistName, StringComparison.OrdinalIgnoreCase);
+
+        var albums = GetAlbums();
+        var own = albums
+            .Where(a => IsOwn(a.Artist))
+            .OrderByDescending(a => a.ReleaseSortKey, StringComparer.Ordinal)
+            .ThenByDescending(a => a.AddedUtc)
+            .ToList();
+
+        // Appears On: lagu yang mencantumkan artis ini di album milik artis lain. LIKE hanya menyaring kasar supaya
+        // tidak semua lagu dibaca; pencocokan sebenarnya oleh ArtistNames.IsCredited.
+        var guestAlbums = new HashSet<(string, string)>();
+        using (var connection = Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                SELECT {TrackColumns} FROM tracks
+                WHERE album IS NOT NULL AND (artist LIKE $pattern ESCAPE '\' OR title LIKE $pattern ESCAPE '\')
+                """;
+            command.Parameters.AddWithValue("$pattern", $"%{EscapeLike(artistName)}%");
+            foreach (var track in ReadTracks(command))
+            {
+                if (!IsOwn(track.AlbumArtist ?? track.Artist) && ArtistNames.IsCredited(track, artistName))
+                    guestAlbums.Add(((track.AlbumArtist ?? track.Artist ?? "").ToUpperInvariant(), track.Album!.ToUpperInvariant()));
+            }
+        }
+
+        var appearsOn = albums
+            .Where(a => !IsOwn(a.Artist) && guestAlbums.Contains((a.Artist.ToUpperInvariant(), a.Title.ToUpperInvariant())))
+            .OrderByDescending(a => a.ReleaseSortKey, StringComparer.Ordinal)
+            .ToList();
+
+        var topSongs = GetMostPlayed(int.MaxValue)
+            .Where(c => IsOwn(c.Track.AlbumArtist ?? c.Track.Artist) || ArtistNames.IsCredited(c.Track, artistName))
+            .Take(topSongLimit)
+            .ToList();
+
+        return new ArtistOverview(
+            artistName,
+            own.FirstOrDefault(),
+            topSongs,
+            own.Where(a => a.Kind == ReleaseKind.Album).ToList(),
+            own.Where(a => a.Kind != ReleaseKind.Album).ToList(),
+            appearsOn);
+    }
 
     /// <summary>Semua genre beserta jumlah album dan lagunya, urut nama. Lagu tanpa genre tidak ikut.</summary>
     public IReadOnlyList<GenreSummary> GetGenres()
@@ -496,19 +561,24 @@ public sealed class LibraryDatabase
         return plays;
     }
 
-    /// <summary>Lagu yang paling sering diputar. Kalau jumlahnya sama, yang terakhir diputar lebih dulu.</summary>
-    public IReadOnlyList<PlayCount> GetMostPlayed(int limit = 100)
+    /// <summary>
+    /// Lagu yang paling sering diputar. Kalau jumlahnya sama, yang terakhir diputar lebih dulu. Dengan
+    /// <paramref name="sinceUtc"/>, hanya putaran sejak waktu itu yang dihitung (misalnya 30 hari terakhir).
+    /// </summary>
+    public IReadOnlyList<PlayCount> GetMostPlayed(int limit = 100, DateTime? sinceUtc = null)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT {TrackColumnsT}, count(*) AS plays, max(p.played_utc) AS last_played
             FROM plays p JOIN tracks t ON t.path = p.path
+            WHERE p.played_utc >= $since
             GROUP BY t.id
             ORDER BY plays DESC, last_played DESC
             LIMIT $limit
             """;
         command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$since", sinceUtc?.Ticks ?? 0L);
         using var r = command.ExecuteReader();
 
         var result = new List<PlayCount>();
@@ -520,6 +590,42 @@ public sealed class LibraryDatabase
                 new DateTime(r.GetInt64(TrackColumnCount + 1), DateTimeKind.Utc)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Album yang terakhir diputar (lagu mana pun di dalamnya), yang terbaru lebih dulu. Kunci albumnya sama dengan
+    /// GetAlbums, jadi kotak dan halaman albumnya juga sama.
+    /// </summary>
+    public IReadOnlyList<RecentAlbum> GetRecentlyPlayedAlbums(int limit = 60)
+    {
+        var recent = new List<(string Artist, string Title, DateTime LastPlayed)>();
+        using (var connection = Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT coalesce(t.album_artist, t.artist, '') AS album_key, t.album, max(p.played_utc) AS last_played
+                FROM plays p JOIN tracks t ON t.path = p.path
+                WHERE t.album IS NOT NULL
+                GROUP BY album_key COLLATE NOCASE, t.album COLLATE NOCASE
+                ORDER BY last_played DESC
+                LIMIT $limit
+                """;
+            command.Parameters.AddWithValue("$limit", limit);
+            using var r = command.ExecuteReader();
+            while (r.Read())
+                recent.Add((r.GetString(0), r.GetString(1), new DateTime(r.GetInt64(2), DateTimeKind.Utc)));
+        }
+
+        // TryAdd, bukan ToDictionary: NOCASE di SQLite hanya melipat huruf ASCII, jadi dua album yang hanya beda huruf
+        // besar/kecil non-ASCII bisa tetap terpisah di sana
+        var albums = new Dictionary<(string, string), AlbumSummary>();
+        foreach (var album in GetAlbums())
+            albums.TryAdd((album.Artist.ToUpperInvariant(), album.Title.ToUpperInvariant()), album);
+
+        return recent
+            .Where(x => albums.ContainsKey((x.Artist.ToUpperInvariant(), x.Title.ToUpperInvariant())))
+            .Select(x => new RecentAlbum(albums[(x.Artist.ToUpperInvariant(), x.Title.ToUpperInvariant())], x.LastPlayed))
+            .ToList();
     }
 
     // ── Favorit ──────────────────────────────────────────────
@@ -878,6 +984,15 @@ public sealed class LibraryDatabase
                 Execute(connection, "ALTER TABLE tracks ADD COLUMN copyright TEXT;");
             Execute(connection, "UPDATE tracks SET modified_utc = 0; PRAGMA user_version = 2;");
         }
+
+        if (version < 3)
+        {
+            // Versi 3: jenis rilis dari tag MusicBrainz (RELEASETYPE) untuk halaman artis. Sama seperti versi 2:
+            // scan berikutnya membaca ulang tag semua lagu, tanggal ditambahkan tidak berubah.
+            if (!TableColumns(connection, "tracks").Contains("release_type"))
+                Execute(connection, "ALTER TABLE tracks ADD COLUMN release_type TEXT;");
+            Execute(connection, "UPDATE tracks SET modified_utc = 0; PRAGMA user_version = 3;");
+        }
     }
 
     private static HashSet<string> TableColumns(SqliteConnection connection, string table)
@@ -906,7 +1021,7 @@ public sealed class LibraryDatabase
     private static string EscapeLike(string text) =>
         text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
-    private const int TrackColumnCount = 25; // jumlah kolom di TrackColumns; naikkan setiap kali kolom ditambah
+    private const int TrackColumnCount = 26; // jumlah kolom di TrackColumns; naikkan setiap kali kolom ditambah
 
     private static List<Track> ReadTracks(SqliteCommand command)
     {
@@ -932,6 +1047,7 @@ public sealed class LibraryDatabase
                 Genre = Text(r, 9),
                 ReleaseDate = Text(r, 23),
                 Copyright = Text(r, 24),
+                ReleaseType = Text(r, 25),
                 Year = Number(r, 10),
                 TrackNumber = Number(r, 11),
                 TrackCount = Number(r, 12),

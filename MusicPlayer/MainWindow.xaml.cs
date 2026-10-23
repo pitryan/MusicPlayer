@@ -29,6 +29,9 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Spasi, Ctrl+←/→, Ctrl+↑/↓, dan Ctrl+F untuk pencarian
+        if (Content is UIElement root)
+            PlaybackShortcuts.Attach(root, () => SearchBox.Focus(FocusState.Keyboard));
 
         // Bar atas menyatu dengan title bar, seperti Apple Music
         ExtendsContentIntoTitleBar = true;
@@ -246,6 +249,7 @@ public sealed partial class MainWindow : Window
         TrackMenu.AddPlaylistItem(menu, [entry.Track]);
         TrackMenu.AddFavouriteItem(menu, entry.Track);
         TrackMenu.AddGoToItems(menu, entry.Track);
+        TrackMenu.AddInfoItem(menu, [entry.Track]);
         menu.ShowAt(HistoryList, e.GetPosition(HistoryList));
     }
 
@@ -274,6 +278,7 @@ public sealed partial class MainWindow : Window
         TrackMenu.AddPlaylistItem(menu, [entry.Track]);
         TrackMenu.AddFavouriteItem(menu, entry.Track);
         TrackMenu.AddGoToItems(menu, entry.Track);
+        TrackMenu.AddInfoItem(menu, [entry.Track]);
         menu.ShowAt(UpNextList, e.GetPosition(UpNextList));
     }
 
@@ -362,6 +367,7 @@ public sealed partial class MainWindow : Window
         TrackMenu.AddPlaylistItem(menu, [track]);
         TrackMenu.AddFavouriteItem(menu, track);
         TrackMenu.AddGoToItems(menu, track);
+        TrackMenu.AddInfoItem(menu, [track]);
         menu.ShowAt(target, position);
     }
 
@@ -542,6 +548,12 @@ public sealed partial class MainWindow : Window
                 break;
             case "favourites":
                 ContentFrame.Navigate(typeof(PlaylistPage), PlaylistPage.Favourites);
+                break;
+            case AlbumsPage.RecentlyPlayedMode:
+                ContentFrame.Navigate(typeof(AlbumsPage), AlbumsPage.RecentlyPlayedMode);
+                break;
+            case "mostplayed":
+                ContentFrame.Navigate(typeof(MostPlayedPage));
                 break;
             case AllPlaylistsTag:
                 ContentFrame.Navigate(typeof(AllPlaylistsPage));

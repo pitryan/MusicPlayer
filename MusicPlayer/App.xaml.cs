@@ -30,6 +30,18 @@ public partial class App : Application
     /// <summary>Playlist buatan sendiri, dipakai bersama sidebar, menu, dan halaman playlist.</summary>
     public static PlaylistsService Playlists { get; private set; } = null!;
 
+    /// <summary>Menyimpan hasil editor tag dan memberi tahu halaman lain bahwa isi library berubah.</summary>
+    public static TagEditService TagEdits { get; private set; } = null!;
+
+    /// <summary>
+    /// Kontrol media Windows (tombol media keyboard/headset, panel media). Null kalau Windows tidak menyediakannya;
+    /// aplikasi tetap jalan tanpanya.
+    /// </summary>
+    public static MediaControlsSync? MediaControls { get; private set; }
+
+    /// <summary>Klien MusicBrainz untuk editor tag (Look up on MusicBrainz). Satu instance, supaya batas 1 permintaan per detik berlaku di seluruh aplikasi.</summary>
+    public static MusicBrainzClient MusicBrainz { get; } = new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
+
     public App()
     {
         InitializeComponent();
@@ -45,9 +57,23 @@ public partial class App : Application
         Playback = new PlaybackService(DispatcherQueue.GetForCurrentThread(), Database);
         RestorePlaybackSettings();
         Lyrics = CreateLyrics();
+        TagEdits = new TagEditService(Database, Playback, CoverCache.Invalidate, () => Lyrics.Retry());
+        MediaControls = CreateMediaControls();
 
         MainWindow = new MainWindow();
         MainWindow.Activate();
+    }
+
+    private static MediaControlsSync? CreateMediaControls()
+    {
+        try
+        {
+            return new MediaControlsSync(Playback, new WindowsMediaControls(DispatcherQueue.GetForCurrentThread()), CoverArt.TryRead);
+        }
+        catch (Exception)
+        {
+            return null; // tanpa kontrol media, tombol di aplikasi dan shortcut keyboard tetap berfungsi
+        }
     }
 
     /// <summary>

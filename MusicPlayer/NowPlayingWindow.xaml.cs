@@ -31,6 +31,8 @@ public sealed partial class NowPlayingWindow : Window
     public NowPlayingWindow(WindowId displayOf)
     {
         InitializeComponent();
+        if (Content is UIElement root)
+            PlaybackShortcuts.Attach(root); // Spasi, Ctrl+←/→, Ctrl+↑/↓
 
         // Pindah dulu ke layar asal (tempat MiniPlayer berada), baru dijadikan layar penuh: mode layar penuh
         // selalu memakai layar tempat jendela itu sedang berada, dan jendela baru belum tentu muncul di sana

@@ -53,6 +53,7 @@ public static class TagReader
                 HasLyrics = !string.IsNullOrWhiteSpace(tag.Lyrics),
                 ReleaseDate = Clean(ReadReleaseDate(file)),
                 Copyright = Clean(tag.Copyright),
+                ReleaseType = Clean(ReadReleaseType(file, tag)),
             };
         }
         catch (Exception ex)
@@ -67,6 +68,20 @@ public static class TagReader
     /// Tanggal rilis lengkap kalau ada, misalnya "2026-09-30". Untuk semua format TagLib hanya menyediakan tahunnya,
     /// jadi tanggal lengkap dibaca dari tag aslinya: DATE (FLAC/Ogg), TDRC (MP3), atau ©day (M4A).
     /// </summary>
+    /// <summary>
+    /// MusicBrainz Picard menulis jenis rilis ke RELEASETYPE di FLAC/Ogg, sedangkan TagLib membaca MUSICBRAINZ_ALBUMTYPE;
+    /// keduanya dicek. Untuk MP3 (TXXX "MusicBrainz Album Type") dan M4A, properti TagLib sudah memakai nama yang sama
+    /// dengan Picard.
+    /// </summary>
+    private static string? ReadReleaseType(TagLib.File file, TagLib.Tag tag)
+    {
+        if (file.GetTag(TagLib.TagTypes.Xiph) is TagLib.Ogg.XiphComment xiph
+            && Clean(xiph.GetFirstField("RELEASETYPE")) is { } releaseType)
+            return releaseType;
+
+        return tag.MusicBrainzReleaseType;
+    }
+
     // Kotak tanggal rilis di tag M4A bernama "©day" (byte 0xA9 lalu "day"). Konstanta BoxType milik TagLib tidak publik.
     private static readonly TagLib.ByteVector AppleDayBox = new(0xA9, (byte)'d', (byte)'a', (byte)'y');
 

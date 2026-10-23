@@ -5,3 +5,6 @@ public sealed record PlayRecord(Track Track, DateTime PlayedUtc);
 
 /// <summary>Lagu beserta berapa kali sudah diputar, untuk daftar Most Played.</summary>
 public sealed record PlayCount(Track Track, int Count, DateTime LastPlayedUtc);
+
+/// <summary>Album beserta kapan terakhir diputar, untuk halaman Recently Played.</summary>
+public sealed record RecentAlbum(AlbumSummary Album, DateTime LastPlayedUtc);

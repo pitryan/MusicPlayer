@@ -21,7 +21,7 @@
                 Foreground="{StaticResource SecondaryTextBrush}" />
         </StackPanel>
 
-        <!-- Dipakai untuk dua halaman: Albums (tanpa kelompok) dan Recently Added (berkelompok) -->
+        <!-- Dipakai untuk Albums dan album per genre (tanpa kelompok), serta Recently Added dan Recently Played (berkelompok) -->
         <GridView
             x:Name="AlbumGrid"
             Grid.Row="1"
@@ -82,11 +82,14 @@
             Margin="0,48,24,0"
             HorizontalAlignment="Center">
             <TextBlock
+                x:Name="EmptyTitle"
                 Text="No albums yet"
                 Style="{StaticResource SubtitleTextBlockStyle}"
                 HorizontalAlignment="Center" />
             <TextBlock
+                x:Name="EmptyDetail"
                 Text="Add a music folder in Settings (the gear icon at the bottom left)."
+                HorizontalAlignment="Center"
                 Foreground="{StaticResource SecondaryTextBrush}" />
         </StackPanel>
     </Grid>

@@ -38,6 +38,12 @@ public sealed record Track
     /// <summary>Teks copyright dari tag, misalnya "℗ 2026 Sony Music Labels Inc.".</summary>
     public string? Copyright { get; init; }
 
+    /// <summary>
+    /// Jenis rilis dari tag MusicBrainz (RELEASETYPE), misalnya "album", "single", "ep", atau "album; compilation".
+    /// Kosong untuk kebanyakan file; jenis rilis album lalu ditebak dari judul dan jumlah lagunya (lihat ReleaseKinds).
+    /// </summary>
+    public string? ReleaseType { get; init; }
+
     public string DisplayTitle => Title ?? Path.GetFileNameWithoutExtension(FilePath);
     public string DisplayArtist => Artist ?? AlbumArtist ?? "Unknown Artist";
     public string DisplayAlbum => Album ?? "Unknown Album";
