@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using MusicPlayer.Helpers;
 using MusicPlayer.Services;
+using MusicPlayer.ViewModels;
 
 namespace MusicPlayer;
 
@@ -25,7 +26,10 @@ public sealed partial class NowPlayingWindow : Window
     // Lirik di layar penuh menyala atau tidak, diingat seperti di Apple Music
     private const string ShowLyricsSetting = "FullScreenLyrics";
 
-    // Pemutar sedang di kiri, dengan lirik di kanan
+    // Antrean di layar penuh menyala atau tidak, diingat juga
+    private const string ShowQueueSetting = "FullScreenQueue";
+
+    // Lirik sedang tampil di kanan (dipertahankan selama lirik lagu berikutnya dicari)
     private bool _sideBySide;
 
     public NowPlayingWindow(WindowId displayOf)
@@ -42,15 +46,19 @@ public sealed partial class NowPlayingWindow : Window
 
         Playback.PropertyChanged += OnPlaybackPropertyChanged;
         App.Lyrics.Changed += OnLyricsChanged;
+        Playback.UpNext.CollectionChanged += UpNext_CollectionChanged;
         Closed += (_, _) =>
         {
             Playback.PropertyChanged -= OnPlaybackPropertyChanged;
             App.Lyrics.Changed -= OnLyricsChanged;
+            Playback.UpNext.CollectionChanged -= UpNext_CollectionChanged;
             LyricsArea.IsActive = false; // berhenti mencari lirik untuk layar ini
         };
         _ = LoadLargeCoverAsync();
 
-        LyricsToggle.IsChecked = AppSettings.Get(ShowLyricsSetting, true);
+        // Antrean dan lirik bergantian; kalau dua-duanya tersimpan menyala, antrean yang dipakai
+        QueueToggle.IsChecked = AppSettings.Get(ShowQueueSetting, false);
+        LyricsToggle.IsChecked = QueueToggle.IsChecked != true && AppSettings.Get(ShowLyricsSetting, true);
         UpdateLyricsLayout();
     }
 
@@ -98,8 +106,24 @@ public sealed partial class NowPlayingWindow : Window
 
     private void LyricsToggle_Click(object sender, RoutedEventArgs e)
     {
-        AppSettings.Set(ShowLyricsSetting, LyricsToggle.IsChecked == true);
+        if (LyricsToggle.IsChecked == true)
+            QueueToggle.IsChecked = false;
+        SaveSidePanel();
         UpdateLyricsLayout();
+    }
+
+    private void QueueToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (QueueToggle.IsChecked == true)
+            LyricsToggle.IsChecked = false;
+        SaveSidePanel();
+        UpdateLyricsLayout();
+    }
+
+    private void SaveSidePanel()
+    {
+        AppSettings.Set(ShowLyricsSetting, LyricsToggle.IsChecked == true);
+        AppSettings.Set(ShowQueueSetting, QueueToggle.IsChecked == true);
     }
 
     private void OnLyricsChanged(object? sender, EventArgs e) => UpdateLyricsLayout();
@@ -110,7 +134,8 @@ public sealed partial class NowPlayingWindow : Window
     /// </summary>
     private void UpdateLyricsLayout()
     {
-        bool wanted = LyricsToggle.IsChecked == true;
+        bool queue = QueueToggle.IsChecked == true;
+        bool wanted = LyricsToggle.IsChecked == true && !queue;
         LyricsArea.IsActive = wanted;
 
         var state = App.Lyrics.State;
@@ -119,12 +144,41 @@ public sealed partial class NowPlayingWindow : Window
         else if (state != LyricsState.Loading)
             _sideBySide = state == LyricsState.Ready;
 
-        Grid.SetColumnSpan(PlayerArea, _sideBySide ? 1 : 2);
+        // Pemutar pindah ke kiri kalau kolom kanan dipakai lirik atau antrean
+        Grid.SetColumnSpan(PlayerArea, _sideBySide || queue ? 1 : 2);
         LyricsArea.Visibility = _sideBySide ? Visibility.Visible : Visibility.Collapsed;
+        if (queue && QueueArea.Visibility != Visibility.Visible)
+            Animations.SlideIn(QueueArea, 48, 0);
+        QueueArea.Visibility = queue ? Visibility.Visible : Visibility.Collapsed;
+        UpdateQueueEmpty();
 
         // Lagu tanpa lirik: tombolnya tidak bisa diklik, seperti Apple Music. Pilihannya tetap diingat, jadi lirik
         // muncul lagi begitu lagu berikutnya punya lirik.
         LyricsToggle.IsEnabled = !wanted || state is LyricsState.Ready or LyricsState.Loading;
+    }
+
+    private void UpNext_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) => UpdateQueueEmpty();
+
+    private void UpdateQueueEmpty() =>
+        FullQueueEmpty.Visibility = Playback.UpNext.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    private void FullQueueList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (!args.InRecycleQueue && args.Item is QueueEntry entry)
+            entry.EnsureCover();
+    }
+
+    private void FullQueueList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
+            Playback.PlayFromQueue(entry);
+    }
+
+    // Go to Album/Artist dan Get Info menutup layar penuh dan membuka halamannya di jendela utama
+    private void FullQueueList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
+            TrackMenu.ShowForQueueEntry(FullQueueList, e.GetPosition(FullQueueList), entry);
     }
 
     private void SeekBar_PointerPressed(object sender, PointerRoutedEventArgs e)

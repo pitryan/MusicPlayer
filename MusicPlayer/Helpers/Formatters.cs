@@ -83,6 +83,14 @@ public static class Formatters
     /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
     public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
+    /// <summary>Golongan kualitas yang ringkas untuk badge di bar atas dan MiniPlayer.</summary>
+    public static string QualityCompactText(bool hiRes, bool lossless, bool lossy) =>
+        hiRes ? "Hi-Res" : lossless ? "LL" : lossy ? "Lossy" : "";
+
+    public static Visibility VisibleIfNull(object? value) => value is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public static Visibility CollapsedIfNull(object? value) => value is null ? Visibility.Collapsed : Visibility.Visible;
+
     /// <summary>Frekuensi seperti "22 kHz", "16,8 kHz", atau "22,05 kHz" (batas CD ditulis tepat).</summary>
     public static string Kilohertz(double hz) => $"{hz / 1000.0:0.##} kHz";
 

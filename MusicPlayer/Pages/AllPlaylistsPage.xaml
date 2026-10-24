@@ -4,6 +4,7 @@
     x:Class="MusicPlayer.Pages.AllPlaylistsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls"
     xmlns:vm="using:MusicPlayer.ViewModels">
 
     <Grid Padding="24,20,0,0">
@@ -12,16 +13,10 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Margin="0,0,24,16">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <TextBlock Text="All Playlists" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock
-                    x:Name="HeaderCountText"
-                    VerticalAlignment="Bottom"
-                    Margin="0,0,0,4"
-                    Foreground="{StaticResource SecondaryTextBrush}" />
-            </StackPanel>
-            <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" Click="NewPlaylist_Click">
+        <Grid Margin="-24,-20,0,12">
+            <controls:PageHeader x:Name="Header" Title="All Playlists" />
+            <!-- Di kiri kepala halaman; jumlah playlist di kanan -->
+            <Button HorizontalAlignment="Left" VerticalAlignment="Center" Margin="24,0,0,0" Click="NewPlaylist_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon Glyph="&#xE710;" FontSize="14" />
                     <TextBlock Text="New Playlist" />
@@ -29,20 +24,30 @@
             </Button>
         </Grid>
 
+        <!-- Kotak sebesar Apple Music, sama seperti grid album (lihat TileGrid) -->
         <GridView
             x:Name="PlaylistGrid"
             Grid.Row="1"
-            Padding="0,0,24,24"
+            Padding="16,0,16,24"
             SelectionMode="None"
             IsItemClickEnabled="True"
             ItemClick="PlaylistGrid_ItemClick"
+            SizeChanged="PlaylistGrid_SizeChanged"
+            Loaded="PlaylistGrid_Loaded"
             ContainerContentChanging="PlaylistGrid_ContainerContentChanging">
+            <GridView.ItemContainerStyle>
+                <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                </Style>
+            </GridView.ItemContainerStyle>
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItem">
-                    <StackPanel Width="180" Margin="0,0,0,12">
+                    <StackPanel Margin="0,0,20,20">
+                        <controls:SquareBox>
                         <Grid PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited"
-                            Width="180"
-                            Height="180"
                             CornerRadius="6"
                             Background="{StaticResource CoverPlaceholderBrush}">
                             <FontIcon Glyph="&#xE8D6;" FontSize="40" Foreground="{StaticResource SecondaryTextBrush}" />
@@ -87,6 +92,7 @@
                                 </Border>
                             </Grid>
                         </Grid>
+                        </controls:SquareBox>
                         <TextBlock
                             Text="{x:Bind Name}"
                             FontSize="13"

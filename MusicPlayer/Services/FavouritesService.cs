@@ -27,6 +27,9 @@ public sealed class FavouritesService
 
     public bool IsFavourite(Track? track) => track is not null && _paths.Contains(track.FilePath);
 
+    /// <summary>Path semua lagu favorit (salinan), misalnya untuk bobot Autoplay.</summary>
+    public HashSet<string> Paths => new(_paths, StringComparer.OrdinalIgnoreCase);
+
     public void Toggle(Track track) => Set(track, !IsFavourite(track));
 
     public void Set(Track track, bool favourite)

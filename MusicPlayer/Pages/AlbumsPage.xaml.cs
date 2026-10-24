@@ -63,12 +63,12 @@ public sealed partial class AlbumsPage : Page
             : null;
 
         var albums = App.Database.GetAlbums(genre).Select(a => new AlbumItem(a)).ToList();
-        CountText.Text = $"{albums.Count} albums";
+        Header.Detail = $"{albums.Count} albums";
         EmptyState.Visibility = albums.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         if (_mode == "recent")
         {
-            PageTitle.Text = "Recently Added";
+            Header.Title = "Recently Added";
             var source = new CollectionViewSource
             {
                 IsSourceGrouped = true,
@@ -78,18 +78,18 @@ public sealed partial class AlbumsPage : Page
         }
         else
         {
-            PageTitle.Text = genre ?? "Albums";
+            Header.Title = genre ?? "Albums";
             AlbumGrid.ItemsSource = albums;
         }
     }
 
     private void LoadRecentlyPlayed()
     {
-        PageTitle.Text = "Recently Played";
+        Header.Title = "Recently Played";
         var recent = App.Database.GetRecentlyPlayedAlbums(RecentlyPlayedLimit)
             .Select(r => (Item: new AlbumItem(r.Album), r.LastPlayedUtc))
             .ToList();
-        CountText.Text = $"{recent.Count} albums";
+        Header.Detail = $"{recent.Count} albums";
 
         EmptyTitle.Text = "Nothing played yet";
         EmptyDetail.Text = "Albums appear here after you've listened to a song from them.";
@@ -119,4 +119,9 @@ public sealed partial class AlbumsPage : Page
     private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
 
     private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
+
+    // Ukuran kotak mengikuti lebar grid (Apple Music: sekitar 240 px, 6 per baris di jendela 1920 px)
+    private void AlbumGrid_SizeChanged(object sender, SizeChangedEventArgs e) => TileGrid.Fit(AlbumGrid);
+
+    private void AlbumGrid_Loaded(object sender, RoutedEventArgs e) => TileGrid.Fit(AlbumGrid);
 }

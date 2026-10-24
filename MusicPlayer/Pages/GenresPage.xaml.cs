@@ -26,7 +26,7 @@ public sealed partial class GenresPage : Page
 
         var genres = App.Database.GetGenres().Select(g => new GenreItem(g)).ToList();
         GenreGrid.ItemsSource = genres;
-        HeaderCountText.Text = Formatters.Count(genres.Count, "genre");
+        Header.Detail = Formatters.Count(genres.Count, "genre");
         EmptyState.Visibility = genres.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 

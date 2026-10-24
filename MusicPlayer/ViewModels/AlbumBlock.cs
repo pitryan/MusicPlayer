@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.UI.Xaml.Media;
@@ -28,7 +29,7 @@ public sealed class AlbumBlock : ObservableObject
 
     public string Title => Summary.Title;
 
-    /// <summary>Contoh: "J-Pop · 2024 · 10 songs".</summary>
+    /// <summary>Contoh: "J-Pop · 2024", seperti Apple Music.</summary>
     public string Meta
     {
         get
@@ -38,10 +39,12 @@ public sealed class AlbumBlock : ObservableObject
                 parts.Add(genre);
             if (Summary.Year is int year)
                 parts.Add(year.ToString());
-            parts.Add(Formatters.Count(Summary.TrackCount, "song"));
             return string.Join(" · ", parts);
         }
     }
+
+    /// <summary>Di bawah cover, seperti Apple Music. Contoh: "9 songs, 34 minutes".</summary>
+    public string SummaryText => $"{Formatters.Count(Tracks.Count, "song")}, {Formatters.LongDuration(TimeSpan.FromTicks(Tracks.Sum(t => t.Duration.Ticks)))}";
 
     public ImageSource? Cover
     {

@@ -3,6 +3,7 @@
     x:Class="MusicPlayer.Pages.AlbumsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls"
     xmlns:vm="using:MusicPlayer.ViewModels"
     NavigationCacheMode="Enabled">
 
@@ -12,24 +13,29 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
-            <TextBlock x:Name="PageTitle" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock
-                x:Name="CountText"
-                VerticalAlignment="Bottom"
-                Margin="0,0,0,4"
-                Foreground="{StaticResource SecondaryTextBrush}" />
-        </StackPanel>
+        <!-- Kepala halaman gaya Apple Music: judul kecil di tengah, jumlah album di kanan -->
+        <controls:PageHeader x:Name="Header" Margin="-24,-20,0,12" />
 
         <!-- Dipakai untuk Albums dan album per genre (tanpa kelompok), serta Recently Added dan Recently Played (berkelompok) -->
+        <!-- Kotak sebesar Apple Music: lebar kotak mengikuti lebar jendela (lihat TileGrid) -->
         <GridView
             x:Name="AlbumGrid"
             Grid.Row="1"
-            Padding="0,0,24,24"
+            Padding="16,0,16,24"
             SelectionMode="None"
             IsItemClickEnabled="True"
             ItemClick="AlbumGrid_ItemClick"
+            SizeChanged="AlbumGrid_SizeChanged"
+            Loaded="AlbumGrid_Loaded"
             ContainerContentChanging="AlbumGrid_ContainerContentChanging">
+            <GridView.ItemContainerStyle>
+                <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                </Style>
+            </GridView.ItemContainerStyle>
 
             <GridView.GroupStyle>
                 <GroupStyle HidesIfEmpty="True">
@@ -43,20 +49,21 @@
 
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="vm:AlbumItem">
-                    <StackPanel Width="180" Margin="0,0,0,12">
+                    <!-- Jarak antar kotak (20 px) dibawa oleh setiap kotak di kanan dan bawahnya -->
+                    <StackPanel Margin="0,0,20,20">
                         <!-- Placeholder abu-abu dengan ikon, tertutup cover saat sudah dimuat; membesar sedikit saat kursor di atasnya -->
-                        <Grid PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited"
-                            Width="180"
-                            Height="180"
-                            CornerRadius="6"
-                            Background="{StaticResource CoverPlaceholderBrush}">
-                            <FontIcon Glyph="&#xE93C;" FontSize="40" Foreground="{StaticResource SecondaryTextBrush}" />
-                            <Border CornerRadius="6">
-                                <Border.Background>
-                                    <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
-                                </Border.Background>
-                            </Border>
-                        </Grid>
+                        <controls:SquareBox>
+                            <Grid PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited"
+                                CornerRadius="6"
+                                Background="{StaticResource CoverPlaceholderBrush}">
+                                <FontIcon Glyph="&#xE93C;" FontSize="40" Foreground="{StaticResource SecondaryTextBrush}" />
+                                <Border CornerRadius="6">
+                                    <Border.Background>
+                                        <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border.Background>
+                                </Border>
+                            </Grid>
+                        </controls:SquareBox>
                         <TextBlock
                             Text="{x:Bind Title}"
                             FontSize="13"

@@ -23,6 +23,11 @@ public sealed class QueueEntry : ObservableObject
 
     public Track Track { get; private set; }
 
+    /// <summary>Lagu tambahan dari Autoplay (bukan antrean sendiri); tampil sedikit redup, seperti Apple Music.</summary>
+    public bool IsAutoplay { get; init; }
+
+    public double ItemOpacity => IsAutoplay ? 0.6 : 1;
+
     /// <summary>Data lagu baru setelah tag-nya diedit; judul dan artis di panel antrean ikut berubah.</summary>
     public void UpdateTrack(Track track)
     {

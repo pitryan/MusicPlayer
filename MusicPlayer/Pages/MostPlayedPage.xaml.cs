@@ -63,7 +63,7 @@ public sealed partial class MostPlayedPage : Page
         }).ToList();
         TrackList.ItemsSource = _rows;
 
-        CountText.Text = Formatters.Count(_rows.Count, "song");
+        Header.Detail = Formatters.Count(_rows.Count, "song");
         bool empty = _rows.Count == 0;
         EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ColumnHeaders.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;

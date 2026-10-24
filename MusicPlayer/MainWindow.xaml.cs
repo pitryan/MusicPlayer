@@ -205,6 +205,7 @@ public sealed partial class MainWindow : Window
         UpNextList.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
         HistoryList.Visibility = history ? Visibility.Visible : Visibility.Collapsed;
         ClearQueueButton.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
+        QueueModes.Visibility = history ? Visibility.Collapsed : Visibility.Visible;
 
         if (history)
             LoadHistory();

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Ikon tombol antrean: daftar, dengan lencana merah ∞ di pojok kanan atas selama Autoplay menyala, seperti Apple
+    Music. Dipakai tombol antrean di bar atas, MiniPlayer, dan layar penuh.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.QueueGlyph"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:helpers="using:MusicPlayer.Helpers">
+    <Grid Width="22" Height="20">
+        <FontIcon Glyph="&#xE8FD;" FontSize="16" HorizontalAlignment="Left" VerticalAlignment="Center" />
+        <Border
+            Width="13"
+            Height="13"
+            CornerRadius="6.5"
+            Margin="0,-4,-5,0"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Background="{StaticResource AccentRedBrush}"
+            Visibility="{x:Bind helpers:Formatters.VisibleIf(Playback.AutoplayEnabled), Mode=OneWay}">
+            <TextBlock
+                Text="∞"
+                FontSize="10"
+                FontWeight="Bold"
+                Foreground="White"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Margin="0,-2,0,0" />
+        </Border>
+    </Grid>
+</UserControl>

@@ -32,6 +32,36 @@
             <SolidColorBrush x:Key="CoverPlaceholderBrush" Color="#FF4A4A4A" />
             <SolidColorBrush x:Key="SecondaryTextBrush" Color="#99FFFFFF" />
 
+            <!--
+                Tulisan dan ikon di tombol merah (Play, Shuffle, Save, Check Library) putih seperti Apple Music. Bawaan
+                tema gelap WinUI memakai warna hitam di atas warna aksen.
+            -->
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#CCFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundDisabled" Color="#66FFFFFF" />
+
+            <!-- Tombol ikon merah tanpa latar (Play, Shuffle, ••• di halaman Artists), seperti Apple Music -->
+            <Style x:Key="RedIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="8" />
+                <Setter Property="MinWidth" Value="36" />
+                <Setter Property="MinHeight" Value="36" />
+            </Style>
+
+            <!-- Panah bulat untuk menggulir rak mendatar (More by), seperti Apple Music -->
+            <Style x:Key="ShelfArrowButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Width" Value="36" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="18" />
+                <Setter Property="VerticalAlignment" Value="Top" />
+                <Setter Property="Background" Value="#E62B2B2B" />
+                <Setter Property="BorderBrush" Value="#33FFFFFF" />
+                <Setter Property="BorderThickness" Value="1" />
+            </Style>
+
             <!-- Tombol transport (prev/play/next) tanpa latar dan bingkai -->
             <Style x:Key="TransportButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Background" Value="Transparent" />

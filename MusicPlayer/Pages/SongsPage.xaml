@@ -3,6 +3,7 @@
     x:Class="MusicPlayer.Pages.SongsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls"
     xmlns:vm="using:MusicPlayer.ViewModels">
 
     <Page.Resources>
@@ -26,14 +27,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
-            <TextBlock Text="Songs" Style="{StaticResource TitleTextBlockStyle}" />
-            <TextBlock
-                x:Name="CountText"
-                VerticalAlignment="Bottom"
-                Margin="0,0,0,4"
-                Foreground="{StaticResource SecondaryTextBrush}" />
-        </StackPanel>
+        <controls:PageHeader x:Name="Header" Title="Songs" Margin="-24,-20,-24,12" />
 
         <!-- Judul kolom. Lebar kolomnya harus sama dengan template baris di bawah -->
         <Grid Grid.Row="1" Padding="16,0,16,8" ColumnSpacing="16">

@@ -31,7 +31,13 @@
                         Visibility="{x:Bind helpers:Formatters.VisibleIf(Playback.IsLossyQuality), Mode=OneWay}" />
                 </Grid>
             </Viewbox>
-            <TextBlock Text="{x:Bind Playback.QualityShortText, Mode=OneWay}" VerticalAlignment="Center" />
+            <TextBlock x:Name="FullText" Text="{x:Bind Playback.QualityShortText, Mode=OneWay}" VerticalAlignment="Center" />
+            <!-- Versi ringkas (IsCompact): LL, Hi-Res, atau Lossy -->
+            <TextBlock
+                x:Name="CompactText"
+                Text="{x:Bind helpers:Formatters.QualityCompactText(Playback.IsHiResQuality, Playback.IsLosslessQuality, Playback.IsLossyQuality), Mode=OneWay}"
+                VerticalAlignment="Center"
+                Visibility="Collapsed" />
         </StackPanel>
         <Button.Flyout>
             <Flyout x:Name="QualityFlyout" Placement="Bottom" ShouldConstrainToRootBounds="False">

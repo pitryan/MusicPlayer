@@ -34,7 +34,10 @@
 
         <NavigationView.PaneHeader>
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,16,0,8">
-                <FontIcon Glyph="&#xE8D6;" FontSize="18" Foreground="{StaticResource AccentRedBrush}" />
+                <!-- Logo aplikasi (lima batang gelombang, sama dengan ikon aplikasi) -->
+                <Viewbox Width="18" Height="18">
+                    <PathIcon Data="F1 M0.9,8.3 A1.3,1.3 0 0 1 3.5,8.3 V11.7 A1.3,1.3 0 0 1 0.9,11.7 Z M4.8,5.8 A1.3,1.3 0 0 1 7.4,5.8 V14.2 A1.3,1.3 0 0 1 4.8,14.2 Z M8.7,3.3 A1.3,1.3 0 0 1 11.3,3.3 V16.7 A1.3,1.3 0 0 1 8.7,16.7 Z M12.6,5.8 A1.3,1.3 0 0 1 15.2,5.8 V14.2 A1.3,1.3 0 0 1 12.6,14.2 Z M16.5,8.3 A1.3,1.3 0 0 1 19.1,8.3 V11.7 A1.3,1.3 0 0 1 16.5,11.7 Z" Foreground="{StaticResource AccentRedBrush}" />
+                </Viewbox>
                 <TextBlock Text="MusicPlayer" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
         </NavigationView.PaneHeader>
@@ -215,11 +218,22 @@
                             </Grid>
                         </Grid>
 
+                        <!-- Tanpa lagu: logo aplikasi di tengah LCD, seperti Apple Music -->
+                        <Viewbox
+                            Grid.Column="1"
+                            Width="26"
+                            Height="26"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Visibility="{x:Bind helpers:Formatters.VisibleIfNull(Playback.CurrentTrack), Mode=OneWay}">
+                            <PathIcon Data="F1 M0.9,8.3 A1.3,1.3 0 0 1 3.5,8.3 V11.7 A1.3,1.3 0 0 1 0.9,11.7 Z M4.8,5.8 A1.3,1.3 0 0 1 7.4,5.8 V14.2 A1.3,1.3 0 0 1 4.8,14.2 Z M8.7,3.3 A1.3,1.3 0 0 1 11.3,3.3 V16.7 A1.3,1.3 0 0 1 8.7,16.7 Z M12.6,5.8 A1.3,1.3 0 0 1 15.2,5.8 V14.2 A1.3,1.3 0 0 1 12.6,14.2 Z M16.5,8.3 A1.3,1.3 0 0 1 19.1,8.3 V11.7 A1.3,1.3 0 0 1 16.5,11.7 Z" Foreground="{StaticResource AccentRedBrush}" />
+                        </Viewbox>
+
                         <!--
                             Lega seperti Apple Music: dua baris (judul dan artis) di tengah, badge kecil di kiri, tombol •••
                             di kanan. Garis progres tipis menempel di tepi bawah; waktu baru muncul saat kursor di atas LCD.
                         -->
-                        <Grid Grid.Column="1">
+                        <Grid Grid.Column="1" Visibility="{x:Bind helpers:Formatters.CollapsedIfNull(Playback.CurrentTrack), Mode=OneWay}">
                             <Grid Padding="8,5,8,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="72" />
@@ -231,7 +245,7 @@
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
                                 <!-- Badge kualitas; diklik untuk melihat detail format dan jalur output -->
-                                <controls:QualityBadge HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                <controls:QualityBadge HorizontalAlignment="Left" VerticalAlignment="Center" IsCompact="True" />
                                 <controls:MarqueeText
                                     Grid.Column="1"
                                     Text="{x:Bind Playback.TitleText, Mode=OneWay}"
@@ -373,7 +387,8 @@
                             BorderThickness="0"
                             ToolTipService.ToolTip="Playing Next"
                             Click="QueueToggle_Click">
-                            <FontIcon Glyph="&#xE8FD;" FontSize="16" />
+                            <!-- Lencana ∞ menyala selama Autoplay aktif -->
+                            <controls:QueueGlyph />
                         </ToggleButton>
                     </StackPanel>
                 </Grid>
@@ -424,15 +439,18 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock
                                 x:Name="QueueCountText"
                                 FontSize="12"
                                 Foreground="{StaticResource SecondaryTextBrush}"
                                 VerticalAlignment="Center" />
+                            <!-- Shuffle, Repeat, dan Autoplay, seperti Playing Next di Apple Music -->
+                            <controls:QueueModeButtons x:Name="QueueModes" Grid.Column="1" VerticalAlignment="Center" />
                             <Button
                                 x:Name="ClearQueueButton"
-                                Grid.Column="1"
+                                Grid.Column="2"
                                 Content="Clear"
                                 Background="Transparent"
                                 BorderThickness="0"
@@ -453,6 +471,14 @@
                         DoubleTapped="UpNextList_DoubleTapped"
                         RightTapped="UpNextList_RightTapped"
                         ContainerContentChanging="UpNextList_ContainerContentChanging">
+                        <!-- Lagu masuk, keluar, dan berpindah dengan animasi; saat panel dibuka, isinya muncul berurutan -->
+                        <ListView.ItemContainerTransitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition IsStaggeringEnabled="True" />
+                                <AddDeleteThemeTransition />
+                                <ReorderThemeTransition />
+                            </TransitionCollection>
+                        </ListView.ItemContainerTransitions>
                         <ListView.ItemContainerStyle>
                             <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -461,7 +487,8 @@
                         </ListView.ItemContainerStyle>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="vm:QueueEntry">
-                                <Grid ColumnSpacing="10">
+                                <!-- Lagu Autoplay sedikit redup -->
+                                <Grid ColumnSpacing="10" Opacity="{x:Bind ItemOpacity}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="40" />
                                         <ColumnDefinition Width="*" />

@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.ViewModels;
+using Windows.Foundation;
 
 namespace MusicPlayer.Pages;
 
@@ -141,6 +142,34 @@ public sealed partial class ArtistsPage : Page
         if (block is not null)
             TrackMenu.Show(AlbumRepeater, e.GetPosition(AlbumRepeater), block.Tracks, block.Rows.IndexOf(row), goToArtist: false);
     }
+
+    /// <summary>Menu artis: semua lagu artis ini (Play Next, Add to Queue, playlist, info, dan halaman artisnya).</summary>
+    private void ArtistMore_Click(object sender, RoutedEventArgs e)
+    {
+        var tracks = _blocks.SelectMany(b => b.Tracks).ToList();
+        if (tracks.Count > 0 && sender is FrameworkElement button)
+            TrackMenu.ShowForAlbum(button, new Point(0, button.ActualHeight), tracks);
+    }
+
+    private void AlbumMore_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: AlbumBlock block } button)
+            TrackMenu.ShowForAlbum(button, new Point(0, button.ActualHeight), block.Tracks);
+    }
+
+    private void RowMore_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: TrackRow row } button)
+            return;
+        var block = _blocks.FirstOrDefault(b => b.Rows.Contains(row));
+        if (block is not null)
+            TrackMenu.Show(button, new Point(0, button.ActualHeight), block.Tracks, block.Rows.IndexOf(row), goToArtist: false);
+    }
+
+    // Cover album membesar sedikit saat kursor di atasnya
+    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
+
+    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 
     private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e)
     {

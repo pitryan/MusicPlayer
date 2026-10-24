@@ -49,6 +49,7 @@
                     Foreground="{StaticResource SecondaryTextBrush}" />
                 <controls:QualityBadge
                     x:Name="Badge"
+                    IsCompact="True"
                     HorizontalAlignment="Center"
                     Margin="0,2,0,0"
                     SizeChanged="TitleBarArea_SizeChanged" />
@@ -61,6 +62,7 @@
                 Background="Transparent"
                 BorderThickness="0"
                 VerticalAlignment="Top"
+                Margin="0,-12,-12,0"
                 ToolTipService.ToolTip="Full screen"
                 Click="FullScreenButton_Click">
                 <PathIcon Data="F1 M15.5 4C15.7761 4 16 4.22386 16 4.5V10.5C16 10.7761 15.7761 11 15.5 11C15.2239 11 15 10.7761 15 10.5V5.70703L5.70703 15H10.5C10.7761 15 11 15.2239 11 15.5C11 15.7761 10.7761 16 10.5 16H4.5C4.22386 16 4 15.7761 4 15.5V9.5C4 9.22386 4.22386 9 4.5 9C4.77614 9 5 9.22386 5 9.5V14.293L14.293 5H9.5C9.22386 5 9 4.77614 9 4.5C9 4.22386 9.22386 4 9.5 4H15.5Z" />
@@ -128,7 +130,7 @@
                     BorderThickness="0"
                     ToolTipService.ToolTip="Playing Next"
                     Click="PanelToggle_Click">
-                    <FontIcon Glyph="&#xE8FD;" FontSize="15" />
+                    <controls:QueueGlyph />
                 </ToggleButton>
             </StackPanel>
         </Grid>
@@ -147,7 +149,10 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="Playing Next" FontWeight="SemiBold" Margin="4,0,0,0" />
+                <Grid>
+                    <TextBlock Text="Playing Next" FontWeight="SemiBold" Margin="4,0,0,0" VerticalAlignment="Center" />
+                    <controls:QueueModeButtons HorizontalAlignment="Right" VerticalAlignment="Center" />
+                </Grid>
                 <ListView
                     x:Name="MiniQueueList"
                     Grid.Row="1"
@@ -159,6 +164,14 @@
                     DoubleTapped="MiniQueueList_DoubleTapped"
                     RightTapped="MiniQueueList_RightTapped"
                     ContainerContentChanging="MiniQueueList_ContainerContentChanging">
+                    <!-- Lagu masuk, keluar, dan berpindah dengan animasi; saat panel dibuka, isinya muncul berurutan -->
+                    <ListView.ItemContainerTransitions>
+                        <TransitionCollection>
+                            <EntranceThemeTransition IsStaggeringEnabled="True" />
+                            <AddDeleteThemeTransition />
+                            <ReorderThemeTransition />
+                        </TransitionCollection>
+                    </ListView.ItemContainerTransitions>
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -168,7 +181,7 @@
                     </ListView.ItemContainerStyle>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="vm:QueueEntry">
-                            <Grid ColumnSpacing="10">
+                            <Grid ColumnSpacing="10" Opacity="{x:Bind ItemOpacity}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="36" />
                                     <ColumnDefinition Width="*" />

@@ -101,6 +101,15 @@ public partial class App : Application
         Playback.IsMuted = AppSettings.Get("Muted", false);
         Playback.IsShuffle = AppSettings.Get("Shuffle", false);
         Playback.RepeatMode = (RepeatMode)AppSettings.Get("Repeat", (int)RepeatMode.Off);
+
+        // Autoplay: lagu mirip dari library (artis, genre, favorit, dekade), tanpa lagu yang baru diputar
+        Playback.AutoplaySource = (seed, exclude, count) =>
+        {
+            foreach (var play in Database.GetRecentPlays(100))
+                exclude.Add(play.Track.FilePath);
+            return AutoplayPicker.Pick(seed, Database.GetTracks(), exclude, Favourites.Paths, count, Random.Shared);
+        };
+        Playback.AutoplayEnabled = AppSettings.Get("Autoplay", true);
         Playback.UseExclusiveMode = AppSettings.Get("ExclusiveMode", true);
 
         // ID kosong = "Windows default". Namanya ikut disimpan untuk pesan saat perangkat itu tidak tersambung.
@@ -115,6 +124,7 @@ public partial class App : Application
                 case nameof(PlaybackService.IsMuted): AppSettings.Set("Muted", Playback.IsMuted); break;
                 case nameof(PlaybackService.IsShuffle): AppSettings.Set("Shuffle", Playback.IsShuffle); break;
                 case nameof(PlaybackService.RepeatMode): AppSettings.Set("Repeat", (int)Playback.RepeatMode); break;
+                case nameof(PlaybackService.AutoplayEnabled): AppSettings.Set("Autoplay", Playback.AutoplayEnabled); break;
                 case nameof(PlaybackService.UseExclusiveMode): AppSettings.Set("ExclusiveMode", Playback.UseExclusiveMode); break;
                 case nameof(PlaybackService.OutputDeviceId):
                     AppSettings.Set("OutputDeviceId", Playback.OutputDeviceId ?? "");

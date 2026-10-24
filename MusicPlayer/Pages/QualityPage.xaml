@@ -18,13 +18,14 @@
         </Grid.RowDefinitions>
 
         <!-- Judul dan pemeriksaan library -->
-        <Grid ColumnSpacing="16">
+        <StackPanel Margin="-24,-20,-24,0">
+        <controls:PageHeader Title="Quality Check" />
+        <Grid ColumnSpacing="16" Margin="24,12,24,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Spacing="4">
-                <TextBlock Text="Quality Check" Style="{StaticResource TitleTextBlockStyle}" />
                 <TextBlock
                     Text="Finds hi-res files that were upsampled, and lossless files made from MP3 or AAC. Results are strong hints, not proof: check the spectrum."
                     Foreground="{StaticResource SecondaryTextBrush}"
@@ -40,6 +41,7 @@
                     Click="Scan_Click" />
             </StackPanel>
         </Grid>
+        </StackPanel>
 
         <!-- Ringkasan dan saringan -->
         <Grid Grid.Row="1">

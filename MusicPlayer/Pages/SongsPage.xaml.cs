@@ -28,7 +28,7 @@ public sealed partial class SongsPage : Page
         _tracks = App.Database.GetTracks().ToList();
         _rows = _tracks.Select((track, index) => new TrackRow(track, index)).ToList();
         SongsList.ItemsSource = _rows;
-        CountText.Text = $"{_tracks.Count} songs";
+        Header.Detail = $"{_tracks.Count} songs";
         EmptyState.Visibility = _tracks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         App.Favourites.Changed += Favourites_Changed;
     }

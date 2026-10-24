@@ -240,10 +240,13 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             if (!SetProperty(ref _isShuffle, value))
                 return;
 
+            // Lagu Autoplay bukan bagian dari antrean sendiri: dibuang dulu, lalu disiapkan ulang sesudahnya
+            RemoveAutoplay();
             if (value)
                 ShuffleUpNext();
             else
                 ReplaceUpNext(QueueOrder.Restored(UpNext.ToList(), _originalOrder));
+            TopUpAutoplay();
         }
     }
 
@@ -257,8 +260,78 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(IsRepeatOn));
                 OnPropertyChanged(nameof(IsRepeatOne));
                 OnPropertyChanged(nameof(RepeatSymbol));
+
+                // Repeat dan Autoplay tidak berjalan bersamaan: repeat mengulang antrean, jadi lagu Autoplay dibuang
+                if (value == RepeatMode.Off)
+                    TopUpAutoplay();
+                else
+                    RemoveAutoplay();
             }
         }
+    }
+
+    // ── Autoplay ─────────────────────────────────────────────
+
+    // Jumlah lagu Autoplay yang disiapkan di antrean setelah antrean sendiri habis
+    private const int AutoplayCount = 5;
+    private bool _autoplayEnabled;
+
+    /// <summary>
+    /// Sumber lagu Autoplay: (lagu terakhir, path yang dikecualikan, jumlah) → lagu. Disetel App
+    /// (AutoplayPicker dengan library, riwayat putar, dan favorit); null berarti Autoplay tidak tersedia.
+    /// </summary>
+    public Func<Track, ISet<string>, int, IReadOnlyList<Track>>? AutoplaySource { get; set; }
+
+    /// <summary>
+    /// Autoplay, seperti Apple Music: saat antrean habis, pemutaran berlanjut dengan lagu yang mirip dari library.
+    /// Lagu-lagunya tampil di bawah antrean sendiri; Repeat yang menyala mendahuluinya.
+    /// </summary>
+    public bool AutoplayEnabled
+    {
+        get => _autoplayEnabled;
+        set
+        {
+            if (!SetProperty(ref _autoplayEnabled, value))
+                return;
+            if (value)
+                TopUpAutoplay();
+            else
+                RemoveAutoplay();
+        }
+    }
+
+    /// <summary>
+    /// Menyiapkan lagu Autoplay di antrean kalau antrean sendiri sudah habis. Dipanggil setiap lagu baru mulai, dan
+    /// saat Autoplay atau Repeat berubah.
+    /// </summary>
+    private void TopUpAutoplay()
+    {
+        if (!_autoplayEnabled || AutoplaySource is null || CurrentTrack is not { } current || RepeatMode != RepeatMode.Off)
+            return;
+        if (UpNext.Any(e => !e.IsAutoplay))
+            return; // antrean sendiri masih ada: Autoplay baru setelah itu
+        int missing = AutoplayCount - UpNext.Count;
+        if (missing <= 0)
+            return;
+
+        var exclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { current.FilePath };
+        foreach (var entry in UpNext)
+            exclude.Add(entry.Track.FilePath);
+        foreach (var track in _previous)
+            exclude.Add(track.FilePath);
+
+        foreach (var track in AutoplaySource(current, exclude, missing))
+            UpNext.Add(new QueueEntry(track) { IsAutoplay = true });
+    }
+
+    private void RemoveAutoplay()
+    {
+        for (int i = UpNext.Count - 1; i >= 0; i--)
+        {
+            if (UpNext[i].IsAutoplay)
+                UpNext.RemoveAt(i);
+        }
+        _originalOrder.RemoveAll(e => e.IsAutoplay);
     }
 
     /// <summary>Volume dari 0 sampai 100.</summary>
@@ -515,9 +588,25 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     public void AddToQueue(Track track)
     {
         if (CurrentTrack is null)
+        {
             Play(track);
-        else
+            return;
+        }
+
+        // Antrean sendiri selalu di atas lagu Autoplay
+        int autoplayStart = -1;
+        for (int i = 0; i < UpNext.Count; i++)
+        {
+            if (UpNext[i].IsAutoplay)
+            {
+                autoplayStart = i;
+                break;
+            }
+        }
+        if (autoplayStart < 0)
             UpNext.Add(new QueueEntry(track));
+        else
+            UpNext.Insert(autoplayStart, new QueueEntry(track));
     }
 
     /// <summary>Langsung memutar sebuah lagu dari Playing Next. Lagu-lagu di atasnya dilewati.</summary>
@@ -541,6 +630,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         UpNext.Clear();
         _originalOrder.Clear();
+        TopUpAutoplay(); // dengan Autoplay menyala, pemutaran tetap berlanjut setelah lagu ini
     }
 
     public void TogglePlayPause()
@@ -1045,6 +1135,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         TitleText = track.DisplayTitle;
         SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
         _ = LoadCoverAsync(track);
+        TopUpAutoplay();
     }
 
     /// <summary>

@@ -22,6 +22,20 @@ public sealed partial class QualityBadge : UserControl
 
     public PlaybackService Playback { get; } = App.Playback;
 
+    /// <summary>
+    /// Teks ringkas di samping ikon (LL, Hi-Res, Lossy), untuk tempat yang sempit: bar atas dan MiniPlayer. Layar
+    /// penuh tetap memakai teks lengkapnya.
+    /// </summary>
+    public bool IsCompact
+    {
+        get => CompactText.Visibility == Visibility.Visible;
+        set
+        {
+            CompactText.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            FullText.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
     private void AudioSettings_Click(object sender, RoutedEventArgs e)
     {
         QualityFlyout.Hide();

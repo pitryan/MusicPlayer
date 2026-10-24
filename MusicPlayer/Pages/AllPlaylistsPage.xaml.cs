@@ -40,7 +40,7 @@ public sealed partial class AllPlaylistsPage : Page
         var items = new List<PlaylistItem> { PlaylistItem.Favourites(App.Database.GetFavouriteTracks().Count) };
         items.AddRange(playlists.Select(p => new PlaylistItem(p)));
         PlaylistGrid.ItemsSource = items;
-        HeaderCountText.Text = Formatters.Count(playlists.Count, "playlist");
+        Header.Detail = Formatters.Count(playlists.Count, "playlist");
     }
 
     private void PlaylistGrid_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
@@ -65,4 +65,9 @@ public sealed partial class AllPlaylistsPage : Page
     private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
 
     private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
+
+    // Ukuran kotak mengikuti lebar grid (Apple Music: sekitar 240 px, 6 per baris di jendela 1920 px)
+    private void PlaylistGrid_SizeChanged(object sender, SizeChangedEventArgs e) => TileGrid.Fit(PlaylistGrid);
+
+    private void PlaylistGrid_Loaded(object sender, RoutedEventArgs e) => TileGrid.Fit(PlaylistGrid);
 }

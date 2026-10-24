@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Kepala halaman daftar seperti Apple Music: judul kecil di tengah, keterangan (misalnya jumlah album) di kanan,
+    dan garis tipis di bawahnya. Dipakai Albums, Recently Added/Played, Songs, All Playlists, Genres, Most Played,
+    dan Quality Check.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.PageHeader"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Height="48" Padding="24,0">
+        <TextBlock
+            x:Name="TitleBlock"
+            FontSize="15"
+            FontWeight="SemiBold"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            TextTrimming="CharacterEllipsis" />
+        <TextBlock
+            x:Name="DetailBlock"
+            FontSize="12"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Center"
+            Foreground="{StaticResource SecondaryTextBrush}" />
+        <Rectangle Height="1" VerticalAlignment="Bottom" Fill="#1FFFFFFF" Margin="-24,0" />
+    </Grid>
+</UserControl>
