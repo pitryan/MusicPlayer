@@ -83,6 +83,64 @@ public static class Formatters
     /// <summary>Contoh: "1 album", "3 albums", "12 songs".</summary>
     public static string Count(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
 
+    /// <summary>Frekuensi seperti "22 kHz", "16,8 kHz", atau "22,05 kHz" (batas CD ditulis tepat).</summary>
+    public static string Kilohertz(double hz) => $"{hz / 1000.0:0.##} kHz";
+
+    /// <summary>
+    /// Lagu lossless yang patut dicurigai: hasil upsampling, dari sumber lossy, bandwidth terbatas, atau wadah 24-bit
+    /// yang hanya berisi 16 bit.
+    /// </summary>
+    public static bool IsSuspicious(QualityReport report, Track track) =>
+        AudioQuality.Describe(track).IsLossless
+        && (report.Verdict is SourceVerdict.Upsampled or SourceVerdict.LikelyLossy or SourceVerdict.LimitedBandwidth
+            || (track.BitsPerSample >= 24 && !report.IsFloat && report.EffectiveBits is <= 16));
+
+    /// <summary>Kesimpulan pemeriksaan kualitas sumber, misalnya "Upsampled from 44.1 kHz" atau "True Hi-Res".</summary>
+    public static string SourceVerdictText(QualityReport report, Track track)
+    {
+        // File lossy memang terpotong; spektrumnya tetap ditampilkan, tanpa "tuduhan"
+        if (!AudioQuality.Describe(track).IsLossless)
+            return "Lossy File";
+
+        return report.Verdict switch
+        {
+            SourceVerdict.Genuine => report.SampleRate > 48000 ? "True Hi-Res" : "Full-Range Lossless",
+            SourceVerdict.Upsampled => $"Upsampled from {AudioQuality.FormatSampleRate(report.LikelySourceRate ?? 0)}",
+            SourceVerdict.LikelyLossy => "Likely from a Lossy Source",
+            SourceVerdict.LimitedBandwidth => "Limited Bandwidth",
+            _ => "Couldn't Judge",
+        };
+    }
+
+    /// <summary>Penjelasan dan buktinya: di mana suara berhenti, dan berapa bit yang benar-benar terpakai.</summary>
+    public static string SourceDetailText(QualityReport report, Track track)
+    {
+        bool lossless = AudioQuality.Describe(track).IsLossless;
+        string cutoff = report.CutoffHz is { } hz ? Kilohertz(hz) : "";
+        string sound = !lossless
+            ? (cutoff.Length > 0 ? $"The encoded sound stops at {cutoff}." : "The encoded sound reaches the full range.")
+            : report.Verdict switch
+            {
+                SourceVerdict.Genuine when report.SampleRate > 48000 => "Sound continues above 24 kHz.",
+                SourceVerdict.Genuine => $"Sound reaches the full {Kilohertz(report.SampleRate / 2.0)} range.",
+                SourceVerdict.Upsampled => $"Nothing above {cutoff}: the extra sample rate adds file size, not sound.",
+                SourceVerdict.LikelyLossy => $"Sharp cutoff at {cutoff}, typical of MP3 or AAC encoding.",
+                SourceVerdict.LimitedBandwidth => $"Sound stops at {cutoff}: an old recording, or a low-bitrate source.",
+                _ => "The song is too quiet or too short to analyze.",
+            };
+
+        // Bit depth dibandingkan dengan yang tertulis di file (decoder Windows bisa memberi wadah 32-bit untuk 24-bit)
+        string bits = "";
+        if (lossless && !report.IsFloat && report.EffectiveBits is { } used)
+        {
+            int declared = track.BitsPerSample > 0 ? track.BitsPerSample : report.ContainerBits;
+            bits = declared >= 24 && used <= 16
+                ? $"Only 16 of the {declared} bits carry sound."
+                : $"{Math.Min(used, declared)} bits used.";
+        }
+        return bits.Length > 0 ? $"{sound} {bits}" : sound;
+    }
+
     public static string ReleaseKindLabel(ReleaseKind kind) => kind switch
     {
         ReleaseKind.Single => "Single",

@@ -85,6 +85,12 @@
                     <FontIcon Glyph="&#xE8EC;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <!-- Pemeriksaan kualitas sumber: hi-res hasil upsampling, lossless dari MP3/AAC -->
+            <NavigationViewItem Content="Quality Check" Tag="quality">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE9D9;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <!-- Playlists, seperti Apple Music. Playlist buatan sendiri dan "New Playlist" ditambahkan dari kode
                  (RefreshPlaylistItems) tepat di bawah Favourite Songs. -->
             <NavigationViewItemHeader Content="Playlists" />

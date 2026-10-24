@@ -555,6 +555,9 @@ public sealed partial class MainWindow : Window
             case "mostplayed":
                 ContentFrame.Navigate(typeof(MostPlayedPage));
                 break;
+            case "quality":
+                ContentFrame.Navigate(typeof(QualityPage));
+                break;
             case AllPlaylistsTag:
                 ContentFrame.Navigate(typeof(AllPlaylistsPage));
                 break;

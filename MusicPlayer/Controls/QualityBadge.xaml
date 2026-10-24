@@ -11,7 +11,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:MusicPlayer.ViewModels"
-    xmlns:helpers="using:MusicPlayer.Helpers">
+    xmlns:helpers="using:MusicPlayer.Helpers"
+    xmlns:controls="using:MusicPlayer.Controls">
 
     <Button
         Style="{StaticResource QualityBadgeButtonStyle}"
@@ -75,6 +76,38 @@
                         HorizontalAlignment="Center" />
 
 
+                    <!--
+                        Kualitas sumber: dari isi lagunya, bukan formatnya. Misalnya file 24/96 yang isinya berhenti di
+                        22 kHz berarti hasil upsampling dari 44,1 kHz.
+                    -->
+                    <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,8" />
+                    <Button
+                        x:Name="CheckSourceButton"
+                        Content="Check Source Quality"
+                        HorizontalAlignment="Stretch"
+                        Click="CheckSource_Click" />
+                    <ProgressRing
+                        x:Name="SourceProgress"
+                        Width="20"
+                        Height="20"
+                        HorizontalAlignment="Center"
+                        IsActive="False"
+                        Visibility="Collapsed" />
+                    <StackPanel x:Name="SourcePanel" Spacing="4" Visibility="Collapsed">
+                        <TextBlock
+                            x:Name="SourceVerdictText"
+                            FontWeight="SemiBold"
+                            HorizontalAlignment="Center"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="SourceDetailText"
+                            FontSize="12"
+                            Foreground="{StaticResource SecondaryTextBrush}"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                        <controls:SpectrumChart x:Name="Spectrum" Margin="0,6,0,0" />
+                    </StackPanel>
                     <!-- Pilihan output dan exclusive mode ada di Settings; popup ini hanya menampilkan keadaannya -->
                     <Button
                         Content="Audio Quality Settings"

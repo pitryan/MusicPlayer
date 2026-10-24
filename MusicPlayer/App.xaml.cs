@@ -39,6 +39,9 @@ public partial class App : Application
     /// </summary>
     public static MediaControlsSync? MediaControls { get; private set; }
 
+    /// <summary>Pemeriksa kualitas sumber (popup badge kualitas): hi-res asli, upsampled, atau dari sumber lossy.</summary>
+    public static QualityCheckService QualityChecks { get; private set; } = null!;
+
     /// <summary>Klien MusicBrainz untuk editor tag (Look up on MusicBrainz). Satu instance, supaya batas 1 permintaan per detik berlaku di seluruh aplikasi.</summary>
     public static MusicBrainzClient MusicBrainz { get; } = new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
 
@@ -59,6 +62,7 @@ public partial class App : Application
         Lyrics = CreateLyrics();
         TagEdits = new TagEditService(Database, Playback, CoverCache.Invalidate, () => Lyrics.Retry());
         MediaControls = CreateMediaControls();
+        QualityChecks = new QualityCheckService(Database, QualityCheckService.AnalyzeFile);
 
         MainWindow = new MainWindow();
         MainWindow.Activate();

@@ -39,7 +39,7 @@ public sealed partial class AllPlaylistsPage : Page
         var items = new List<PlaylistItem> { PlaylistItem.Favourites(App.Database.GetFavouriteTracks().Count) };
         items.AddRange(playlists.Select(p => new PlaylistItem(p)));
         PlaylistGrid.ItemsSource = items;
-        CountText.Text = Formatters.Count(playlists.Count, "playlist");
+        HeaderCountText.Text = Formatters.Count(playlists.Count, "playlist");
     }
 
     private void PlaylistGrid_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)

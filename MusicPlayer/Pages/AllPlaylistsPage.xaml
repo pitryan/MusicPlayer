@@ -16,7 +16,7 @@
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <TextBlock Text="All Playlists" Style="{StaticResource TitleTextBlockStyle}" />
                 <TextBlock
-                    x:Name="CountText"
+                    x:Name="HeaderCountText"
                     VerticalAlignment="Bottom"
                     Margin="0,0,0,4"
                     Foreground="{StaticResource SecondaryTextBrush}" />

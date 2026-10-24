@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Quality Check: hasil pemeriksaan kualitas sumber seluruh library. Daftar kiri berisi lagu (bawaan: yang
+    mencurigakan saja), panel kanan menjelaskan lagu yang dipilih beserta grafik spektrumnya.
+-->
+<Page
+    x:Class="MusicPlayer.Pages.QualityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels"
+    xmlns:controls="using:MusicPlayer.Controls">
+
+    <Grid Padding="24,20,24,0" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Judul dan pemeriksaan library -->
+        <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <TextBlock Text="Quality Check" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock
+                    Text="Finds hi-res files that were upsampled, and lossless files made from MP3 or AAC. Results are strong hints, not proof: check the spectrum."
+                    Foreground="{StaticResource SecondaryTextBrush}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <ProgressRing x:Name="ScanRing" Width="20" Height="20" IsActive="False" Visibility="Collapsed" />
+                <TextBlock x:Name="ScanText" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                <Button
+                    x:Name="ScanButton"
+                    Content="Check Library"
+                    Style="{StaticResource AccentButtonStyle}"
+                    Click="Scan_Click" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Ringkasan dan saringan -->
+        <Grid Grid.Row="1">
+            <TextBlock x:Name="SummaryText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,260,0" />
+            <SelectorBar x:Name="FilterTabs" HorizontalAlignment="Right" SelectionChanged="FilterTabs_SelectionChanged">
+                <SelectorBarItem x:Name="SuspiciousTab" Text="Suspicious" IsSelected="True" />
+                <SelectorBarItem x:Name="AllTab" Text="All Checked" />
+            </SelectorBar>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnSpacing="24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ListView
+                x:Name="QualityList"
+                SelectionMode="Single"
+                SelectionChanged="QualityList_SelectionChanged"
+                DoubleTapped="QualityList_DoubleTapped"
+                RightTapped="QualityList_RightTapped"
+                ContainerContentChanging="QualityList_ContainerContentChanging">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="8,0" />
+                        <Setter Property="MinHeight" Value="52" />
+                        <Setter Property="CornerRadius" Value="4" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:QualityRow">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="40" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="40"
+                                Height="40"
+                                CornerRadius="4"
+                                VerticalAlignment="Center"
+                                Background="{StaticResource CoverPlaceholderBrush}">
+                                <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                <TextBlock
+                                    Text="{x:Bind Subtitle}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    TextTrimming="CharacterEllipsis"
+                                    MaxLines="1" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                <!-- Merah untuk yang mencurigakan -->
+                                <TextBlock
+                                    Text="{x:Bind VerdictText}"
+                                    FontWeight="SemiBold"
+                                    HorizontalAlignment="Right"
+                                    Foreground="{StaticResource AccentRedBrush}"
+                                    Visibility="{x:Bind SuspiciousVisibility}" />
+                                <TextBlock
+                                    Text="{x:Bind VerdictText}"
+                                    FontWeight="SemiBold"
+                                    HorizontalAlignment="Right"
+                                    Visibility="{x:Bind NormalVisibility}" />
+                                <TextBlock
+                                    Text="{x:Bind FormatText}"
+                                    FontSize="12"
+                                    HorizontalAlignment="Right"
+                                    Foreground="{StaticResource SecondaryTextBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock
+                x:Name="EmptyText"
+                Margin="0,48,0,0"
+                HorizontalAlignment="Center"
+                TextAlignment="Center"
+                TextWrapping="Wrap"
+                MaxWidth="420"
+                Foreground="{StaticResource SecondaryTextBrush}"
+                Visibility="Collapsed" />
+
+            <!-- Penjelasan lagu yang dipilih -->
+            <StackPanel x:Name="DetailPanel" Grid.Column="1" Width="360" Spacing="6" Visibility="Collapsed">
+                <TextBlock x:Name="DetailTitleText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock x:Name="DetailFormatText" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock x:Name="DetailVerdictText" FontWeight="SemiBold" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <TextBlock x:Name="DetailText" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" />
+                <controls:SpectrumChart x:Name="DetailChart" ChartWidth="360" ChartHeight="140" Margin="0,8,0,0" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

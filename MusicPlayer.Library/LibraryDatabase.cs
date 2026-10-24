@@ -628,6 +628,111 @@ public sealed class LibraryDatabase
             .ToList();
     }
 
+    // ── Kualitas sumber ─────────────────────────────────────
+
+    private const string QualityColumns =
+        "q.path, q.sample_rate, q.container_bits, q.is_float, q.effective_bits, q.cutoff_hz, q.verdict, q.source_rate";
+
+    /// <summary>Menyimpan (atau mengganti) hasil pemeriksaan satu lagu, dengan stempel file saat diperiksa.</summary>
+    public void SaveQualityReport(string path, FileStamp stamp, QualityReport report, DateTime nowUtc)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT OR REPLACE INTO quality_reports (path, file_size, modified_utc, analyzer_version, sample_rate, container_bits,
+                is_float, effective_bits, cutoff_hz, verdict, source_rate, spectrum, analyzed_utc)
+            VALUES ($path, $size, $modified, $version, $rate, $bits, $float, $effective, $cutoff, $verdict, $source, $spectrum, $now)
+            """;
+        command.Parameters.AddWithValue("$path", path);
+        command.Parameters.AddWithValue("$size", stamp.Size);
+        command.Parameters.AddWithValue("$modified", stamp.ModifiedUtcTicks);
+        command.Parameters.AddWithValue("$version", QualityAnalyzer.Version);
+        command.Parameters.AddWithValue("$rate", report.SampleRate);
+        command.Parameters.AddWithValue("$bits", report.ContainerBits);
+        command.Parameters.AddWithValue("$float", report.IsFloat ? 1 : 0);
+        command.Parameters.AddWithValue("$effective", (object?)report.EffectiveBits ?? DBNull.Value);
+        command.Parameters.AddWithValue("$cutoff", (object?)report.CutoffHz ?? DBNull.Value);
+        command.Parameters.AddWithValue("$verdict", (int)report.Verdict);
+        command.Parameters.AddWithValue("$source", (object?)report.LikelySourceRate ?? DBNull.Value);
+        command.Parameters.AddWithValue("$spectrum", EncodeSpectrum(report.Spectrum));
+        command.Parameters.AddWithValue("$now", nowUtc.Ticks);
+        command.ExecuteNonQuery();
+    }
+
+    /// <summary>Hasil lengkap (dengan spektrum) satu lagu, atau null kalau belum diperiksa atau sudah tidak berlaku.</summary>
+    public QualityReport? GetQualityReport(string path, FileStamp stamp)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {QualityColumns}, q.spectrum FROM quality_reports q
+            WHERE q.path = $path AND q.file_size = $size AND q.modified_utc = $modified AND q.analyzer_version = $version
+            """;
+        command.Parameters.AddWithValue("$path", path);
+        command.Parameters.AddWithValue("$size", stamp.Size);
+        command.Parameters.AddWithValue("$modified", stamp.ModifiedUtcTicks);
+        command.Parameters.AddWithValue("$version", QualityAnalyzer.Version);
+        using var r = command.ExecuteReader();
+        return r.Read() ? ReadQuality(r, withSpectrum: true) : null;
+    }
+
+    /// <summary>
+    /// Semua hasil yang masih berlaku untuk lagu di library (stempel file sama dengan isi database lagunya), per path.
+    /// Tanpa spektrum, supaya ringan untuk ribuan lagu; spektrum satu lagu diambil lewat GetQualityReport.
+    /// </summary>
+    public IReadOnlyDictionary<string, QualityReport> GetQualityReports()
+    {
+        var reports = new Dictionary<string, QualityReport>(StringComparer.OrdinalIgnoreCase);
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {QualityColumns} FROM quality_reports q
+            JOIN tracks t ON t.path = q.path AND t.file_size = q.file_size AND t.modified_utc = q.modified_utc
+            WHERE q.analyzer_version = $version
+            """;
+        command.Parameters.AddWithValue("$version", QualityAnalyzer.Version);
+        using var r = command.ExecuteReader();
+        while (r.Read())
+            reports[r.GetString(0)] = ReadQuality(r, withSpectrum: false);
+        return reports;
+    }
+
+    private static QualityReport ReadQuality(SqliteDataReader r, bool withSpectrum)
+    {
+        int sampleRate = r.GetInt32(1);
+        return new QualityReport(
+            sampleRate,
+            r.GetInt32(2),
+            r.GetInt32(3) != 0,
+            r.IsDBNull(4) ? null : r.GetInt32(4),
+            r.IsDBNull(5) ? null : r.GetDouble(5),
+            (SourceVerdict)r.GetInt32(6),
+            r.IsDBNull(7) ? null : r.GetInt32(7),
+            withSpectrum && !r.IsDBNull(8) ? DecodeSpectrum((byte[])r.GetValue(8), sampleRate) : []);
+    }
+
+    // Spektrum disimpan ringkas: level setiap titik dalam persepuluhan dB sebagai Int16 (300 titik = 600 byte).
+    // Frekuensi titik ke-i dihitung ulang dari sample rate, karena titik-titiknya tersebar rata dari 0 sampai batas format.
+    private static byte[] EncodeSpectrum(IReadOnlyList<SpectrumPoint> spectrum)
+    {
+        var bytes = new byte[spectrum.Count * 2];
+        for (int i = 0; i < spectrum.Count; i++)
+            System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2),
+                (short)Math.Clamp(Math.Round(spectrum[i].Db * 10), short.MinValue, short.MaxValue));
+        return bytes;
+    }
+
+    private static List<SpectrumPoint> DecodeSpectrum(byte[] bytes, int sampleRate)
+    {
+        int count = bytes.Length / 2;
+        double nyquist = sampleRate / 2.0;
+        var points = new List<SpectrumPoint>(count);
+        for (int i = 0; i < count; i++)
+            points.Add(new SpectrumPoint((i + 0.5) * nyquist / count,
+                System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(i * 2)) / 10.0));
+        return points;
+    }
+
     // ── Favorit ──────────────────────────────────────────────
 
     /// <summary>Path semua lagu favorit, termasuk yang filenya sedang tidak ada di library.</summary>
@@ -935,6 +1040,24 @@ public sealed class LibraryDatabase
             );
             CREATE INDEX IF NOT EXISTS ix_plays_path ON plays(path);
             CREATE INDEX IF NOT EXISTS ix_plays_time ON plays(played_utc);
+
+            -- Hasil pemeriksaan kualitas sumber. Berlaku selama ukuran dan waktu ubah file sama dengan saat diperiksa,
+            -- dan versi algoritmanya sama (QualityAnalyzer.Version); kalau tidak, lagunya diperiksa ulang.
+            CREATE TABLE IF NOT EXISTS quality_reports (
+                path             TEXT PRIMARY KEY COLLATE NOCASE,
+                file_size        INTEGER NOT NULL,
+                modified_utc     INTEGER NOT NULL,
+                analyzer_version INTEGER NOT NULL,
+                sample_rate      INTEGER NOT NULL,
+                container_bits   INTEGER NOT NULL,
+                is_float         INTEGER NOT NULL,
+                effective_bits   INTEGER,
+                cutoff_hz        REAL,
+                verdict          INTEGER NOT NULL,
+                source_rate      INTEGER,
+                spectrum         BLOB,
+                analyzed_utc     INTEGER NOT NULL
+            );
 
             -- Lagu favorit (bintang ☆). Sama seperti riwayat putar, disambungkan lewat path: favorit tetap ada
             -- walaupun lagunya di-scan ulang, atau foldernya sempat dihapus dari library lalu ditambahkan lagi.
