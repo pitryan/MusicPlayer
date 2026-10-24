@@ -98,7 +98,7 @@ public sealed partial class FolderPage : Page
     private void SubfolderGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is FolderItem subfolder)
-            Frame.Navigate(typeof(FolderPage), subfolder.Summary.Path);
+            Frame.Navigate(typeof(FolderPage), subfolder.Summary.Path, Animations.DrillIn);
     }
 
     private void Play_Click(object sender, RoutedEventArgs e)

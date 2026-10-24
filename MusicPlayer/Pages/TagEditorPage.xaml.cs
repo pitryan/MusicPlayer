@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
@@ -211,7 +212,7 @@ public sealed partial class TagEditorPage : Page
     {
         string Hint(string key) => _rows.FirstOrDefault(r => r.Field.Key == key) is { IsMixed: false } row ? row.Text.Trim() : "";
         string artist = Hint("albumartist") is { Length: > 0 } albumArtist ? albumArtist : Hint("artist");
-        Frame.Navigate(typeof(MusicBrainzPage), new MusicBrainzRequest(_paths, Hint("album"), artist, _request.FromAlbum));
+        Frame.Navigate(typeof(MusicBrainzPage), new MusicBrainzRequest(_paths, Hint("album"), artist, _request.FromAlbum), Animations.DrillIn);
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e)
@@ -265,7 +266,7 @@ public sealed partial class TagEditorPage : Page
     {
         if (_request.FromAlbum && saved.Count > 0 && App.Database.FindAlbum(saved[0]) is { } album)
         {
-            Frame.Navigate(typeof(AlbumDetailPage), album);
+            Frame.Navigate(typeof(AlbumDetailPage), album, Animations.DrillIn);
             var history = Frame.BackStack;
             if (history.Count > 0 && history[^1].SourcePageType == typeof(TagEditorPage))
                 history.RemoveAt(history.Count - 1);

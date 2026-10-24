@@ -2,8 +2,10 @@ using System;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Helpers;
 using MusicPlayer.ViewModels;
 
 namespace MusicPlayer.Pages;
@@ -110,6 +112,11 @@ public sealed partial class AlbumsPage : Page
     private void AlbumGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is AlbumItem album)
-            Frame.Navigate(typeof(AlbumDetailPage), album.Summary);
+            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, Animations.DrillIn);
     }
+
+    // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
+    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
+
+    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 }

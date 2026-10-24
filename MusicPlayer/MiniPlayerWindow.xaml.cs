@@ -1,27 +1,40 @@
 using System;
+using System.Collections.Specialized;
 using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using MusicPlayer.Helpers;
 using MusicPlayer.Services;
+using MusicPlayer.ViewModels;
 using Windows.Foundation;
 using Windows.Graphics;
 
 namespace MusicPlayer;
 
 /// <summary>
-/// Jendela kecil yang selalu di atas jendela lain. Ukurannya tetap; posisinya diingat untuk lain kali.
-/// Tombol × menutupnya dan memunculkan jendela utama lagi; tombol di sebelahnya pindah ke layar penuh
-/// (keduanya diatur MainWindow).
+/// Jendela kecil yang selalu di atas jendela lain. Lebarnya tetap; tombol lirik dan antrean memanjangkannya ke bawah
+/// untuk menampilkan panelnya. Posisi dan panel yang terbuka diingat untuk lain kali. Tombol × menutupnya dan
+/// memunculkan jendela utama lagi; tombol di sebelahnya pindah ke layar penuh (keduanya diatur MainWindow).
 /// </summary>
 public sealed partial class MiniPlayerWindow : Window
 {
     // Ukuran dalam satuan tampilan (DIP); dikali skala layar saat jendela dibuat
     private const double WidthDip = 380;
     private const double HeightDip = 172;
+
+    // Tinggi tambahan saat panel lirik atau antrean terbuka
+    private const double PanelHeightDip = 340;
+
+    private const string PanelSetting = "MiniPlayerPanel";
+    private const string LyricsPanel = "lyrics";
+    private const string QueuePanel = "queue";
+
+    // Panel yang terbuka: "", "lyrics", atau "queue"
+    private string _panel = "";
 
     private PointInt32 _position;
 
@@ -30,6 +43,12 @@ public sealed partial class MiniPlayerWindow : Window
         InitializeComponent();
         if (Content is UIElement root)
             PlaybackShortcuts.Attach(root); // Spasi, Ctrl+←/→, Ctrl+↑/↓
+
+        string savedPanel = AppSettings.Get(PanelSetting, "");
+        _panel = savedPanel is LyricsPanel or QueuePanel ? savedPanel : "";
+        ShowPanelContent();
+        Playback.UpNext.CollectionChanged += UpNext_CollectionChanged;
+        Playback.PropertyChanged += Playback_PropertyChanged;
 
         // Selalu di atas, ukuran tetap, tanpa minimize/maximize: di pojok kanan atas hanya tersisa tombol ×
         if (AppWindow.Presenter is OverlappedPresenter presenter)
@@ -61,6 +80,9 @@ public sealed partial class MiniPlayerWindow : Window
         {
             AppSettings.Set("MiniPlayerX", _position.X);
             AppSettings.Set("MiniPlayerY", _position.Y);
+            Playback.UpNext.CollectionChanged -= UpNext_CollectionChanged;
+            Playback.PropertyChanged -= Playback_PropertyChanged;
+            MiniLyrics.IsActive = false;
         };
     }
 
@@ -74,14 +96,15 @@ public sealed partial class MiniPlayerWindow : Window
     {
         double scale = App.MainWindow.Content?.XamlRoot?.RasterizationScale ?? 1.0;
         int width = (int)Math.Round(WidthDip * scale);
-        int height = (int)Math.Round(HeightDip * scale);
+        int height = (int)Math.Round(CurrentHeightDip * scale);
 
         int x = AppSettings.Get("MiniPlayerX", int.MinValue);
         int y = AppSettings.Get("MiniPlayerY", int.MinValue);
+        // Dicek dari bagian atas jendela, karena panel yang terbuka membuatnya lebih tinggi dari saat posisinya disimpan
         if (x != int.MinValue && y != int.MinValue
-            && DisplayArea.GetFromPoint(new PointInt32(x + width / 2, y + height / 2), DisplayAreaFallback.None) is not null)
+            && DisplayArea.GetFromPoint(new PointInt32(x + width / 2, y + 20), DisplayAreaFallback.None) is { } area)
         {
-            AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
+            AppWindow.MoveAndResize(new RectInt32(x, WindowFit.Top(y, height, area.WorkArea.Y, area.WorkArea.Height), width, height));
             return;
         }
 
@@ -93,6 +116,79 @@ public sealed partial class MiniPlayerWindow : Window
             width,
             height));
     }
+
+    private double CurrentHeightDip => HeightDip + (_panel.Length > 0 ? PanelHeightDip : 0);
+
+    // ── Panel lirik dan antrean ─────────────────────────────
+
+    /// <summary>Tombol lirik atau antrean: membuka panelnya, atau menutupnya kalau panel itu yang sedang terbuka.</summary>
+    private void PanelToggle_Click(object sender, RoutedEventArgs e)
+    {
+        string clicked = sender == LyricsToggle ? LyricsPanel : QueuePanel;
+        _panel = _panel == clicked ? "" : clicked;
+        AppSettings.Set(PanelSetting, _panel);
+        ShowPanelContent();
+        ResizeForPanel();
+        if (_panel.Length > 0)
+            Animations.SlideIn(PanelArea, 0, -16);
+    }
+
+    // Cover dan judul memudar masuk setiap kali lagu berganti
+    private void Playback_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PlaybackService.CurrentTrack) && Playback.CurrentTrack is not null)
+            Animations.FadeIn(InfoArea);
+    }
+
+    private void ShowPanelContent()
+    {
+        LyricsToggle.IsChecked = _panel == LyricsPanel;
+        QueueToggle.IsChecked = _panel == QueuePanel;
+        PanelArea.Visibility = _panel.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        MiniLyrics.Visibility = _panel == LyricsPanel ? Visibility.Visible : Visibility.Collapsed;
+        // Lirik hanya dicari selama panelnya terlihat, seperti di jendela utama
+        MiniLyrics.IsActive = _panel == LyricsPanel;
+        MiniQueue.Visibility = _panel == QueuePanel ? Visibility.Visible : Visibility.Collapsed;
+        UpdateQueueEmpty();
+    }
+
+    /// <summary>Memanjang (atau memendek) ke bawah; kalau tidak muat di layar, jendela naik secukupnya.</summary>
+    private void ResizeForPanel()
+    {
+        double scale = Content?.XamlRoot?.RasterizationScale ?? 1.0;
+        int width = (int)Math.Round(WidthDip * scale);
+        int height = (int)Math.Round(CurrentHeightDip * scale);
+        var position = AppWindow.Position;
+        var work = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+        AppWindow.MoveAndResize(new RectInt32(position.X, WindowFit.Top(position.Y, height, work.Y, work.Height), width, height));
+    }
+
+    private void UpNext_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => UpdateQueueEmpty();
+
+    private void UpdateQueueEmpty() =>
+        MiniQueueEmpty.Visibility = Playback.UpNext.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    private void MiniQueueList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (!args.InRecycleQueue && args.Item is QueueEntry entry)
+            entry.EnsureCover();
+    }
+
+    private void MiniQueueList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
+            Playback.PlayFromQueue(entry);
+    }
+
+    // Menu yang sama dengan antrean di jendela utama. Go to Album/Artist dan Get Info menutup MiniPlayer dan
+    // membuka halamannya di jendela utama (lihat MainWindow.ShowPage).
+    private void MiniQueueList_RightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
+            TrackMenu.ShowForQueueEntry(MiniQueueList, e.GetPosition(MiniQueueList), entry);
+    }
+
+    // ── Title bar ────────────────────────────────────────────
 
     private void TitleBarArea_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateTitleBarRegions();
 

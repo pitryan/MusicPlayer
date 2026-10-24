@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using System.Collections.Generic;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
@@ -31,6 +32,9 @@ public sealed partial class LyricsView : UserControl
     private static readonly TimeSpan LoadingRingDelay = TimeSpan.FromMilliseconds(400);
 
     private const double DimOpacity = 0.35;
+
+    // Ukuran baris yang tidak sedang dinyanyikan, relatif terhadap baris aktif
+    private static readonly Vector3 InactiveScale = new(0.95f, 0.95f, 1f);
     private const double PlainOpacity = 0.9;
 
     private readonly LyricsController _lyrics = App.Lyrics;
@@ -253,8 +257,9 @@ public sealed partial class LyricsView : UserControl
             CornerRadius = new CornerRadius(8),
             Background = _rowBackground,
             Tag = index,
-            // Perubahan kecerahan dianimasikan, supaya perpindahan baris terasa halus
+            // Perubahan kecerahan dan ukuran dianimasikan, supaya perpindahan baris terasa halus
             OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(250) },
+            ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(300) },
         };
 
         if (synced)
@@ -317,7 +322,14 @@ public sealed partial class LyricsView : UserControl
     private void ApplyOpacities()
     {
         for (int i = 0; i < _rows.Count; i++)
-            _rows[i].Opacity = OpacityFor(i);
+        {
+            var row = _rows[i];
+            row.Opacity = OpacityFor(i);
+
+            // Baris aktif tampil penuh, baris lain sedikit mengecil; diskalakan dari tepi kiri, tempat teksnya dimulai
+            row.CenterPoint = new Vector3(0, (float)(row.ActualHeight / 2), 0);
+            row.Scale = _shown is { IsSynced: true } && i != _activeIndex ? InactiveScale : Vector3.One;
+        }
     }
 
     private double OpacityFor(int index)

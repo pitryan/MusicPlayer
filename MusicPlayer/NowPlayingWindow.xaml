@@ -19,7 +19,7 @@
 
         <!-- Latar: cover diperbesar sedikit supaya tepinya tidak terlihat, lalu diburamkan dan digelapkan acrylic.
              Kalau efek transparansi Windows dimatikan, acrylic memakai warna gelap polos (FallbackColor). -->
-        <Border RenderTransformOrigin="0.5,0.5">
+        <Border x:Name="BackdropLayer" RenderTransformOrigin="0.5,0.5">
             <Border.RenderTransform>
                 <ScaleTransform ScaleX="1.15" ScaleY="1.15" />
             </Border.RenderTransform>
@@ -49,7 +49,7 @@
                 </Grid.RowDefinitions>
 
                 <Viewbox MaxWidth="640" MaxHeight="640" Stretch="Uniform" VerticalAlignment="Bottom">
-                    <Grid Width="640" Height="640" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                    <Grid x:Name="CoverFrame" Width="640" Height="640" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
                         <FontIcon Glyph="&#xE8D6;" FontSize="96" Foreground="{StaticResource SecondaryTextBrush}" />
                         <!-- Diisi dari kode dengan cover resolusi besar (lihat LoadLargeCoverAsync) -->
                         <Border CornerRadius="8">

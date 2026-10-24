@@ -185,7 +185,8 @@
                     VerticalAlignment="Center"
                     CornerRadius="6"
                     Background="{StaticResource LcdBackgroundBrush}">
-                    <Grid>
+                    <!-- Isi LCD: memudar masuk setiap kali lagu berganti -->
+                    <Grid x:Name="LcdContent">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="52" />
                             <ColumnDefinition Width="*" />
@@ -384,7 +385,21 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Frame x:Name="ContentFrame" />
+                <Frame x:Name="ContentFrame">
+                    <!--
+                        Pindah halaman dari sidebar: halaman baru masuk naik perlahan sambil memudar. Membuka album,
+                        artis, atau playlist memakai "drill-in" (lihat Animations.DrillIn); Back memakai kebalikannya.
+                    -->
+                    <Frame.ContentTransitions>
+                        <TransitionCollection>
+                            <NavigationThemeTransition>
+                                <NavigationThemeTransition.DefaultNavigationTransitionInfo>
+                                    <EntranceNavigationTransitionInfo />
+                                </NavigationThemeTransition.DefaultNavigationTransitionInfo>
+                            </NavigationThemeTransition>
+                        </TransitionCollection>
+                    </Frame.ContentTransitions>
+                </Frame>
 
                 <!-- Panel Playing Next: lagu yang akan diputar berikutnya. Bisa digeser untuk mengubah urutan -->
                 <Grid
@@ -460,9 +475,9 @@
                                         </Border>
                                     </Grid>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind Title}" FontSize="13" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                        <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="13" TextTrimming="CharacterEllipsis" MaxLines="1" />
                                         <TextBlock
-                                            Text="{x:Bind Subtitle}"
+                                            Text="{x:Bind Subtitle, Mode=OneWay}"
                                             FontSize="11"
                                             Foreground="{StaticResource SecondaryTextBrush}"
                                             TextTrimming="CharacterEllipsis"
@@ -470,7 +485,7 @@
                                     </StackPanel>
                                     <TextBlock
                                         Grid.Column="2"
-                                        Text="{x:Bind DurationText}"
+                                        Text="{x:Bind DurationText, Mode=OneWay}"
                                         FontSize="12"
                                         Foreground="{StaticResource SecondaryTextBrush}"
                                         VerticalAlignment="Center" />

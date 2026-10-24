@@ -166,13 +166,13 @@ public sealed partial class ArtistPage : Page
     private void Latest_Click(object sender, RoutedEventArgs e)
     {
         if (_overview?.LatestRelease is { } latest)
-            Frame.Navigate(typeof(AlbumDetailPage), latest);
+            Frame.Navigate(typeof(AlbumDetailPage), latest, Animations.DrillIn);
     }
 
     private void Release_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is AlbumItem album)
-            Frame.Navigate(typeof(AlbumDetailPage), album.Summary);
+            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, Animations.DrillIn);
     }
 
     private void Release_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
@@ -209,4 +209,9 @@ public sealed partial class ArtistPage : Page
                 App.Playback.PlayQueue(_topTracks, index);
         }
     }
+
+    // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
+    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
+
+    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 }

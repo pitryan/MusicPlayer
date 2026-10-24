@@ -68,7 +68,11 @@ public sealed partial class MainWindow : Window
         Playback.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(PlaybackService.CurrentTrack))
+            {
                 UpdateLcdFavourite();
+                if (Playback.CurrentTrack is not null)
+                    Animations.FadeIn(LcdContent);
+            }
         };
         App.Favourites.Changed += (_, _) => UpdateLcdFavourite();
         UpdateLcdFavourite();
@@ -180,6 +184,11 @@ public sealed partial class MainWindow : Window
     {
         QueueToggle.IsChecked = queue;
         LyricsToggle.IsChecked = lyrics;
+        // Panel yang baru dibuka masuk dari kanan sambil memudar
+        if (queue && QueuePanel.Visibility != Visibility.Visible)
+            Animations.SlideIn(QueuePanel, 48, 0);
+        if (lyrics && LyricsPanel.Visibility != Visibility.Visible)
+            Animations.SlideIn(LyricsPanel, 48, 0);
         QueuePanel.Visibility = queue ? Visibility.Visible : Visibility.Collapsed;
         LyricsPanel.Visibility = lyrics ? Visibility.Visible : Visibility.Collapsed;
 
@@ -269,17 +278,8 @@ public sealed partial class MainWindow : Window
 
     private void UpNextList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is not QueueEntry entry)
-            return;
-
-        var menu = new MenuFlyout();
-        menu.Items.Add(TrackMenu.CreateItem("Play Now", "\uE768", () => Playback.PlayFromQueue(entry)));
-        menu.Items.Add(TrackMenu.CreateItem("Remove from Queue", "\uE711", () => Playback.RemoveFromQueue(entry)));
-        TrackMenu.AddPlaylistItem(menu, [entry.Track]);
-        TrackMenu.AddFavouriteItem(menu, entry.Track);
-        TrackMenu.AddGoToItems(menu, entry.Track);
-        TrackMenu.AddInfoItem(menu, [entry.Track]);
-        menu.ShowAt(UpNextList, e.GetPosition(UpNextList));
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
+            TrackMenu.ShowForQueueEntry(UpNextList, e.GetPosition(UpNextList), entry);
     }
 
     // ── MiniPlayer dan layar penuh ───────────────────────────
@@ -349,7 +349,15 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya.</summary>
-    public void ShowPage(Type page, object? parameter) => ContentFrame.Navigate(page, parameter);
+    /// <summary>
+    /// Membuka halaman di jendela utama. Kalau MiniPlayer atau layar penuh sedang menggantikan jendela utama
+    /// (misalnya Go to Album dari antrean di MiniPlayer), jendela itu ditutup dulu supaya halamannya terlihat.
+    /// </summary>
+    public void ShowPage(Type page, object? parameter)
+    {
+        _replacement?.Close();
+        ContentFrame.Navigate(page, parameter, Animations.DrillIn);
+    }
 
     private void LcdBorder_RightTapped(object sender, RightTappedRoutedEventArgs e) =>
         ShowLcdMenu(LcdBorder, e.GetPosition(LcdBorder));

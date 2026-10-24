@@ -44,8 +44,8 @@
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="vm:AlbumItem">
                     <StackPanel Width="180" Margin="0,0,0,12">
-                        <!-- Placeholder abu-abu dengan ikon, tertutup cover saat sudah dimuat -->
-                        <Grid
+                        <!-- Placeholder abu-abu dengan ikon, tertutup cover saat sudah dimuat; membesar sedikit saat kursor di atasnya -->
+                        <Grid PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited"
                             Width="180"
                             Height="180"
                             CornerRadius="6"

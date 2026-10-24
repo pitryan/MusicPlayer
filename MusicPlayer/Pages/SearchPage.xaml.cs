@@ -75,13 +75,13 @@ public sealed partial class SearchPage : Page
     private void ArtistResults_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is ArtistItem artist)
-            Frame.Navigate(typeof(ArtistPage), artist.Summary.Name);
+            Frame.Navigate(typeof(ArtistPage), artist.Summary.Name, Animations.DrillIn);
     }
 
     private void AlbumResults_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is AlbumItem album)
-            Frame.Navigate(typeof(AlbumDetailPage), album.Summary);
+            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, Animations.DrillIn);
     }
 
     private void SongResults_RightTapped(object sender, RightTappedRoutedEventArgs e)

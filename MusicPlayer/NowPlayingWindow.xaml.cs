@@ -59,7 +59,15 @@ public sealed partial class NowPlayingWindow : Window
     private void OnPlaybackPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(PlaybackService.CurrentTrack))
+        {
             _ = LoadLargeCoverAsync();
+            if (Playback.CurrentTrack is not null)
+            {
+                // Latar dan cover lagu baru memudar masuk
+                Animations.FadeIn(BackdropLayer, 450);
+                Animations.FadeIn(CoverFrame);
+            }
+        }
     }
 
     private async Task LoadLargeCoverAsync()

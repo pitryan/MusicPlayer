@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.ViewModels;
@@ -51,7 +52,7 @@ public sealed partial class AllPlaylistsPage : Page
     private void PlaylistGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is PlaylistItem item)
-            Frame.Navigate(typeof(PlaylistPage), item.Summary is { } summary ? summary.Id : PlaylistPage.Favourites);
+            Frame.Navigate(typeof(PlaylistPage), item.Summary is { } summary ? summary.Id : PlaylistPage.Favourites, Animations.DrillIn);
     }
 
     private async void NewPlaylist_Click(object sender, RoutedEventArgs e)
@@ -59,4 +60,9 @@ public sealed partial class AllPlaylistsPage : Page
         if (await Dialogs.AskNameAsync("New Playlist", "Create") is { } name)
             App.MainWindow.ShowPlaylist(App.Playlists.Create(name));
     }
+
+    // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
+    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
+
+    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 }

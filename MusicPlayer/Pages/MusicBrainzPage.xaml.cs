@@ -253,7 +253,7 @@ public sealed partial class MusicBrainzPage : Page
         var history = Frame.BackStack;
         if (_request.FromAlbum && saved.Count > 0 && App.Database.FindAlbum(saved[0]) is { } album)
         {
-            Frame.Navigate(typeof(AlbumDetailPage), album);
+            Frame.Navigate(typeof(AlbumDetailPage), album, Animations.DrillIn);
             while (history.Count > 0 && (history[^1].SourcePageType == typeof(MusicBrainzPage) || history[^1].SourcePageType == typeof(TagEditorPage)))
                 history.RemoveAt(history.Count - 1);
             if (history.Count > 0 && history[^1].SourcePageType == typeof(AlbumDetailPage))

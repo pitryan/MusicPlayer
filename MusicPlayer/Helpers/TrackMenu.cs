@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MusicPlayer.Library;
 using MusicPlayer.Pages;
+using MusicPlayer.ViewModels;
 using Windows.Foundation;
 
 namespace MusicPlayer.Helpers;
@@ -37,6 +38,23 @@ public static class TrackMenu
         AddFavouriteItem(menu, track);
         AddGoToItems(menu, track, goToAlbum, goToArtist);
         AddInfoItem(menu, [track]);
+        menu.ShowAt(target, position);
+    }
+
+    /// <summary>
+    /// Menu lagu di antrean Playing Next (jendela utama dan MiniPlayer): Play Now, Remove from Queue, lalu menu lagu
+    /// yang biasa.
+    /// </summary>
+    public static void ShowForQueueEntry(UIElement target, Point position, QueueEntry entry)
+    {
+        var playback = App.Playback;
+        var menu = new MenuFlyout();
+        menu.Items.Add(CreateItem("Play Now", "\uE768", () => playback.PlayFromQueue(entry)));
+        menu.Items.Add(CreateItem("Remove from Queue", "\uE711", () => playback.RemoveFromQueue(entry)));
+        AddPlaylistItem(menu, [entry.Track]);
+        AddFavouriteItem(menu, entry.Track);
+        AddGoToItems(menu, entry.Track);
+        AddInfoItem(menu, [entry.Track]);
         menu.ShowAt(target, position);
     }
 

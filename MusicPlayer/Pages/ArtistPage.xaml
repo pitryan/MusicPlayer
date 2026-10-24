@@ -20,7 +20,7 @@
         <!-- Satu rilis di rak Albums, Singles & EPs, atau Appears On -->
         <DataTemplate x:Key="ReleaseTileTemplate" x:DataType="vm:AlbumItem">
             <StackPanel Width="160" Margin="0,0,0,8">
-                <Grid
+                <Grid PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited"
                     Width="160"
                     Height="160"
                     CornerRadius="6"

@@ -86,7 +86,7 @@ public sealed partial class ArtistsPage : Page
     private string _shownArtist = "";
     private int _libraryVersion;
 
-    private void ArtistName_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(ArtistPage), _shownArtist);
+    private void ArtistName_Click(object sender, RoutedEventArgs e) => Frame.Navigate(typeof(ArtistPage), _shownArtist, Animations.DrillIn);
 
     private void ShowArtist(ArtistItem artist)
     {
@@ -145,7 +145,7 @@ public sealed partial class ArtistsPage : Page
     private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is AlbumBlock block)
-            Frame.Navigate(typeof(AlbumDetailPage), block.Summary);
+            Frame.Navigate(typeof(AlbumDetailPage), block.Summary, Animations.DrillIn);
     }
 
     private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)

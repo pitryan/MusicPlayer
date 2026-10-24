@@ -32,7 +32,7 @@
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="vm:GenreItem">
                     <!-- Kotak genre: cover sebagai latar, digelapkan di bagian bawah supaya teksnya terbaca -->
-                    <Grid
+                    <Grid PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited"
                         Width="240"
                         Height="135"
                         CornerRadius="8"
