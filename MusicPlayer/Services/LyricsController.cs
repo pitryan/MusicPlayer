@@ -55,6 +55,9 @@ public sealed class LyricsController
     /// <summary>Dipicu setiap kali State, Current, IsCheckingOnline, atau ErrorMessage berubah.</summary>
     public event EventHandler? Changed;
 
+    /// <summary>Pencari lirik yang sama, untuk editor lirik (lirik lagu mana pun, bukan hanya yang sedang diputar).</summary>
+    public LyricsFinder Finder => _finder;
+
     public LyricsState State { get; private set; } = LyricsState.Idle;
 
     /// <summary>Lirik yang ditampilkan saat State = Ready, sudah lengkap dengan baris jeda instrumental.</summary>

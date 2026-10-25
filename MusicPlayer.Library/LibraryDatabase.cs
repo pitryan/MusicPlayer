@@ -634,6 +634,54 @@ public sealed class LibraryDatabase
         "q.path, q.sample_rate, q.container_bits, q.is_float, q.effective_bits, q.cutoff_hz, q.verdict, q.source_rate";
 
     /// <summary>Menyimpan (atau mengganti) hasil pemeriksaan satu lagu, dengan stempel file saat diperiksa.</summary>
+    /// <summary>Keterangan artis yang tersimpan, atau null kalau belum pernah diambil.</summary>
+    public ArtistInfo? GetArtistInfo(string name)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT mbid, kind, about, wikipedia_url, origin, begin_date, fetched_utc, found
+            FROM artist_info WHERE name = $name
+            """;
+        command.Parameters.AddWithValue("$name", name);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        string? Text(int column) => reader.IsDBNull(column) ? null : reader.GetString(column);
+        return new ArtistInfo(name)
+        {
+            MusicBrainzId = Text(0),
+            Kind = Text(1),
+            About = Text(2),
+            WikipediaUrl = Text(3),
+            Origin = Text(4),
+            BeginDate = Text(5),
+            FetchedUtc = new DateTime(reader.GetInt64(6), DateTimeKind.Utc),
+            Found = reader.GetInt64(7) != 0,
+        };
+    }
+
+    public void SaveArtistInfo(ArtistInfo info)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT OR REPLACE INTO artist_info (name, mbid, kind, about, wikipedia_url, origin, begin_date, fetched_utc, found)
+            VALUES ($name, $mbid, $kind, $about, $wiki, $origin, $begin, $fetched, $found)
+            """;
+        command.Parameters.AddWithValue("$name", info.Name);
+        command.Parameters.AddWithValue("$mbid", (object?)info.MusicBrainzId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$kind", (object?)info.Kind ?? DBNull.Value);
+        command.Parameters.AddWithValue("$about", (object?)info.About ?? DBNull.Value);
+        command.Parameters.AddWithValue("$wiki", (object?)info.WikipediaUrl ?? DBNull.Value);
+        command.Parameters.AddWithValue("$origin", (object?)info.Origin ?? DBNull.Value);
+        command.Parameters.AddWithValue("$begin", (object?)info.BeginDate ?? DBNull.Value);
+        command.Parameters.AddWithValue("$fetched", info.FetchedUtc.Ticks);
+        command.Parameters.AddWithValue("$found", info.Found ? 1 : 0);
+        command.ExecuteNonQuery();
+    }
+
     public void SaveQualityReport(string path, FileStamp stamp, QualityReport report, DateTime nowUtc)
     {
         using var connection = Open();
@@ -1057,6 +1105,20 @@ public sealed class LibraryDatabase
                 source_rate      INTEGER,
                 spectrum         BLOB,
                 analyzed_utc     INTEGER NOT NULL
+            );
+
+            -- Keterangan artis untuk halaman artis (About, asal, tanggal), dari MusicBrainz, Wikidata, dan Wikipedia.
+            -- Satu baris per nama artis utama; found = 0 berarti sudah dicari tapi tidak ditemukan.
+            CREATE TABLE IF NOT EXISTS artist_info (
+                name          TEXT PRIMARY KEY COLLATE NOCASE,
+                mbid          TEXT,
+                kind          TEXT,
+                about         TEXT,
+                wikipedia_url TEXT,
+                origin        TEXT,
+                begin_date    TEXT,
+                fetched_utc   INTEGER NOT NULL,
+                found         INTEGER NOT NULL
             );
 
             -- Lagu favorit (bintang ☆). Sama seperti riwayat putar, disambungkan lewat path: favorit tetap ada

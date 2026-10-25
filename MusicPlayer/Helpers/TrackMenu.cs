@@ -38,6 +38,9 @@ public static class TrackMenu
         AddFavouriteItem(menu, track);
         AddGoToItems(menu, track, goToAlbum, goToArtist);
         AddInfoItem(menu, [track]);
+        AddArtworkItem(menu, [track]);
+        // Lirik, cara baca, dan terjemahan, ditulis manual
+        menu.Items.Add(CreateItem("Edit Lyrics…", "\uE70F", () => App.MainWindow.ShowPage(typeof(LyricsEditorPage), track)));
         menu.ShowAt(target, position);
     }
 
@@ -67,6 +70,16 @@ public static class TrackMenu
         var request = new TagEditorRequest(tracks.Select(t => t.FilePath).ToList(), album ? "Album Info" : "Song Info", FromAlbum: album);
         menu.Items.Add(CreateItem(album ? "Get Album Info…" : "Get Info…", "\uE946",
             () => App.MainWindow.ShowPage(typeof(TagEditorPage), request)));
+    }
+
+    /// <summary>
+    /// "Change Artwork…": ganti cover saja, dari file atau Cover Art Archive (MusicBrainz), tanpa mengubah informasi
+    /// lagunya. Untuk satu lagu atau satu album.
+    /// </summary>
+    public static void AddArtworkItem(MenuFlyout menu, IReadOnlyList<Track> tracks, bool album = false)
+    {
+        var request = new ArtworkRequest(tracks, album);
+        menu.Items.Add(CreateItem("Change Artwork…", "\uE91B", () => App.MainWindow.ShowPage(typeof(ArtworkPage), request)));
     }
 
     /// <summary>
@@ -142,6 +155,7 @@ public static class TrackMenu
         AddPlaylistItem(menu, tracks, tracks[0].DisplayAlbum);
         AddGoToItems(menu, tracks[0], goToAlbum: false);
         AddInfoItem(menu, tracks, album: true);
+        AddArtworkItem(menu, tracks, album: true);
         menu.ShowAt(target, position);
     }
 

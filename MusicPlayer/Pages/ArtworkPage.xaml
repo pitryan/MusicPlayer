@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Change Artwork: ganti cover satu lagu atau satu album tanpa mengubah informasi lagunya. Cover baru dipilih dari
+    file, atau dari Cover Art Archive (MusicBrainz) yang langsung dicari dari judul album dan artisnya. Yang ditulis ke
+    file hanya cover depan; cover belakang, booklet, dan semua tag lain tetap.
+-->
+<Page
+    x:Class="MusicPlayer.Pages.ArtworkPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels">
+    <Grid Padding="40,28,40,24" RowSpacing="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Spacing="2">
+            <TextBlock Text="Change Artwork" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource SecondaryTextBrush}" />
+            <TextBlock x:Name="TitleText" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="1" />
+            <TextBlock x:Name="TargetText" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+        </StackPanel>
+
+        <Grid Grid.Row="1" ColumnSpacing="40">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!--
+                Pratinjau: cover sekarang, lalu cover yang dipilih. Ditampilkan utuh (Uniform), bukan dipotong menjadi
+                persegi: cover hasil scan jarang persegi sempurna, dan di sini yang terlihat harus sama dengan yang ditanam.
+            -->
+            <StackPanel Width="320" Spacing="10">
+                <Grid Width="320" Height="320" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                    <Image x:Name="PreviewImage" Stretch="Uniform" />
+                    <ProgressRing x:Name="PreviewRing" Width="40" Height="40" IsActive="False" Visibility="Collapsed" />
+                </Grid>
+                <TextBlock x:Name="PreviewCaption" TextWrapping="Wrap" />
+                <TextBlock x:Name="PreviewSize" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+                <!--
+                    Cover yang tidak persegi: pilih cara menanamnya. Bawaannya apa adanya; Crop dan Fit membuat file-nya
+                    sendiri persegi, jadi tampil benar juga di pemutar lain.
+                -->
+                <StackPanel x:Name="ShapePanel" Spacing="4" Visibility="Collapsed">
+                    <TextBlock
+                        FontSize="12"
+                        TextWrapping="Wrap"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        Text="Not quite square. Album grids, the player, and other devices may crop or stretch it. Save it as:" />
+                    <RadioButtons x:Name="ShapeChoice" SelectedIndex="0" SelectionChanged="ShapeChoice_SelectionChanged">
+                        <x:String>Keep original</x:String>
+                        <x:String>Crop to square</x:String>
+                        <x:String>Fit in square (edges filled to match)</x:String>
+                    </RadioButtons>
+                </StackPanel>
+                <Button Content="Choose Image…" Click="ChooseFile_Click" />
+            </StackPanel>
+
+            <!-- Cover dari Cover Art Archive: hasil pencarian rilis di MusicBrainz -->
+            <Grid Grid.Column="1" RowSpacing="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="AlbumBox" PlaceholderText="Album" KeyDown="SearchBox_KeyDown" />
+                    <TextBox x:Name="ArtistBox" Grid.Column="1" PlaceholderText="Artist" KeyDown="SearchBox_KeyDown" />
+                    <Button Grid.Column="2" Content="Search MusicBrainz" Click="Search_Click" />
+                </Grid>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                    <ProgressRing x:Name="SearchRing" Width="16" Height="16" IsActive="False" Visibility="Collapsed" />
+                    <TextBlock x:Name="SearchStatus" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+                <GridView
+                    x:Name="ResultsGrid"
+                    Grid.Row="2"
+                    SelectionMode="Single"
+                    SelectionChanged="ResultsGrid_SelectionChanged">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ArtworkItem">
+                            <!-- Jarak dari tepi, supaya bingkai pilihan tidak menutupi gambar dan teks -->
+                            <StackPanel Width="160" Spacing="2" Margin="6,6,6,10">
+                                <Border Width="160" Height="160" CornerRadius="6" Background="{StaticResource CoverPlaceholderBrush}">
+                                    <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Stretch="Uniform" />
+                                </Border>
+                                <TextBlock Text="{x:Bind Title}" FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                <TextBlock
+                                    Text="{x:Bind Detail}"
+                                    FontSize="11"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    TextTrimming="CharacterEllipsis"
+                                    MaxLines="1" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+            </Grid>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock
+                x:Name="MessageText"
+                VerticalAlignment="Center"
+                TextWrapping="Wrap"
+                Foreground="{StaticResource SecondaryTextBrush}"
+                Text="Only the front cover is replaced. Song details and other images in the files stay the same." />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <ProgressRing x:Name="SavingRing" Width="20" Height="20" IsActive="False" Visibility="Collapsed" />
+                <Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click" />
+                <Button x:Name="SaveButton" Style="{StaticResource AccentButtonStyle}" Content="Save" IsEnabled="False" Click="Save_Click" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

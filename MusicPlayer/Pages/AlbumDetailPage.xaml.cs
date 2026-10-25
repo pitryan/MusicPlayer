@@ -112,7 +112,7 @@ public sealed partial class AlbumDetailPage : Page
             row.IsPlaying = row.Track.FilePath == playingPath;
     }
 
-    /// <summary>"More by": rilis lain dari artis yang sama, terbaru dulu. Disembunyikan kalau tidak ada.</summary>
+    /// <summary>"More by": rilis lain dari artis yang sama, terbaru dulu, dengan tahunnya. Disembunyikan kalau tidak ada.</summary>
     private void ShowMoreBy(AlbumSummary album)
     {
         List<AlbumItem> others = _artist.Length == 0
@@ -120,49 +120,15 @@ public sealed partial class AlbumDetailPage : Page
             : App.Database.GetArtistAlbums(_artist)
                 .Where(a => !(a.Title == album.Title && a.DisplayArtist == album.DisplayArtist))
                 .OrderByDescending(a => a.Year ?? 0)
-                .Select(a => new AlbumItem(a))
+                .Select(a => new AlbumItem(a) { Subtitle = a.Year?.ToString() ?? "" })
                 .ToList();
 
-        MoreBySection.Visibility = others.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (others.Count == 0)
-            return;
-
-        MoreByTitle.Text = $"More by {album.DisplayArtist}";
-        MoreByList.ItemsSource = others;
-        foreach (var item in others)
-            item.EnsureCover();
-        MoreByScroller.ChangeView(0, null, null, true);
+        MoreByShelf.Title = $"More by {album.DisplayArtist}";
+        MoreByShelf.Items = others;
     }
 
-    private void MoreByItem_Tapped(object sender, TappedRoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is AlbumItem item)
-            Frame.Navigate(typeof(AlbumDetailPage), item.Summary, Animations.DrillIn);
-    }
-
-    // Panah rak: digulir sejauh 80% lebar yang terlihat, supaya satu-dua kotak terakhir masih terlihat sebagai patokan
-    private void MoreByLeft_Click(object sender, RoutedEventArgs e) =>
-        MoreByScroller.ChangeView(Math.Max(0, MoreByScroller.HorizontalOffset - MoreByScroller.ViewportWidth * 0.8), null, null);
-
-    private void MoreByRight_Click(object sender, RoutedEventArgs e) =>
-        MoreByScroller.ChangeView(Math.Min(MoreByScroller.ScrollableWidth, MoreByScroller.HorizontalOffset + MoreByScroller.ViewportWidth * 0.8), null, null);
-
-    private void MoreByScroller_ViewChanged(object? sender, ScrollViewerViewChangedEventArgs e) => UpdateMoreByArrows();
-
-    private void MoreByShelf_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateMoreByArrows();
-
-    /// <summary>Panah kiri hanya kalau ada yang bisa digulir ke kiri, panah kanan hanya kalau ada di kanan.</summary>
-    private void UpdateMoreByArrows()
-    {
-        double offset = MoreByScroller.HorizontalOffset, max = MoreByScroller.ScrollableWidth;
-        MoreByLeft.Visibility = offset > 1 ? Visibility.Visible : Visibility.Collapsed;
-        MoreByRight.Visibility = offset < max - 1 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    // Kotak membesar sedikit saat kursor di atasnya, seperti di grid album
-    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
-
-    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
+    private void MoreBy_ItemInvoked(object? sender, AlbumItem item) =>
+        Frame.Navigate(typeof(AlbumDetailPage), item.Summary, Animations.DrillIn);
 
     private void AlbumMore_Click(object sender, RoutedEventArgs e) =>
         TrackMenu.ShowForAlbum(AlbumMoreButton, new Point(0, AlbumMoreButton.ActualHeight), _tracks);

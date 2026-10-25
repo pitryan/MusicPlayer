@@ -50,6 +50,51 @@
                 <Setter Property="MinHeight" Value="36" />
             </Style>
 
+            <!--
+                Tombol tanpa tampilan sendiri, untuk kotak yang bisa diklik (cover di rak, Latest Release): yang tampil
+                hanya isinya. Lebih andal daripada Tapped, dan bisa dipakai dengan keyboard.
+            -->
+            <Style x:Key="TileButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter
+                                Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Banner halaman artis: tombol Play merah bulat di samping nama, seperti Apple Music -->
+            <Style x:Key="BannerPlayButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="Width" Value="44" />
+                <Setter Property="Height" Value="44" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="22" />
+            </Style>
+
+            <!-- Banner halaman artis: tombol bulat gelap transparan (Shuffle, •••) di kanan bawah -->
+            <Style x:Key="BannerCircleButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="20" />
+                <Setter Property="Background" Value="#66000000" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Foreground" Value="White" />
+            </Style>
+
             <!-- Panah bulat untuk menggulir rak mendatar (More by), seperti Apple Music -->
             <Style x:Key="ShelfArrowButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Width" Value="36" />

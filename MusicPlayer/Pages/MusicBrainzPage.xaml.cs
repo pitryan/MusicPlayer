@@ -214,7 +214,8 @@ public sealed partial class MusicBrainzPage : Page
                 && await App.MusicBrainz.GetFrontCoverAsync(release.Id, SavedCoverSize, CancellationToken.None) is { } cover)
                 pictures = [new TagPicture(TagLib.PictureType.FrontCover, "image/jpeg", cover)];
 
-            var result = await App.TagEdits.SaveEachAsync(edits, pictures);
+            // Cover dari MusicBrainz menggantikan cover depan saja; cover belakang dan gambar lain di file tetap
+            var result = await App.TagEdits.SaveEachAsync(edits, pictures, frontCoverOnly: true);
             if (result.Failed.Count == 0)
             {
                 Leave(result.Saved);

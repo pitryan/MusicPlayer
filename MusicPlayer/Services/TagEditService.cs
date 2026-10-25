@@ -44,14 +44,18 @@ public sealed class TagEditService
     /// file read-only) tidak menghentikan lagu lainnya.
     /// </summary>
     public Task<TagSaveResult> SaveAsync(IReadOnlyList<string> paths, IReadOnlyDictionary<string, string> changes,
-        IReadOnlyList<TagPicture>? pictures) =>
-        SaveEachAsync(paths.Select(p => (p, changes)).ToList(), pictures);
+        IReadOnlyList<TagPicture>? pictures, bool frontCoverOnly = false) =>
+        SaveEachAsync(paths.Select(p => (p, changes)).ToList(), pictures, frontCoverOnly);
 
     /// <summary>
     /// Seperti SaveAsync, tapi setiap lagu dengan perubahannya sendiri, misalnya judul dan nomor track dari MusicBrainz.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="frontCoverOnly"/>: gambar yang diberikan hanya menggantikan cover depan; cover belakang, booklet,
+    /// dan gambar lain di file tetap (TagEditor.Write).
+    /// </remarks>
     public async Task<TagSaveResult> SaveEachAsync(IReadOnlyList<(string Path, IReadOnlyDictionary<string, string> Changes)> edits,
-        IReadOnlyList<TagPicture>? pictures)
+        IReadOnlyList<TagPicture>? pictures, bool frontCoverOnly = false)
     {
         var paths = edits.Select(e => e.Path).ToList();
         var failed = new List<(string Path, string Error)>();
@@ -61,7 +65,7 @@ public sealed class TagEditService
             {
                 try
                 {
-                    TagEditor.Write(path, changes, pictures);
+                    TagEditor.Write(path, changes, pictures, frontCoverOnly);
                 }
                 catch (Exception ex)
                 {

@@ -18,6 +18,9 @@ namespace MusicPlayer.Pages;
 /// </summary>
 public sealed partial class ArtistsPage : Page
 {
+    // Artis yang terakhir dipilih (nama artis utama)
+    private const string SelectedArtistSetting = "ArtistsSelected";
+
     private List<ArtistItem> _artists = [];
     private List<AlbumBlock> _blocks = [];
 
@@ -47,9 +50,11 @@ public sealed partial class ArtistsPage : Page
         ArtistList.ItemsSource = _artists;
         EmptyState.Visibility = _artists.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        string? requested = e.Parameter as string;
+        // Artis yang diminta (Go to Artist), atau artis terakhir yang dipilih: membuka Artists dari sidebar kembali ke
+        // artis yang tadi dilihat, bukan ke artis paling atas. Diingat juga setelah aplikasi ditutup.
+        string? requested = e.Parameter as string ?? AppSettings.Get(SelectedArtistSetting, "");
         var selected = _artists.FirstOrDefault(a =>
-                           requested is not null
+                           requested.Length > 0
                            && string.Equals(a.Summary.Name, requested, StringComparison.OrdinalIgnoreCase))
                        ?? _artists.FirstOrDefault();
 
@@ -80,7 +85,10 @@ public sealed partial class ArtistsPage : Page
     private void ArtistList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ArtistList.SelectedItem is ArtistItem artist)
+        {
+            AppSettings.Set(SelectedArtistSetting, artist.Summary.Name);
             ShowArtist(artist);
+        }
     }
 
     // Artis yang sedang tampil di kanan, untuk tombol nama artis
@@ -153,13 +161,13 @@ public sealed partial class ArtistsPage : Page
 
     private void AlbumMore_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: AlbumBlock block } button)
+        if (sender is FrameworkElement { Tag: AlbumBlock block } button)
             TrackMenu.ShowForAlbum(button, new Point(0, button.ActualHeight), block.Tracks);
     }
 
     private void RowMore_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: TrackRow row } button)
+        if (sender is not FrameworkElement { Tag: TrackRow row } button)
             return;
         var block = _blocks.FirstOrDefault(b => b.Rows.Contains(row));
         if (block is not null)
@@ -173,7 +181,7 @@ public sealed partial class ArtistsPage : Page
 
     private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is AlbumBlock block)
+        if ((sender as FrameworkElement)?.Tag is AlbumBlock block)
             Frame.Navigate(typeof(AlbumDetailPage), block.Summary, Animations.DrillIn);
     }
 

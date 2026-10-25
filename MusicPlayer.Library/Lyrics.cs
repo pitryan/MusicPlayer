@@ -25,6 +25,12 @@ public sealed record LyricLine(TimeSpan Time, string Text)
     /// </summary>
     public IReadOnlyList<string> Extra { get; init; } = [];
 
+    /// <summary>Cara baca baris ini (romaji, romanisasi, pinyin), ditulis manual di editor lirik.</summary>
+    public string? Reading { get; init; }
+
+    /// <summary>Terjemahan baris ini, ditulis manual di editor lirik.</summary>
+    public string? Translation { get; init; }
+
     public bool IsBlank => Text.Length == 0;
 }
 

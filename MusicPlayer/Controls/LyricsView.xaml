@@ -51,6 +51,54 @@
                 Margin="0,8,0,0"
                 Visibility="Collapsed"
                 Click="RetryButton_Click" />
+            <!-- Lagu tanpa lirik: tulis atau tempel liriknya sendiri di editor lirik -->
+            <Button
+                x:Name="AddLyricsButton"
+                Content="Add Lyrics…"
+                HorizontalAlignment="Center"
+                Margin="0,8,0,0"
+                Visibility="Collapsed"
+                Click="EditButton_Click" />
+        </StackPanel>
+
+        <!--
+            Cara baca dan terjemahan (ditulis di editor lirik) bisa disembunyikan; tombolnya hanya muncul kalau lagu ini
+            punya lapisan itu. Tombol pensil membuka editor lirik.
+        -->
+        <StackPanel
+            x:Name="Toolbar"
+            Orientation="Horizontal"
+            Spacing="4"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="0,0,8,0"
+            Visibility="Collapsed">
+            <ToggleButton
+                x:Name="ReadingToggle"
+                Content="Reading"
+                FontSize="12"
+                Padding="10,3"
+                MinHeight="0"
+                ToolTipService.ToolTip="Show how each line is read"
+                Click="ReadingToggle_Click" />
+            <ToggleButton
+                x:Name="TranslationToggle"
+                Content="Translation"
+                FontSize="12"
+                Padding="10,3"
+                MinHeight="0"
+                ToolTipService.ToolTip="Show the translation"
+                Click="TranslationToggle_Click" />
+            <Button
+                Padding="7,5"
+                MinWidth="0"
+                MinHeight="0"
+                Background="Transparent"
+                BorderThickness="0"
+                ToolTipService.ToolTip="Edit lyrics, reading, and translation"
+                Click="EditButton_Click">
+                <FontIcon Glyph="&#xE70F;" FontSize="13" />
+            </Button>
         </StackPanel>
     </Grid>
 </UserControl>

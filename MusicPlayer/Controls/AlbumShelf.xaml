@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rak rilis mendatar seperti Apple Music: judul, kotak 180 px yang digulir dengan panah kiri/kanan, tanpa scrollbar.
+    Dipakai "More by" di halaman album serta Albums, Singles & EPs, dan Appears On di halaman artis. Rak yang kosong
+    disembunyikan.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.AlbumShelf"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels">
+    <StackPanel x:Name="Root" Spacing="12" Visibility="Collapsed">
+        <TextBlock x:Name="TitleBlock" FontSize="20" FontWeight="SemiBold" />
+        <Grid>
+            <ScrollViewer
+                x:Name="Scroller"
+                HorizontalScrollMode="Enabled"
+                HorizontalScrollBarVisibility="Hidden"
+                VerticalScrollMode="Disabled"
+                VerticalScrollBarVisibility="Disabled">
+                <ItemsRepeater x:Name="Repeater">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Horizontal" Spacing="20" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AlbumItem">
+                            <!--
+                                Item dibawa lewat Tag: ItemsRepeater tidak mengisi DataContext untuk template x:Bind,
+                                jadi handler klik tidak bisa membacanya dari DataContext.
+                            -->
+                            <Button Style="{StaticResource TileButtonStyle}" Width="180" Tag="{x:Bind}" Click="Tile_Click">
+                                <StackPanel Spacing="2">
+                                    <Border
+                                        Width="180"
+                                        Height="180"
+                                        CornerRadius="6"
+                                        Background="{StaticResource CoverPlaceholderBrush}"
+                                        PointerEntered="Cover_PointerEntered"
+                                        PointerExited="Cover_PointerExited">
+                                        <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <TextBlock Text="{x:Bind Title}" Margin="0,6,0,0" FontSize="13" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                    <TextBlock
+                                        Text="{x:Bind Subtitle}"
+                                        FontSize="12"
+                                        Foreground="{StaticResource SecondaryTextBrush}"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxLines="1" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+            </ScrollViewer>
+            <!-- Panah bulat di tengah tinggi cover; muncul dan hilang sesuai posisi gulir (ShelfScroll) -->
+            <Button
+                x:Name="LeftArrow"
+                Style="{StaticResource ShelfArrowButtonStyle}"
+                HorizontalAlignment="Left"
+                Margin="-14,72,0,0"
+                Visibility="Collapsed"
+                ToolTipService.ToolTip="Previous">
+                <FontIcon Glyph="&#xE76B;" FontSize="14" />
+            </Button>
+            <Button
+                x:Name="RightArrow"
+                Style="{StaticResource ShelfArrowButtonStyle}"
+                HorizontalAlignment="Right"
+                Margin="0,72,-14,0"
+                Visibility="Collapsed"
+                ToolTipService.ToolTip="Next">
+                <FontIcon Glyph="&#xE76C;" FontSize="14" />
+            </Button>
+        </Grid>
+    </StackPanel>
+</UserControl>

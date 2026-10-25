@@ -109,6 +109,10 @@ public static class TagFields
 
         // ── Lyrics ──
         new("lyrics", "Lyrics", TagGroup.Lyrics, "LYRICS", "USLT", "\u00A9lyr"),
+        // Cara baca dan terjemahan lirik, ditulis manual di editor lirik: satu baris per baris lirik di LYRICS (urutan
+        // baris setelah dibaca LrcParser). Nama yang sama di semua format, seperti tag kustom Picard.
+        new("lyrics_reading", "Lyrics Reading", TagGroup.Lyrics, "LYRICS_READING", "TXXX:LYRICS_READING", "----:LYRICS_READING"),
+        new("lyrics_translation", "Lyrics Translation", TagGroup.Lyrics, "LYRICS_TRANSLATION", "TXXX:LYRICS_TRANSLATION", "----:LYRICS_TRANSLATION"),
     ];
 
     private static readonly Dictionary<string, TagField> ByKey = All.ToDictionary(f => f.Key);

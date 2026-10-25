@@ -66,6 +66,9 @@ public sealed class TrackRow : ObservableObject
 
     public string AlbumText => Track.DisplayAlbum;
 
+    /// <summary>Di bawah judul di Top Songs halaman artis, seperti Apple Music. Contoh: "THE BOOK 3 · 2023".</summary>
+    public string AlbumYearText => Track.Year is int year ? $"{Track.DisplayAlbum} · {year}" : Track.DisplayAlbum;
+
     /// <summary>Peringkat di Most Played ("1", "2", ...); kosong di halaman lain.</summary>
     public string RankText { get; init; } = "";
 

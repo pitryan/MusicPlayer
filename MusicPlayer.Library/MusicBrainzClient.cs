@@ -36,6 +36,16 @@ public sealed record MbRelease(
 /// tapi wajib mengikuti aturannya: paling banyak 1 permintaan per detik dan User-Agent yang menyebut aplikasi serta
 /// kontaknya. Gagal tersambung dan jawaban error dilempar sebagai exception.
 /// </summary>
+/// <summary>Hasil pencarian artis: nama, nama urut, alias, dan skor kecocokan dari MusicBrainz (0–100).</summary>
+public sealed record MbArtistMatch(string Id, string Name, string SortName, int Score, IReadOnlyList<string> Aliases);
+
+/// <summary>
+/// Detail artis untuk halaman artis: jenis (Person, Group, ...), negara dan kota asal, tanggal lahir atau terbentuk,
+/// dan tautan ke Wikidata/Wikipedia.
+/// </summary>
+public sealed record MbArtistDetails(string Id, string Name, string? Type, string? Area, string? BeginArea, string? Begin,
+    string? WikidataId, string? WikipediaUrl);
+
 public sealed class MusicBrainzClient
 {
     private const string Api = "https://musicbrainz.org/ws/2/";
@@ -66,6 +76,56 @@ public sealed class MusicBrainzClient
         if (!json.RootElement.TryGetProperty("releases", out var releases) || releases.ValueKind != JsonValueKind.Array)
             return [];
         return releases.EnumerateArray().Select(ReadRelease).ToList();
+    }
+
+    /// <summary>Artis yang cocok dengan nama ini, skor tertinggi lebih dulu (paling banyak 10).</summary>
+    public async Task<IReadOnlyList<MbArtistMatch>> SearchArtistsAsync(string name, CancellationToken ct)
+    {
+        string query = $"artist:\"{EscapeQuery(name)}\"";
+        using var json = await GetJsonAsync($"{Api}artist/?query={Uri.EscapeDataString(query)}&limit=10&fmt=json", ct).ConfigureAwait(false);
+        if (!json.RootElement.TryGetProperty("artists", out var artists) || artists.ValueKind != JsonValueKind.Array)
+            return [];
+        return artists.EnumerateArray().Select(a => new MbArtistMatch(
+            Text(a, "id") ?? "",
+            Text(a, "name") ?? "",
+            Text(a, "sort-name") ?? "",
+            a.TryGetProperty("score", out var score) && score.TryGetInt32(out int value) ? value : 0,
+            a.TryGetProperty("aliases", out var aliases) && aliases.ValueKind == JsonValueKind.Array
+                ? aliases.EnumerateArray().Select(x => Text(x, "name")).OfType<string>().ToList()
+                : [])).ToList();
+    }
+
+    /// <summary>Detail satu artis, dengan relasi URL-nya (Wikidata, Wikipedia).</summary>
+    public async Task<MbArtistDetails> GetArtistDetailsAsync(string artistId, CancellationToken ct)
+    {
+        using var json = await GetJsonAsync($"{Api}artist/{Uri.EscapeDataString(artistId)}?inc=url-rels&fmt=json", ct).ConfigureAwait(false);
+        var root = json.RootElement;
+        string? wikidata = null, wikipedia = null;
+        if (root.TryGetProperty("relations", out var relations) && relations.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var relation in relations.EnumerateArray())
+            {
+                string? url = relation.TryGetProperty("url", out var u) ? Text(u, "resource") : null;
+                switch (Text(relation, "type"))
+                {
+                    case "wikidata" when url is not null:
+                        wikidata ??= url[(url.LastIndexOf('/') + 1)..];
+                        break;
+                    case "wikipedia" when url is not null:
+                        wikipedia ??= url;
+                        break;
+                }
+            }
+        }
+        return new MbArtistDetails(
+            Text(root, "id") ?? artistId,
+            Text(root, "name") ?? "",
+            Text(root, "type"),
+            root.TryGetProperty("area", out var area) && area.ValueKind == JsonValueKind.Object ? Text(area, "name") : null,
+            root.TryGetProperty("begin-area", out var beginArea) && beginArea.ValueKind == JsonValueKind.Object ? Text(beginArea, "name") : null,
+            root.TryGetProperty("life-span", out var lifeSpan) && lifeSpan.ValueKind == JsonValueKind.Object ? Text(lifeSpan, "begin") : null,
+            wikidata,
+            wikipedia);
     }
 
     /// <summary>Isi lengkap satu rilis: semua disc dan lagu, kredit, label, ISRC, dan alias artis.</summary>

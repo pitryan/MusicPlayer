@@ -57,9 +57,12 @@ public static class TagEditor
     /// <summary>
     /// Menulis perubahan. Hanya field di <paramref name="changes"/> yang disentuh; nilai kosong menghapus field itu.
     /// <paramref name="pictures"/> null berarti gambar tidak diubah, daftar kosong berarti semua gambar dihapus.
+    /// Dengan <paramref name="frontCoverOnly"/>, <paramref name="pictures"/> hanya menggantikan cover depan: gambar lain
+    /// (cover belakang, booklet, foto artis) tetap di file (lihat CoverSlots).
     /// Field yang tidak didukung format file ini (misalnya Arranger di M4A) dilewati.
     /// </summary>
-    public static void Write(string path, IReadOnlyDictionary<string, string> changes, IReadOnlyList<TagPicture>? pictures = null)
+    public static void Write(string path, IReadOnlyDictionary<string, string> changes, IReadOnlyList<TagPicture>? pictures = null,
+        bool frontCoverOnly = false)
     {
         // Ditulis ke salinan di folder yang sama (supaya penggantian akhirnya atomik), bernama tersembunyi dan
         // berakhiran .tmp, jadi tidak ikut terbaca scan library kalau sampai tertinggal
@@ -78,7 +81,7 @@ public static class TagEditor
                        ? new Mp4File(temporary)
                        : TagLib.File.Create(temporary, "taglib/" + extension, ReadStyle.Average))
             {
-                Apply(file, changes, pictures);
+                Apply(file, changes, pictures, frontCoverOnly);
                 file.Save();
             }
 
@@ -100,7 +103,8 @@ public static class TagEditor
         _ => TagFormat.Id3,
     };
 
-    private static void Apply(TagLib.File file, IReadOnlyDictionary<string, string> changes, IReadOnlyList<TagPicture>? pictures)
+    private static void Apply(TagLib.File file, IReadOnlyDictionary<string, string> changes, IReadOnlyList<TagPicture>? pictures,
+        bool frontCoverOnly)
     {
         var format = FormatOf(file);
         if (format == TagFormat.Id3)
@@ -132,10 +136,28 @@ public static class TagEditor
 
         if (pictures is not null)
         {
-            file.Tag.Pictures = pictures
-                .Select(p => (IPicture)new Picture(new ByteVector(p.Data)) { Type = p.Type, MimeType = p.MimeType, Description = p.Description })
-                .ToArray();
+            var written = pictures
+                .Select(p => (IPicture)new Picture(new ByteVector(p.Data)) { Type = p.Type, MimeType = p.MimeType, Description = p.Description });
+            if (frontCoverOnly)
+            {
+                // Cover baru di depan (pemutar lain umumnya memakai gambar pertama), gambar lain dipertahankan
+                var existing = file.Tag.Pictures ?? [];
+                var slots = CoverSlots(existing.Select(p => p.Type).ToList());
+                written = written.Concat(existing.Where((_, index) => !slots[index]));
+            }
+            file.Tag.Pictures = written.ToArray();
         }
+    }
+
+    /// <summary>
+    /// Gambar mana yang dianggap cover depan: yang bertipe FrontCover, atau (kalau tidak ada satu pun) yang bertipe
+    /// Other, karena banyak tagger menyimpan cover depan sebagai Other. Gambar lain (cover belakang, booklet, foto
+    /// artis, ...) bukan cover depan dan tidak tersentuh saat cover diganti.
+    /// </summary>
+    public static bool[] CoverSlots(IReadOnlyList<PictureType> types)
+    {
+        bool hasFront = types.Contains(PictureType.FrontCover);
+        return types.Select(t => t == PictureType.FrontCover || (!hasFront && t == PictureType.Other)).ToArray();
     }
 
     // ── Vorbis (FLAC, Ogg) ──────────────────────────────────

@@ -234,7 +234,8 @@ public sealed partial class TagEditorPage : Page
         SavingRing.Visibility = Visibility.Visible;
         try
         {
-            var result = await App.TagEdits.SaveAsync(_paths, changes, _artworkChange);
+            // Choose Image… mengganti cover depan saja (gambar lain di file tetap); Remove Artwork menghapus semuanya
+            var result = await App.TagEdits.SaveAsync(_paths, changes, _artworkChange, frontCoverOnly: _artworkChange is { Count: > 0 });
             if (result.Failed.Count == 0)
             {
                 LeaveAfterSave(result.Saved);

@@ -18,7 +18,8 @@ namespace MusicPlayer.Pages;
 /// <summary>Lagu yang paling sering diputar, sepanjang waktu atau 30 hari terakhir.</summary>
 public sealed partial class MostPlayedPage : Page
 {
-    private const int Limit = 100;
+    // Seperti "Top 25 Most Played" di Apple Music: daftar yang lebih panjang tidak lagi terasa "paling sering"
+    private const int Limit = 25;
     private static readonly TimeSpan LastMonth = TimeSpan.FromDays(30);
 
     private List<Track> _tracks = [];
@@ -63,7 +64,7 @@ public sealed partial class MostPlayedPage : Page
         }).ToList();
         TrackList.ItemsSource = _rows;
 
-        Header.Detail = Formatters.Count(_rows.Count, "song");
+        Header.Detail = _rows.Count == 0 ? "" : $"Top {_rows.Count}";
         bool empty = _rows.Count == 0;
         EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ColumnHeaders.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;

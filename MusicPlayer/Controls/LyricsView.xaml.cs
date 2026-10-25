@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using System.Collections.Generic;
 using Microsoft.UI;
@@ -8,6 +9,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 
@@ -70,11 +72,13 @@ public sealed partial class LyricsView : UserControl
         {
             _isLoaded = true;
             UpdateRunning();
+            LyricsDisplay.Changed += OnDisplayChanged;
         };
         Unloaded += (_, _) =>
         {
             _isLoaded = false;
             UpdateRunning();
+            LyricsDisplay.Changed -= OnDisplayChanged;
         };
 
         // ScrollViewer menangani sendiri roda mouse dan seret, jadi event-nya didengar dengan handledEventsToo.
@@ -134,6 +138,36 @@ public sealed partial class LyricsView : UserControl
 
     private void OnLyricsChanged(object? sender, EventArgs e) => Render();
 
+    // Cara baca atau terjemahan dinyalakan/dimatikan (di panel ini atau panel lirik lain): baris digambar ulang
+    private void OnDisplayChanged(object? sender, EventArgs e)
+    {
+        _shown = null;
+        Render();
+    }
+
+    private void ReadingToggle_Click(object sender, RoutedEventArgs e) => LyricsDisplay.ShowReading = ReadingToggle.IsChecked == true;
+
+    private void TranslationToggle_Click(object sender, RoutedEventArgs e) => LyricsDisplay.ShowTranslation = TranslationToggle.IsChecked == true;
+
+    // Editor lirik di jendela utama (MiniPlayer dan layar penuh ikut ditutup oleh ShowPage)
+    private void EditButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (App.Playback.CurrentTrack is { } track)
+            App.MainWindow.ShowPage(typeof(Pages.LyricsEditorPage), track);
+    }
+
+    /// <summary>Tombol cara baca dan terjemahan hanya untuk lirik yang punya lapisan itu; pensil selama ada lagu.</summary>
+    private void UpdateToolbar(Lyrics? lyrics)
+    {
+        bool hasReading = lyrics?.Lines.Any(l => l.Reading is not null) == true;
+        bool hasTranslation = lyrics?.Lines.Any(l => l.Translation is not null) == true;
+        ReadingToggle.Visibility = hasReading ? Visibility.Visible : Visibility.Collapsed;
+        TranslationToggle.Visibility = hasTranslation ? Visibility.Visible : Visibility.Collapsed;
+        ReadingToggle.IsChecked = LyricsDisplay.ShowReading;
+        TranslationToggle.IsChecked = LyricsDisplay.ShowTranslation;
+        Toolbar.Visibility = lyrics is not null ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void Render()
     {
         var state = _lyrics.State;
@@ -145,12 +179,8 @@ public sealed partial class LyricsView : UserControl
         if (!ReferenceEquals(current?.Lyrics, _shown))
             BuildRows(current?.Lyrics);
 
-        if (_footer is not null && current is not null)
-        {
-            _footer.Text = _lyrics.IsCheckingOnline
-                ? $"{LyricsController.DescribeSource(current)}\nLooking for time-synced lyrics on LRCLIB…"
-                : LyricsController.DescribeSource(current);
-        }
+        if (current is not null)
+            UpdateFooter();
 
         ShowMessage(state);
         UpdateLoadingRing();
@@ -162,7 +192,7 @@ public sealed partial class LyricsView : UserControl
         {
             LyricsState.Idle => ("Lyrics", "Play a song to see its lyrics here."),
             LyricsState.NotFound => ("No lyrics for this song",
-                "Add lyrics to the song's tags, or put a .lrc file with the same name next to the song file."),
+                "Add them yourself with Add Lyrics, or put a .lrc file with the same name next to the song file."),
             LyricsState.Instrumental => ("Instrumental", "LRCLIB lists this song as instrumental."),
             LyricsState.Unavailable => ("Couldn't look up lyrics",
                 $"{_lyrics.ErrorMessage} Check your internet connection, then try again.".Trim()),
@@ -173,6 +203,9 @@ public sealed partial class LyricsView : UserControl
         MessageDetail.Text = detail;
         MessagePanel.Visibility = title.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility = state == LyricsState.Unavailable ? Visibility.Visible : Visibility.Collapsed;
+        AddLyricsButton.Visibility = state is LyricsState.NotFound or LyricsState.Instrumental or LyricsState.Unavailable
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void UpdateLoadingRing()
@@ -185,6 +218,9 @@ public sealed partial class LyricsView : UserControl
     private void BuildRows(Lyrics? lyrics)
     {
         _shown = lyrics;
+        UpdateToolbar(lyrics);
+        if (lyrics is not null && App.Playback.CurrentTrack is { } track)
+            _ = LoadCreditsAsync(track.FilePath);
         _rows.Clear();
         LinesPanel.Children.Clear();
         _footer = null;
@@ -238,16 +274,13 @@ public sealed partial class LyricsView : UserControl
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap,
         });
+        // Urutan seperti Apple Music: lirik asli, cara baca, lalu terjemahan (lapisan dari editor lirik)
+        if (LyricsDisplay.ShowReading && !line.IsBlank && line.Reading is { } reading)
+            content.Children.Add(SmallLine(reading, FontWeights.SemiBold));
         foreach (string extra in line.Extra)
-        {
-            content.Children.Add(new TextBlock
-            {
-                Text = extra,
-                FontSize = Math.Round(LineFontSize * 0.6),
-                FontWeight = FontWeights.SemiBold,
-                TextWrapping = TextWrapping.Wrap,
-            });
-        }
+            content.Children.Add(SmallLine(extra, FontWeights.SemiBold));
+        if (LyricsDisplay.ShowTranslation && !line.IsBlank && line.Translation is { } translation)
+            content.Children.Add(SmallLine(translation, FontWeights.Normal));
 
         double vertical = Math.Round(LineFontSize * 0.35);
         var row = new Border
@@ -383,4 +416,61 @@ public sealed partial class LyricsView : UserControl
     }
 
     private void RetryButton_Click(object sender, RoutedEventArgs e) => _lyrics.Retry();
+
+    /// <summary>Baris kecil di bawah lirik asli: cara baca, terjemahan, atau baris dwibahasa dari file LRC.</summary>
+    private TextBlock SmallLine(string text, Windows.UI.Text.FontWeight weight) => new()
+    {
+        Text = text,
+        FontSize = Math.Round(LineFontSize * 0.6),
+        FontWeight = weight,
+        TextWrapping = TextWrapping.Wrap,
+    };
+
+    // Kredit penulis lagu di bawah lirik ("Written by: ..."), dibaca dari tag LYRICIST dan COMPOSER lagunya
+    private string? _creditsPath;
+    private string? _writtenBy;
+
+    private async System.Threading.Tasks.Task LoadCreditsAsync(string path)
+    {
+        if (_creditsPath == path)
+        {
+            UpdateFooter(); // baris digambar ulang untuk lagu yang sama: kreditnya sudah ada
+            return;
+        }
+        _creditsPath = path;
+        _writtenBy = null;
+        string? credits = await System.Threading.Tasks.Task.Run(() =>
+        {
+            try
+            {
+                var tags = TagEditor.Read(path);
+                return SongCredits.WrittenBy(tags.Get("lyricist"), tags.Get("composer"));
+            }
+            catch (Exception)
+            {
+                return null; // file tidak bisa dibaca: lirik tetap tampil tanpa kredit
+            }
+        });
+        if (_creditsPath != path)
+            return; // lagu sudah berganti selama tag dibaca
+        _writtenBy = credits;
+        UpdateFooter();
+    }
+
+    /// <summary>
+    /// Di bawah lirik, seperti Apple Music: penulis lagunya. Sumber lirik (tag, .lrc, LRCLIB) tidak ditampilkan di
+    /// sini; keterangannya ada di editor lirik. Selama lirik bertanda waktu dicari di LRCLIB, keterangannya ditambahkan.
+    /// </summary>
+    private void UpdateFooter()
+    {
+        if (_footer is null)
+            return;
+        var lines = new List<string>();
+        if (_writtenBy is not null)
+            lines.Add(_writtenBy);
+        if (_lyrics.IsCheckingOnline)
+            lines.Add("Looking for time-synced lyrics on LRCLIB…");
+        _footer.Text = string.Join("\n", lines);
+        _footer.Visibility = lines.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
 }

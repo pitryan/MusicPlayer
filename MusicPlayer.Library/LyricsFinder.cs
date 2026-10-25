@@ -69,7 +69,7 @@ public sealed class LyricsFinder
     /// </summary>
     public FoundLyrics? FindLocal(Track track)
     {
-        var fromTag = LrcParser.Parse(TagReader.ReadLyrics(track.FilePath));
+        var fromTag = WithLayers(LrcParser.Parse(TagReader.ReadLyrics(track.FilePath)), track.FilePath);
         if (fromTag is { IsSynced: true })
             return new FoundLyrics(fromTag, LyricsSource.Tag);
 
@@ -84,6 +84,25 @@ public sealed class LyricsFinder
             return new FoundLyrics(fromFile, LyricsSource.LrcFile, Path.GetFileName(lrcPath));
 
         return null;
+    }
+
+    /// <summary>
+    /// Cara baca dan terjemahan dari editor lirik (tag LYRICS_READING dan LYRICS_TRANSLATION) menempel ke lirik dari tag
+    /// file yang sama; keduanya disimpan bersamaan oleh editor, jadi urutan barisnya cocok.
+    /// </summary>
+    private static Lyrics? WithLayers(Lyrics? lyrics, string path)
+    {
+        if (lyrics is null)
+            return null;
+        try
+        {
+            var tags = TagEditor.Read(path);
+            return LyricLayers.Attach(lyrics, tags.Get("lyrics_reading"), tags.Get("lyrics_translation"));
+        }
+        catch (Exception)
+        {
+            return lyrics; // tag tidak bisa dibaca ulang: lirik tetap tampil tanpa lapisannya
+        }
     }
 
     /// <summary>

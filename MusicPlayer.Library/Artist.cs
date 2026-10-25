@@ -31,10 +31,17 @@ public static class ArtistNames
         @"\s*[\(\[（]?\s*\b(feat\.?|ft\.?|featuring)\s.*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    // Bagian " with X, Y" di kredit album, misalnya "K/DA with Madison Beer, (G)I-DLE, Jaira Burns"
+    private static readonly Regex WithPattern = new(
+        @"\s+with\s+(?<list>.+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     /// <summary>
-    /// Artis utama tanpa bagian "feat.". Contoh: "25時、ナイトコードで。 feat. 宵崎奏&amp;初音ミク" menjadi
-    /// "25時、ナイトコードで。". Nama kolaborasi seperti "syudou × バルーン" sengaja tidak dipecah,
-    /// karena tanda × dan &amp; juga sering menjadi bagian dari nama grup.
+    /// Artis utama tanpa tamunya, seperti nama grup di Apple Music:
+    /// "25時、ナイトコードで。 feat. 宵崎奏&amp;初音ミク" menjadi "25時、ナイトコードで。",
+    /// "K/DA with Madison Beer, (G)I-DLE, Jaira Burns" menjadi "K/DA", dan daftar dengan dua koma atau lebih
+    /// ("True Damage, Becky G., Keke Palmer, ...") menjadi nama pertamanya. Nama dengan satu koma ("Earth, Wind &amp;
+    /// Fire", "Tyler, The Creator") dan kolaborasi seperti "syudou × バルーン" sengaja tidak dipecah, karena tanda
+    /// itu sering menjadi bagian dari nama grup.
     /// </summary>
     public static string Primary(string? name)
     {
@@ -42,6 +49,10 @@ public static class ArtistNames
             return "";
 
         string primary = FeaturingPattern.Replace(name, "").Trim();
+        primary = WithPattern.Replace(primary, "").Trim();
+        string[] parts = primary.Split(", ");
+        if (parts.Length >= 3)
+            primary = parts[0].Trim();
         return primary.Length > 0 ? primary : name.Trim();
     }
 
@@ -71,13 +82,31 @@ public static class ArtistNames
                 continue;
             foreach (Match match in FeaturedList.Matches(text))
             {
-                string list = match.Groups["list"].Value.Trim();
-                // Daftar utuh juga dicocokkan, untuk nama grup yang memuat "&" seperti "A & B"
-                if (string.Equals(list, artistName, StringComparison.OrdinalIgnoreCase)
-                    || ListSeparator.Split(list).Any(n => string.Equals(n.Trim(), artistName, StringComparison.OrdinalIgnoreCase)))
+                if (ListContains(match.Groups["list"].Value, artistName))
                     return true;
             }
         }
+
+        if (!string.IsNullOrEmpty(track.Artist))
+        {
+            // Tamu setelah "with" ("K/DA with Madison Beer, (G)I-DLE"): sampai akhir nama, karena nama tamu bisa
+            // memuat kurung seperti "(G)I-DLE"
+            string withoutFeaturing = FeaturingPattern.Replace(track.Artist, "").Trim();
+            if (WithPattern.Match(withoutFeaturing) is { Success: true } withMatch && ListContains(withMatch.Groups["list"].Value, artistName))
+                return true;
+            // Semua nama di daftar berkoma ("True Damage, Becky G., Keke Palmer, ...")
+            string[] parts = WithPattern.Replace(withoutFeaturing, "").Split(", ");
+            if (parts.Length >= 3 && parts.Any(p => string.Equals(p.Trim(), artistName, StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
         return false;
+    }
+
+    // Daftar utuh juga dicocokkan, untuk nama grup yang memuat "&" seperti "A & B"
+    private static bool ListContains(string list, string artistName)
+    {
+        list = list.Trim();
+        return string.Equals(list, artistName, StringComparison.OrdinalIgnoreCase)
+            || ListSeparator.Split(list).Any(n => string.Equals(n.Trim(), artistName, StringComparison.OrdinalIgnoreCase));
     }
 }

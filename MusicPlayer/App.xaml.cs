@@ -45,6 +45,34 @@ public partial class App : Application
     /// <summary>Klien MusicBrainz untuk editor tag (Look up on MusicBrainz). Satu instance, supaya batas 1 permintaan per detik berlaku di seluruh aplikasi.</summary>
     public static MusicBrainzClient MusicBrainz { get; } = new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
 
+    private static ArtistInfoService? _artistInfo;
+
+    /// <summary>
+    /// Keterangan artis untuk halaman artis (About, asal, tanggal), dari MusicBrainz, Wikidata, dan Wikipedia. Memakai
+    /// klien MusicBrainz yang sama dengan editor tag, supaya aturan 1 permintaan per detik berlaku untuk keduanya.
+    /// </summary>
+    public static ArtistInfoService ArtistInfo => _artistInfo ??= CreateArtistInfo();
+
+    private static ArtistInfoService CreateArtistInfo()
+    {
+        // Foto artis yang sempat diunduh Stage 14a tidak dipakai lagi; folder-nya dibuang supaya tidak memakan ruang
+        try
+        {
+            string oldPhotos = Path.Combine(ApplicationData.Current.LocalFolder.Path, "ArtistPhotos");
+            if (Directory.Exists(oldPhotos))
+                Directory.Delete(oldPhotos, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        return new ArtistInfoService(Database, new ArtistInfoClient(MusicBrainz, http));
+    }
+
     public App()
     {
         InitializeComponent();
