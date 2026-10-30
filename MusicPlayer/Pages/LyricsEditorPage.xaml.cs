@@ -105,7 +105,7 @@ public sealed partial class LyricsEditorPage : Page
                 _rows.Add(new LyricEditRow(line.Time, lyrics.IsSynced, line.Text,
                     keepLayers ? readings.ElementAtOrDefault(i) : line.Reading,
                     keepLayers ? translations.ElementAtOrDefault(i) : line.Translation,
-                    line.Extra));
+                    line.Extra, line.Words, line.WordsEnd));
             }
         }
         PasteReadingButton.IsEnabled = _rows.Count > 0;
@@ -126,7 +126,8 @@ public sealed partial class LyricsEditorPage : Page
             InfoText.Text = "There were no lyrics in the pasted text.";
             return;
         }
-        ShowRows(lyrics, keepLayers: true);
+        // LRC tiga lapis yang ditempel membawa cara baca dan terjemahannya sendiri
+        ShowRows(lyrics, keepLayers: !LyricLayers.HasLayers(lyrics));
         InfoText.Text = $"{Formatters.Count(lyrics.Lines.Count, "line")}{(lyrics.IsSynced ? ", time-synced" : "")}. Check that the reading and translation still match each line.";
     }
 
@@ -191,7 +192,7 @@ public sealed partial class LyricsEditorPage : Page
             return;
 
         var rows = _synced ? _rows.ToList() : NormalizePlain(_rows);
-        var lyrics = new Lyrics(rows.Select(r => new LyricLine(r.Time, r.Original.Trim()) { Extra = r.Extra }).ToList(), _synced);
+        var lyrics = new Lyrics(rows.Select(r => r.ToLine()).ToList(), _synced);
         string text = rows.Count == 0 ? "" : LrcWriter.Format(lyrics);
 
         // Cara baca dan terjemahan dicocokkan per urutan baris: pastikan liriknya dibaca kembali dengan jumlah baris sama

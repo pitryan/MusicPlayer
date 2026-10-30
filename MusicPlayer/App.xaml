@@ -27,8 +27,9 @@
             <SolidColorBrush x:Key="AccentRedBrush" Color="#FFFA2D48" />
             <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#FF242424" />
             <SolidColorBrush x:Key="ContentBackgroundBrush" Color="#FF1E1E1E" />
-            <SolidColorBrush x:Key="TopBarBackgroundBrush" Color="#FF2B2B2B" />
-            <SolidColorBrush x:Key="LcdBackgroundBrush" Color="#FF3A3A3A" />
+            <!-- Bar atas sewarna isi halaman dengan garis tipis di bawahnya, LCD sedikit lebih terang, seperti Apple Music -->
+            <SolidColorBrush x:Key="TopBarBackgroundBrush" Color="#FF1E1E1E" />
+            <SolidColorBrush x:Key="LcdBackgroundBrush" Color="#FF2C2C2C" />
             <SolidColorBrush x:Key="CoverPlaceholderBrush" Color="#FF4A4A4A" />
             <SolidColorBrush x:Key="SecondaryTextBrush" Color="#99FFFFFF" />
 
@@ -40,6 +41,11 @@
             <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#CCFFFFFF" />
             <SolidColorBrush x:Key="AccentButtonForegroundDisabled" Color="#66FFFFFF" />
+
+            <!-- Bulatan ToggleSwitch yang menyala juga putih di atas merah (bawaan tema gelap: hitam) -->
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#E6FFFFFF" />
 
             <!-- Tombol ikon merah tanpa latar (Play, Shuffle, ••• di halaman Artists), seperti Apple Music -->
             <Style x:Key="RedIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">

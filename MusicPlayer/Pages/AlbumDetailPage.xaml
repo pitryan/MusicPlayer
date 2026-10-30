@@ -171,18 +171,19 @@
                         Visibility="{x:Bind FavouriteVisibility, Mode=OneWay}"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Center" />
-                    <!-- Nomor track, atau ikon play merah kalau lagu ini sedang diputar -->
+                    <!--
+                        Nomor track, atau batang merah yang bergerak kalau lagu ini sedang diputar. x:Load: hanya baris
+                        yang sedang diputar yang membuat kontrol batangnya.
+                    -->
                     <TextBlock
                         Text="{x:Bind NumberText}"
                         Visibility="{x:Bind NumberVisibility, Mode=OneWay}"
                         Style="{StaticResource CellStyle}"
                         Foreground="{StaticResource SecondaryTextBrush}"
                         HorizontalAlignment="Right" />
-                    <FontIcon
-                        Glyph="&#xE768;"
-                        FontSize="12"
-                        Foreground="{StaticResource AccentRedBrush}"
-                        Visibility="{x:Bind PlayingVisibility, Mode=OneWay}"
+                    <controls:PlayingBars
+                        x:Name="PlayingIndicator"
+                        x:Load="{x:Bind IsPlaying, Mode=OneWay}"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Center" />
 

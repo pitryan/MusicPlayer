@@ -142,7 +142,8 @@
                 Visibility="Collapsed"
                 LineFontSize="18"
                 ActiveLinePosition="0.35"
-                FadeByDistance="True" />
+                FadeByDistance="True"
+                ShowEditButton="False" />
 
             <Grid x:Name="MiniQueue" Visibility="Collapsed" RowSpacing="4">
                 <Grid.RowDefinitions>

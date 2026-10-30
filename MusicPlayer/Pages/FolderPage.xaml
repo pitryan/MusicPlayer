@@ -3,6 +3,7 @@
     x:Class="MusicPlayer.Pages.FolderPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls"
     xmlns:vm="using:MusicPlayer.ViewModels">
 
     <Page.Resources>
@@ -124,11 +125,10 @@
                         Style="{StaticResource CellStyle}"
                         Foreground="{StaticResource SecondaryTextBrush}"
                         HorizontalAlignment="Right" />
-                    <FontIcon
-                        Glyph="&#xE768;"
-                        FontSize="12"
-                        Foreground="{StaticResource AccentRedBrush}"
-                        Visibility="{x:Bind PlayingVisibility, Mode=OneWay}"
+                    <!-- Batang merah yang bergerak, di tempat nomor track lagu yang sedang diputar -->
+                    <controls:PlayingBars
+                        x:Name="PlayingIndicator"
+                        x:Load="{x:Bind IsPlaying, Mode=OneWay}"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />

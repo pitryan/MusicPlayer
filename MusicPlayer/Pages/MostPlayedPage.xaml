@@ -110,7 +110,7 @@
                             Foreground="{StaticResource SecondaryTextBrush}"
                             HorizontalAlignment="Right" />
 
-                        <!-- Cover kecil; lagu yang sedang diputar ditandai ikon play di atasnya -->
+                        <!-- Cover kecil; lagu yang sedang diputar digelapkan, dengan batang putih yang bergerak di atasnya -->
                         <Grid
                             Grid.Column="2"
                             Width="40"
@@ -123,8 +123,12 @@
                                     <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
                                 </Border.Background>
                             </Border>
-                            <Grid CornerRadius="4" Background="#99000000" Visibility="{x:Bind PlayingVisibility, Mode=OneWay}">
-                                <FontIcon Glyph="&#xE768;" FontSize="14" Foreground="White" />
+                            <Grid
+                                x:Name="PlayingOverlay"
+                                x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                                CornerRadius="4"
+                                Background="#99000000">
+                                <controls:PlayingBars Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                         </Grid>
 

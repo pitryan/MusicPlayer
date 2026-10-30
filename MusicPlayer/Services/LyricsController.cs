@@ -184,7 +184,7 @@ public sealed class LyricsController
     }
 
     private static FoundLyrics Prepare(FoundLyrics found) =>
-        found with { Lyrics = found.Lyrics.WithInterludes(MinimumInterlude) };
+        found with { Lyrics = found.Lyrics.WithWordStarts().WithInterludes(MinimumInterlude) };
 
     // Token sengaja tidak di-Dispose: pencarian lama mungkin masih memegangnya, dan tanpa timer tidak ada yang bocor
     private void Cancel()

@@ -15,6 +15,8 @@ using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
 using Windows.Foundation;
 using Windows.Graphics;
+using VirtualKey = Windows.System.VirtualKey;
+using VirtualKeyModifiers = Windows.System.VirtualKeyModifiers;
 
 namespace MusicPlayer;
 
@@ -29,9 +31,13 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        // Spasi, Ctrl+←/→, Ctrl+↑/↓, dan Ctrl+F untuk pencarian
+        // Spasi, Ctrl+←/→, Ctrl+↑/↓, dan Ctrl+F untuk pencarian; Alt+←/→ dan tombol back/forward mouse untuk berpindah
+        // halaman, seperti browser dan File Explorer
         if (Content is UIElement root)
+        {
             PlaybackShortcuts.Attach(root, () => SearchBox.Focus(FocusState.Keyboard));
+            AttachNavigationShortcuts(root);
+        }
 
         // Bar atas menyatu dengan title bar, seperti Apple Music
         ExtendsContentIntoTitleBar = true;
@@ -50,8 +56,17 @@ public sealed partial class MainWindow : Window
                 xamlRoot.Changed += (_, _) => UpdateTitleBarRegions();
         };
 
-        // Tombol back hanya aktif kalau ada halaman untuk kembali, misalnya dari detail album ke Albums
-        ContentFrame.Navigated += (_, _) => NavView.IsBackEnabled = ContentFrame.CanGoBack;
+        // Tombol back hanya muncul kalau ada halaman untuk kembali, misalnya dari detail album ke Albums
+        ContentFrame.Navigated += (_, _) => UpdateBackButton();
+
+        // Saat jendela terbuka, fokus jatuh ke kotak pencarian (elemen pertama yang bisa difokus) sehingga garis merahnya
+        // langsung menyala. Fokus dipindah ke menu yang terpilih, tanpa tanda fokus keyboard.
+        NavView.Loaded += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (NavView.SelectedItem is NavigationViewItem selected
+                && NavView.ContainerFromMenuItem(selected) is Control container)
+                container.Focus(FocusState.Programmatic);
+        });
 
         _searchTimer = DispatcherQueue.CreateTimer();
         _searchTimer.Interval = TimeSpan.FromMilliseconds(300);
@@ -316,9 +331,22 @@ public sealed partial class MainWindow : Window
     public void OpenAudioSettings()
     {
         _replacement?.Close();
-        NavView.SelectedItem = NavView.SettingsItem;
+        OpenSettings();
+        (ContentFrame.Content as SettingsPage)?.ShowAudioSettings();
+    }
+
+    /// <summary>Settings dibuka dari menu ••• di kepala sidebar (seperti Apple Music), jadi tidak ada menu sidebar yang aktif.</summary>
+    private void OpenSettings()
+    {
+        NavView.SelectedItem = null;
         NavigateToSection("settings");
     }
+
+    private void SettingsMenu_Click(object sender, RoutedEventArgs e) => OpenSettings();
+
+    private void MiniPlayerMenu_Click(object sender, RoutedEventArgs e) => ShowMiniPlayer();
+
+    private void FullScreenMenu_Click(object sender, RoutedEventArgs e) => ShowFullScreen();
 
     /// <summary>
     /// Jendela lain menggantikan jendela utama: jendela utama disembunyikan, lalu muncul lagi seperti semula begitu
@@ -586,8 +614,7 @@ public sealed partial class MainWindow : Window
         }
 
         // Pindah lewat sidebar memulai "riwayat" baru, jadi tombol back tidak lompat antar menu
-        ContentFrame.BackStack.Clear();
-        NavView.IsBackEnabled = false;
+        ClearHistory();
     }
 
     // ── Pencarian ────────────────────────────────────────────
@@ -624,13 +651,69 @@ public sealed partial class MainWindow : Window
         _currentSection = "search";
         NavView.SelectedItem = null; // tidak ada menu sidebar yang aktif saat melihat hasil pencarian
         ContentFrame.Navigate(typeof(SearchPage), query);
-        ContentFrame.BackStack.Clear();
-        NavView.IsBackEnabled = false;
+        ClearHistory();
     }
 
-    private void NavView_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
+    // ── Back dan forward ─────────────────────────────────────
+
+    private void ClearHistory()
+    {
+        ContentFrame.BackStack.Clear();
+        ContentFrame.ForwardStack.Clear();
+        UpdateBackButton();
+    }
+
+    private void UpdateBackButton() =>
+        BackButton.Visibility = ContentFrame.CanGoBack ? Visibility.Visible : Visibility.Collapsed;
+
+    private void BackButton_Click(object sender, RoutedEventArgs e) => GoBack();
+
+    private void GoBack()
     {
         if (ContentFrame.CanGoBack)
             ContentFrame.GoBack();
+    }
+
+    private void GoForward()
+    {
+        if (ContentFrame.CanGoForward)
+            ContentFrame.GoForward();
+    }
+
+    /// <summary>
+    /// Alt+← dan Alt+→, tombol Back/Forward di keyboard, dan tombol samping mouse (tombol 4 dan 5, biasanya di dekat ibu
+    /// jari) untuk kembali dan maju, seperti browser dan File Explorer.
+    /// </summary>
+    private void AttachNavigationShortcuts(UIElement root)
+    {
+        root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+        AddAccelerator(VirtualKey.Left, VirtualKeyModifiers.Menu, GoBack);
+        AddAccelerator(VirtualKey.Right, VirtualKeyModifiers.Menu, GoForward);
+        AddAccelerator(VirtualKey.GoBack, VirtualKeyModifiers.None, GoBack);
+        AddAccelerator(VirtualKey.GoForward, VirtualKeyModifiers.None, GoForward);
+
+        // handledEventsToo: tombol mouse tetap terbaca walaupun kursor di atas daftar atau tombol yang menangani kliknya
+        root.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, e) =>
+        {
+            var properties = e.GetCurrentPoint(root).Properties;
+            if (properties.IsXButton1Pressed)
+                GoBack();
+            else if (properties.IsXButton2Pressed)
+                GoForward();
+            else
+                return;
+            e.Handled = true;
+        }), true);
+
+        void AddAccelerator(VirtualKey key, VirtualKeyModifiers modifiers, Action action)
+        {
+            var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
+            accelerator.Invoked += (_, args) =>
+            {
+                args.Handled = true;
+                action();
+            };
+            root.KeyboardAccelerators.Add(accelerator);
+        }
     }
 }

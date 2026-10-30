@@ -145,9 +145,13 @@
                                                             <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
                                                         </Border.Background>
                                                     </Border>
-                                                    <!-- Lagu yang sedang diputar -->
-                                                    <Border Background="#99000000" CornerRadius="4" Visibility="{x:Bind PlayingVisibility, Mode=OneWay}">
-                                                        <FontIcon Glyph="&#xE768;" FontSize="14" Foreground="White" />
+                                                    <!-- Lagu yang sedang diputar: cover digelapkan, dengan batang putih yang bergerak -->
+                                                    <Border
+                                                        x:Name="PlayingOverlay"
+                                                        x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                                                        Background="#99000000"
+                                                        CornerRadius="4">
+                                                        <controls:PlayingBars Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                     </Border>
                                                 </Grid>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">

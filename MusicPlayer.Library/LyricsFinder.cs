@@ -76,7 +76,13 @@ public sealed class LyricsFinder
         string? lrcPath = FindLrcFile(track.FilePath);
         var fromFile = lrcPath is null ? null : LrcParser.Parse(TextFiles.ReadSmallText(lrcPath));
         if (fromFile is { IsSynced: true })
+        {
+            // Cara baca dan terjemahan tersimpan bersama lirik di tag; kalau file .lrc yang menang, lapisannya
+            // dipindahkan ke baris .lrc yang teksnya sama, supaya tidak hilang
+            if (fromTag is not null)
+                fromFile = LyricLayers.Transfer(fromTag, fromFile);
             return new FoundLyrics(fromFile, LyricsSource.LrcFile, Path.GetFileName(lrcPath));
+        }
 
         if (fromTag is not null)
             return new FoundLyrics(fromTag, LyricsSource.Tag);
@@ -194,7 +200,13 @@ public sealed class LyricsFinder
         if (local is { Lyrics.IsSynced: true })
             return new LyricsChoice(LyricsOutcome.Found, local);
         if (online is { Status: OnlineStatus.Found, Lyrics: { Lyrics.IsSynced: true } synced })
+        {
+            // Lirik lokal tanpa tanda waktu kalah dari LRCLIB, tapi cara baca dan terjemahannya (dari editor lirik)
+            // tetap dibawa ke baris LRCLIB yang teksnya sama
+            if (local is not null && LyricLayers.HasLayers(local.Lyrics))
+                synced = synced with { Lyrics = LyricLayers.Transfer(local.Lyrics, synced.Lyrics) };
             return new LyricsChoice(LyricsOutcome.Found, synced);
+        }
         if (local is not null)
             return new LyricsChoice(LyricsOutcome.Found, local);
 

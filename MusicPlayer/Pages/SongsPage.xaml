@@ -79,7 +79,23 @@
                             Foreground="{StaticResource AccentRedBrush}"
                             Visibility="{x:Bind FavouriteVisibility, Mode=OneWay}"
                             VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
+                        <!--
+                            Judul; lagu yang sedang diputar diberi batang merah yang bergerak di kirinya, seperti Apple
+                            Music. x:Load: hanya baris itu yang membuat kontrol batangnya. Jaraknya lewat Margin, bukan
+                            ColumnSpacing, supaya judul baris lain tetap sejajar dengan judul kolom.
+                        -->
+                        <Grid Grid.Column="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <controls:PlayingBars
+                                x:Name="PlayingIndicator"
+                                x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
+                        </Grid>
                         <TextBlock
                             Grid.Column="2"
                             Text="{x:Bind DurationText}"

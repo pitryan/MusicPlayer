@@ -1,0 +1,5 @@
+# Python environment and local outputs of the lyrics-align tool
+.venv/
+out/
+__pycache__/
+*.pyc

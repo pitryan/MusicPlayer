@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Collections.Generic;
@@ -44,12 +45,25 @@ public sealed partial class LyricsView : UserControl
     private readonly DispatcherQueueTimer _timer;
     private readonly List<FrameworkElement> _rows = [];
 
+    // Pengisian karaoke per baris (null untuk lirik tanpa tanda waktu), urutannya sama dengan _rows
+    private readonly List<KaraokeRow?> _karaoke = [];
+    private readonly SmoothClock _clock = new();
+    private bool _isRendering;
+
     // Latar baris saat kursor di atasnya: tanda bahwa baris itu bisa diklik. Latar transparan (bukan kosong) supaya
     // seluruh baris, termasuk sela di antara kata, bisa diklik.
     private readonly SolidColorBrush _rowBackground = new(Colors.Transparent);
     private readonly SolidColorBrush _rowHoverBackground = new(ColorHelper.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
 
+    // Tombol terjemahan menyala (latar terang, ikon gelap) selama ada lapisan yang tampil, seperti Apple Music
+    private readonly SolidColorBrush _layersOnBackground = new(ColorHelper.FromArgb(0xE6, 0xFF, 0xFF, 0xFF));
+    private readonly SolidColorBrush _layersOnForeground = new(ColorHelper.FromArgb(0xFF, 0x1C, 0x1C, 0x1C));
+    private readonly SolidColorBrush _layersOffBackground = new(ColorHelper.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+    private readonly SolidColorBrush _layersOffForeground = new(Colors.White);
+
     private Lyrics? _shown;
+    private bool _hasReading;
+    private bool _hasTranslation;
     private TextBlock? _footer;
     private int _activeIndex = -1;
     private DateTime _browseUntil = DateTime.MinValue;
@@ -101,6 +115,12 @@ public sealed partial class LyricsView : UserControl
     public bool FadeByDistance { get; set; }
 
     /// <summary>
+    /// True di jendela utama: tombol pensil dan Add Lyrics membuka editor lirik. MiniPlayer dan layar penuh hanya
+    /// menampilkan lirik.
+    /// </summary>
+    public bool ShowEditButton { get; set; } = true;
+
+    /// <summary>
     /// True selama tampilan ini dibuka pengguna (panel lirik atau lirik di layar penuh). Hanya saat aktif lirik dicari
     /// dan baris aktif diperbarui.
     /// </summary>
@@ -131,6 +151,7 @@ public sealed partial class LyricsView : UserControl
         else
         {
             _timer.Stop();
+            UpdateKaraokeLoop();
             _lyrics.Changed -= OnLyricsChanged;
             _lyrics.RemoveViewer();
         }
@@ -145,9 +166,18 @@ public sealed partial class LyricsView : UserControl
         Render();
     }
 
-    private void ReadingToggle_Click(object sender, RoutedEventArgs e) => LyricsDisplay.ShowReading = ReadingToggle.IsChecked == true;
+    // Isi menu disesuaikan saat dibuka: "Hide" untuk lapisan yang sedang tampil, "Show" untuk yang tersembunyi
+    private void LayersMenu_Opening(object sender, object e)
+    {
+        ReadingItem.Text = _hasReading && LyricsDisplay.ShowReading ? "Hide Reading" : "Show Reading";
+        ReadingItem.IsEnabled = _hasReading;
+        TranslationItem.Text = _hasTranslation && LyricsDisplay.ShowTranslation ? "Hide Translation" : "Show Translation";
+        TranslationItem.IsEnabled = _hasTranslation;
+    }
 
-    private void TranslationToggle_Click(object sender, RoutedEventArgs e) => LyricsDisplay.ShowTranslation = TranslationToggle.IsChecked == true;
+    private void ReadingItem_Click(object sender, RoutedEventArgs e) => LyricsDisplay.ShowReading = !LyricsDisplay.ShowReading;
+
+    private void TranslationItem_Click(object sender, RoutedEventArgs e) => LyricsDisplay.ShowTranslation = !LyricsDisplay.ShowTranslation;
 
     // Editor lirik di jendela utama (MiniPlayer dan layar penuh ikut ditutup oleh ShowPage)
     private void EditButton_Click(object sender, RoutedEventArgs e)
@@ -156,16 +186,19 @@ public sealed partial class LyricsView : UserControl
             App.MainWindow.ShowPage(typeof(Pages.LyricsEditorPage), track);
     }
 
-    /// <summary>Tombol cara baca dan terjemahan hanya untuk lirik yang punya lapisan itu; pensil selama ada lagu.</summary>
+    /// <summary>
+    /// Tombol terjemahan hanya untuk lirik yang punya cara baca atau terjemahan; pensil selama ada lirik, dan hanya di
+    /// jendela utama.
+    /// </summary>
     private void UpdateToolbar(Lyrics? lyrics)
     {
-        bool hasReading = lyrics?.Lines.Any(l => l.Reading is not null) == true;
-        bool hasTranslation = lyrics?.Lines.Any(l => l.Translation is not null) == true;
-        ReadingToggle.Visibility = hasReading ? Visibility.Visible : Visibility.Collapsed;
-        TranslationToggle.Visibility = hasTranslation ? Visibility.Visible : Visibility.Collapsed;
-        ReadingToggle.IsChecked = LyricsDisplay.ShowReading;
-        TranslationToggle.IsChecked = LyricsDisplay.ShowTranslation;
-        Toolbar.Visibility = lyrics is not null ? Visibility.Visible : Visibility.Collapsed;
+        _hasReading = lyrics?.Lines.Any(l => l.Reading is not null) == true;
+        _hasTranslation = lyrics?.Lines.Any(l => l.Translation is not null) == true;
+        bool showing = (_hasReading && LyricsDisplay.ShowReading) || (_hasTranslation && LyricsDisplay.ShowTranslation);
+        LayersButton.Background = showing ? _layersOnBackground : _layersOffBackground;
+        LayersButton.Foreground = showing ? _layersOnForeground : _layersOffForeground;
+        LayersButton.Visibility = _hasReading || _hasTranslation ? Visibility.Visible : Visibility.Collapsed;
+        EditButton.Visibility = ShowEditButton && lyrics is not null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Render()
@@ -191,8 +224,9 @@ public sealed partial class LyricsView : UserControl
         (string title, string detail) = state switch
         {
             LyricsState.Idle => ("Lyrics", "Play a song to see its lyrics here."),
-            LyricsState.NotFound => ("No lyrics for this song",
-                "Add them yourself with Add Lyrics, or put a .lrc file with the same name next to the song file."),
+            LyricsState.NotFound => ("No lyrics for this song", ShowEditButton
+                ? "Add them yourself with Add Lyrics, or put a .lrc file with the same name next to the song file."
+                : "Add them with Add Lyrics in the main window, or put a .lrc file with the same name next to the song file."),
             LyricsState.Instrumental => ("Instrumental", "LRCLIB lists this song as instrumental."),
             LyricsState.Unavailable => ("Couldn't look up lyrics",
                 $"{_lyrics.ErrorMessage} Check your internet connection, then try again.".Trim()),
@@ -203,7 +237,8 @@ public sealed partial class LyricsView : UserControl
         MessageDetail.Text = detail;
         MessagePanel.Visibility = title.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         RetryButton.Visibility = state == LyricsState.Unavailable ? Visibility.Visible : Visibility.Collapsed;
-        AddLyricsButton.Visibility = state is LyricsState.NotFound or LyricsState.Instrumental or LyricsState.Unavailable
+        AddLyricsButton.Visibility = ShowEditButton
+            && state is LyricsState.NotFound or LyricsState.Instrumental or LyricsState.Unavailable
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
@@ -222,6 +257,7 @@ public sealed partial class LyricsView : UserControl
         if (lyrics is not null && App.Playback.CurrentTrack is { } track)
             _ = LoadCreditsAsync(track.FilePath);
         _rows.Clear();
+        _karaoke.Clear();
         LinesPanel.Children.Clear();
         _footer = null;
         _activeIndex = -1;
@@ -232,7 +268,7 @@ public sealed partial class LyricsView : UserControl
 
         for (int i = 0; i < lyrics.Lines.Count; i++)
         {
-            var row = CreateRow(lyrics.Lines[i], i, lyrics.IsSynced);
+            var row = CreateRow(lyrics, i);
             _rows.Add(row);
             LinesPanel.Children.Add(row);
         }
@@ -250,6 +286,8 @@ public sealed partial class LyricsView : UserControl
         UpdatePadding();
         _activeIndex = lyrics.IndexAt(_playback.Position + HighlightLead);
         ApplyOpacities();
+        FillActive();
+        UpdateKaraokeLoop();
 
         // Posisi baris baru diketahui setelah layout, jadi layout dijalankan sekarang sebelum menggulir
         Scroller.UpdateLayout();
@@ -259,24 +297,45 @@ public sealed partial class LyricsView : UserControl
             Scroller.ChangeView(null, 0, null, true);
     }
 
-    private FrameworkElement CreateRow(LyricLine line, int index, bool synced)
+    private FrameworkElement CreateRow(Lyrics lyrics, int index)
     {
+        var line = lyrics.Lines[index];
+        bool synced = lyrics.IsSynced;
+
         // Pemisah bait di lirik biasa: cukup ruang kosong
         if (!synced && line.IsBlank)
+        {
+            _karaoke.Add(null);
             return new Border { Height = LineFontSize * 0.7 };
+        }
 
         var content = new StackPanel { Spacing = 2 };
-        content.Children.Add(new TextBlock
+        var main = new TextBlock
         {
-            // Baris kosong di lirik bertanda waktu adalah jeda instrumental
-            Text = line.IsBlank ? "•  •  •" : line.Text,
             FontSize = LineFontSize,
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap,
-        });
-        // Urutan seperti Apple Music: lirik asli, cara baca, lalu terjemahan (lapisan dari editor lirik)
+        };
+        content.Children.Add(main);
+
+        // Baris kosong di lirik bertanda waktu adalah jeda instrumental
+        string text = line.IsBlank ? "•  •  •" : line.Text;
+        KaraokeText? mainFill = null, readingFill = null;
+        if (synced)
+            mainFill = new KaraokeText(main,
+                KaraokeTiming.Plan(text, line.Words, line.WordsEnd, TimeUntilNext(lyrics, index), fillWholeGap: line.IsBlank));
+        else
+            main.Text = text;
+
+        // Urutan seperti Apple Music: lirik asli, cara baca, lalu terjemahan (lapisan dari editor lirik). Cara baca ikut
+        // diisi bersama lirik aslinya; terjemahan tidak.
         if (LyricsDisplay.ShowReading && !line.IsBlank && line.Reading is { } reading)
-            content.Children.Add(SmallLine(reading, FontWeights.SemiBold));
+        {
+            var readingLine = SmallLine(synced ? "" : reading, FontWeights.SemiBold);
+            if (synced)
+                readingFill = new KaraokeText(readingLine, KaraokeTiming.Spread(reading, 1)); // diisi sejauh lirik aslinya
+            content.Children.Add(readingLine);
+        }
         foreach (string extra in line.Extra)
             content.Children.Add(SmallLine(extra, FontWeights.SemiBold));
         if (LyricsDisplay.ShowTranslation && !line.IsBlank && line.Translation is { } translation)
@@ -295,6 +354,10 @@ public sealed partial class LyricsView : UserControl
             ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(300) },
         };
 
+        _karaoke.Add(mainFill is null
+            ? null
+            : new KaraokeRow(mainFill, readingFill, line.Time, TimeSpan.FromSeconds(mainFill.Duration)));
+
         if (synced)
         {
             row.Tapped += Row_Tapped;
@@ -306,14 +369,16 @@ public sealed partial class LyricsView : UserControl
 
     /// <summary>
     /// Lirik bertanda waktu diberi ruang kosong di atas dan bawah, supaya baris pertama dan terakhir pun bisa digulir
-    /// sampai ke posisi baris aktif.
+    /// sampai ke posisi baris aktif. Lirik biasa diberi ruang di atas untuk tombol di kanan atas, supaya baris
+    /// pertamanya tidak tertutup.
     /// </summary>
     private void UpdatePadding()
     {
         double height = Scroller.ActualHeight;
+        bool hasToolbar = LayersButton.Visibility == Visibility.Visible || EditButton.Visibility == Visibility.Visible;
         LinesPanel.Padding = _shown is { IsSynced: true } && height > 0
             ? new Thickness(0, height * ActiveLinePosition, 0, height * (1 - ActiveLinePosition))
-            : new Thickness(0, 16, 0, 24);
+            : new Thickness(0, hasToolbar ? 64 : 16, 0, 24);
     }
 
     private void Scroller_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -328,6 +393,143 @@ public sealed partial class LyricsView : UserControl
     {
         UpdateLoadingRing();
         UpdateActiveLine(force: false);
+
+        // Selama lagu diputar, pengisian karaoke diperbarui setiap frame (OnRendering). Saat berhenti posisinya tetap
+        // bisa berubah (misalnya digeser di progress bar), jadi diperbarui di sini.
+        UpdateKaraokeLoop();
+        if (!_isRendering)
+            FillActive();
+    }
+
+    // ── Karaoke ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Waktu sampai baris berikutnya (termasuk baris jeda) menyala, batas pengisian baris ini. Baris berikutnya menyala
+    /// HighlightLead lebih awal, jadi jarak itu dikurangi dulu supaya pengisian sempat selesai. Titik jeda instrumental
+    /// diisi selama seluruh jarak ini, seperti hitungan mundur.
+    /// </summary>
+    private TimeSpan TimeUntilNext(Lyrics lyrics, int index)
+    {
+        var line = lyrics.Lines[index];
+        var next = index + 1 < lyrics.Lines.Count ? lyrics.Lines[index + 1].Time : TimeSpan.FromSeconds(_playback.DurationSeconds);
+        var gap = next > line.Time ? next - line.Time : TimeSpan.FromSeconds(5);
+        return TimeSpan.FromSeconds(Math.Max((gap - HighlightLead).TotalSeconds, 0.1));
+    }
+
+    /// <summary>
+    /// Baris yang dinyanyikan diisi (FillActive). Baris sesudahnya sudah diredupkan seperti bagian yang belum
+    /// dinyanyikan, dengan kecerahan barisnya dinaikkan sebanding (lihat OpacityFor), jadi tampilannya tetap sama dan
+    /// saat baris itu mulai dinyanyikan hanya kecerahan barisnya yang naik, tanpa sempat meredup. Baris lain teks biasa.
+    /// </summary>
+    private void PrepareKaraoke()
+    {
+        for (int i = 0; i < _karaoke.Count; i++)
+        {
+            if (i == _activeIndex || _karaoke[i] is not { } row)
+                continue;
+            if (IsUpcomingKaraoke(i))
+                row.Dim();
+            else
+                row.Reset();
+        }
+    }
+
+    private bool IsUpcomingKaraoke(int index) =>
+        index == _activeIndex + 1 && index < _karaoke.Count && _karaoke[index] is not null;
+
+    private void FillActive()
+    {
+        if (_activeIndex < 0 || _activeIndex >= _karaoke.Count || _karaoke[_activeIndex] is not { } row)
+            return;
+
+        var position = _clock.Read(_playback.Position, _playback.IsPlaying);
+        row.Fill((position - row.Start).TotalSeconds);
+    }
+
+    /// <summary>
+    /// Diisi setiap frame hanya selama tampilan aktif dan terlihat (jendela tidak diminimalkan), lagu diputar, dan baris
+    /// yang dinyanyikan punya karaoke yang belum penuh. Selebihnya cukup OnTick 10 kali per detik.
+    /// </summary>
+    private void UpdateKaraokeLoop()
+    {
+        bool run = _isRunning && _playback.IsPlaying && XamlRoot?.IsHostVisible == true
+            && _activeIndex >= 0 && _activeIndex < _karaoke.Count
+            && _karaoke[_activeIndex] is { } row && _playback.Position < row.Start + row.Duration;
+        if (run == _isRendering)
+            return;
+
+        _isRendering = run;
+        if (run)
+            CompositionTarget.Rendering += OnRendering;
+        else
+            CompositionTarget.Rendering -= OnRendering;
+    }
+
+    private void OnRendering(object? sender, object e)
+    {
+        FillActive();
+        UpdateKaraokeLoop(); // baris sudah penuh: berhenti sampai baris berikutnya
+    }
+
+    private sealed record KaraokeRow(KaraokeText Main, KaraokeText? Reading, TimeSpan Start, TimeSpan Duration)
+    {
+        /// <summary>Mengisi sampai <paramref name="seconds"/> detik sejak baris mulai; cara baca ikut sejauh lirik aslinya.</summary>
+        public void Fill(double seconds)
+        {
+            double sung = Main.Fill(seconds);
+            Reading?.Fill(sung);
+        }
+
+        /// <summary>Semua huruf redup seperti belum dinyanyikan.</summary>
+        public void Dim()
+        {
+            Main.Fill(double.NegativeInfinity);
+            Reading?.Fill(double.NegativeInfinity);
+        }
+
+        public void Reset()
+        {
+            Main.Reset();
+            Reading?.Reset();
+        }
+    }
+
+    /// <summary>
+    /// Posisi lagu yang bergerak mulus setiap frame. Posisi dari engine naik bertahap per blok audio yang dibaca, jadi
+    /// di antara pembacaan itu posisinya diteruskan dengan Stopwatch dan pelan-pelan disesuaikan ke posisi engine.
+    /// Lompatan besar (seek, ganti lagu) langsung diikuti.
+    /// </summary>
+    private sealed class SmoothClock
+    {
+        private static readonly TimeSpan JumpThreshold = TimeSpan.FromMilliseconds(250);
+        private const double Correction = 0.1;
+
+        private readonly Stopwatch _watch = new();
+        private TimeSpan _anchor;
+
+        public TimeSpan Read(TimeSpan raw, bool playing)
+        {
+            if (!playing || !_watch.IsRunning)
+                return Restart(raw, playing);
+
+            var predicted = _anchor + _watch.Elapsed;
+            var error = raw - predicted;
+            if (error.Duration() > JumpThreshold)
+                return Restart(raw, playing);
+
+            _anchor += error * Correction;
+            return predicted + error * Correction;
+        }
+
+        private TimeSpan Restart(TimeSpan raw, bool playing)
+        {
+            _anchor = raw;
+            if (playing)
+                _watch.Restart();
+            else
+                _watch.Reset();
+            return raw;
+        }
     }
 
     private void UpdateActiveLine(bool force)
@@ -339,8 +541,10 @@ public sealed partial class LyricsView : UserControl
         int index = lyrics.IndexAt(_playback.Position + HighlightLead);
         if (index != _activeIndex || force)
         {
+            // Baris baru langsung diisi sesuai posisi lagu; yang selesai dinyanyikan kembali ke teks biasa (ApplyOpacities)
             _activeIndex = index;
             ApplyOpacities();
+            FillActive();
             if (!browsing)
                 ScrollToActive(animate: true);
         }
@@ -354,10 +558,13 @@ public sealed partial class LyricsView : UserControl
 
     private void ApplyOpacities()
     {
+        PrepareKaraoke();
         for (int i = 0; i < _rows.Count; i++)
         {
             var row = _rows[i];
-            row.Opacity = OpacityFor(i);
+            double opacity = OpacityFor(i);
+            // Baris berikutnya sudah diredupkan per huruf (PrepareKaraoke), jadi kecerahan barisnya diimbangi
+            row.Opacity = IsUpcomingKaraoke(i) ? Math.Min(1, opacity / KaraokeText.UnsungOpacity) : opacity;
 
             // Baris aktif tampil penuh, baris lain sedikit mengecil; diskalakan dari tepi kiri, tempat teksnya dimulai
             row.CenterPoint = new Vector3(0, (float)(row.ActualHeight / 2), 0);

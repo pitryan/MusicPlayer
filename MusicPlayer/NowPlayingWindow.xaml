@@ -147,7 +147,8 @@
                 Visibility="Collapsed"
                 LineFontSize="40"
                 ActiveLinePosition="0.4"
-                FadeByDistance="True" />
+                FadeByDistance="True"
+                ShowEditButton="False" />
             <!-- Antrean di kanan (bergantian dengan lirik): sama dengan Playing Next di jendela utama -->
             <Grid x:Name="QueueArea" Grid.Column="1" Margin="0,96,96,72" RowSpacing="12" Visibility="Collapsed">
                 <Grid.RowDefinitions>

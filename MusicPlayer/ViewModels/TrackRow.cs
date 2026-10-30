@@ -10,7 +10,8 @@ namespace MusicPlayer.ViewModels;
 
 /// <summary>
 /// Satu baris lagu (halaman album, folder, artis, Songs, dan playlist). Saat lagu ini sedang diputar, nomor track-nya
-/// diganti ikon play merah, dan lagu favorit diberi bintang merah di kiri, seperti di Apple Music.
+/// (atau cover kecilnya) diganti batang yang bergerak (PlayingBars), dan lagu favorit diberi bintang merah di kiri,
+/// seperti di Apple Music.
 /// </summary>
 public sealed class TrackRow : ObservableObject
 {
@@ -93,22 +94,18 @@ public sealed class TrackRow : ObservableObject
 
     private static Brush StripeFor(int index) => index % 2 == 0 ? StripeBrush : ClearBrush;
 
+    /// <summary>Diisi halaman setiap kali lagu berganti. Template memakainya untuk x:Load PlayingBars.</summary>
     public bool IsPlaying
     {
         get => _isPlaying;
         set
         {
             if (SetProperty(ref _isPlaying, value))
-            {
                 OnPropertyChanged(nameof(NumberVisibility));
-                OnPropertyChanged(nameof(PlayingVisibility));
-            }
         }
     }
 
     public Visibility NumberVisibility => IsPlaying ? Visibility.Collapsed : Visibility.Visible;
-
-    public Visibility PlayingVisibility => IsPlaying ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsFavourite
     {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Penanda lagu yang sedang diputar di daftar lagu, seperti Apple Music: empat batang tipis yang naik turun selama
+    lagu berbunyi, dan diam di tinggi yang berbeda-beda saat dijeda. Warnanya mengikuti Foreground (merah di baris
+    lagu, putih di atas cover yang digelapkan). Animasinya ada di code-behind.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.PlayingBars"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Foreground="{StaticResource AccentRedBrush}"
+    IsHitTestVisible="False">
+    <!-- Batang menempel di bawah: animasinya hanya mengubah skala tinggi dengan titik pusat di dasar batang -->
+    <StackPanel Orientation="Horizontal" Spacing="2" Height="13" VerticalAlignment="Center">
+        <Rectangle x:Name="Bar1" Width="3" Height="13" RadiusX="1.5" RadiusY="1.5" Fill="{x:Bind Foreground, Mode=OneWay}" />
+        <Rectangle x:Name="Bar2" Width="3" Height="13" RadiusX="1.5" RadiusY="1.5" Fill="{x:Bind Foreground, Mode=OneWay}" />
+        <Rectangle x:Name="Bar3" Width="3" Height="13" RadiusX="1.5" RadiusY="1.5" Fill="{x:Bind Foreground, Mode=OneWay}" />
+        <Rectangle x:Name="Bar4" Width="3" Height="13" RadiusX="1.5" RadiusY="1.5" Fill="{x:Bind Foreground, Mode=OneWay}" />
+    </StackPanel>
+</UserControl>
