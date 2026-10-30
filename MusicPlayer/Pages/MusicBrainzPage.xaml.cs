@@ -20,7 +20,7 @@ namespace MusicPlayer.Pages;
 public sealed record MusicBrainzRequest(IReadOnlyList<string> Paths, string Album, string Artist, bool FromAlbum);
 
 /// <summary>Mencari rilis di MusicBrainz, mencocokkan file dengan lagu-lagunya, lalu menulis tag-nya seperti Picard.</summary>
-public sealed partial class MusicBrainzPage : Page
+public sealed partial class MusicBrainzPage : Page, IUnsavedChanges
 {
     private const string EnglishNamesSetting = "MusicBrainzEnglishNames";
     private const int PreviewCoverSize = 500;
@@ -32,11 +32,18 @@ public sealed partial class MusicBrainzPage : Page
     private IReadOnlyList<TrackMatch> _matches = [];
     private CancellationTokenSource? _cts;
     private bool _saving;
+    private bool _saved;
 
     public MusicBrainzPage()
     {
         InitializeComponent();
     }
+
+    /// <summary>
+    /// Sudah memilih rilis yang cocok dengan minimal satu lagu, tapi tag-nya belum ditulis. Sekadar mencari belum
+    /// dihitung sebagai perubahan.
+    /// </summary>
+    public bool HasUnsavedChanges => !_saving && !_saved && _release is not null && _matches.Any(m => m.Track is not null);
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -103,6 +110,9 @@ public sealed partial class MusicBrainzPage : Page
         var token = Restart();
         SetBusy(true);
         ShowMessage(null);
+        // Rilis yang dipilih sebelumnya tidak berlaku lagi: Save baru bisa dipakai setelah memilih dari hasil yang baru
+        _release = null;
+        _matches = [];
         PreviewPanel.Visibility = Visibility.Collapsed;
         SaveButton.IsEnabled = false;
         try
@@ -218,7 +228,11 @@ public sealed partial class MusicBrainzPage : Page
             var result = await App.TagEdits.SaveEachAsync(edits, pictures, frontCoverOnly: true);
             if (result.Failed.Count == 0)
             {
-                Leave(result.Saved);
+                _saved = true;
+                // Pengguna sudah pindah halaman selama menyimpan (misalnya tombol back mouse): jangan ikut mundur dari
+                // halaman barunya atau mengubah riwayatnya
+                if (ReferenceEquals(Frame.Content, this))
+                    Leave(result.Saved);
                 return;
             }
 

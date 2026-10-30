@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Input;
@@ -71,7 +72,7 @@ public sealed partial class MainWindow : Window
         _searchTimer = DispatcherQueue.CreateTimer();
         _searchTimer.Interval = TimeSpan.FromMilliseconds(300);
         _searchTimer.IsRepeating = false;
-        _searchTimer.Tick += (_, _) => ShowSearch(SearchBox.Text);
+        _searchTimer.Tick += (_, _) => _ = ShowSearchAsync(SearchBox.Text);
 
         RefreshFolderItems();
 
@@ -99,6 +100,9 @@ public sealed partial class MainWindow : Window
         // Halaman pertama: Recently Added
         NavView.SelectedItem = NavView.MenuItems.OfType<NavigationViewItem>().First();
         NavigateToSection("recent");
+
+        // Menutup jendela saat editor punya perubahan yang belum disimpan: ditanya dulu
+        AppWindow.Closing += AppWindow_Closing;
 
         Closed += (_, _) =>
         {
@@ -328,21 +332,31 @@ public sealed partial class MainWindow : Window
     /// Membuka pengaturan audio di Settings (tombol "Audio Quality Settings" di popup kualitas). Kalau sedang di
     /// MiniPlayer atau layar penuh, jendela itu ditutup dulu, supaya jendela utama muncul lagi.
     /// </summary>
-    public void OpenAudioSettings()
+    public void OpenAudioSettings() => _ = OpenAudioSettingsAsync();
+
+    private async Task OpenAudioSettingsAsync()
     {
+        // Jendela utama dimunculkan dulu, supaya dialog "Discard changes?" (kalau ada) terlihat
         _replacement?.Close();
-        OpenSettings();
-        (ContentFrame.Content as SettingsPage)?.ShowAudioSettings();
+        if (await OpenSettingsAsync())
+            (ContentFrame.Content as SettingsPage)?.ShowAudioSettings();
     }
 
-    /// <summary>Settings dibuka dari menu ••• di kepala sidebar (seperti Apple Music), jadi tidak ada menu sidebar yang aktif.</summary>
-    private void OpenSettings()
+    /// <summary>
+    /// Settings dibuka dari menu ••• di kepala sidebar (seperti Apple Music), jadi tidak ada menu sidebar yang aktif.
+    /// False kalau pengguna memilih tetap di editor.
+    /// </summary>
+    private async Task<bool> OpenSettingsAsync()
     {
+        if (!await ConfirmLeaveAsync())
+            return false;
+
         NavView.SelectedItem = null;
         NavigateToSection("settings");
+        return true;
     }
 
-    private void SettingsMenu_Click(object sender, RoutedEventArgs e) => OpenSettings();
+    private void SettingsMenu_Click(object sender, RoutedEventArgs e) => _ = OpenSettingsAsync();
 
     private void MiniPlayerMenu_Click(object sender, RoutedEventArgs e) => ShowMiniPlayer();
 
@@ -377,15 +391,18 @@ public sealed partial class MainWindow : Window
         AppWindow.Hide();
     }
 
-    /// <summary>Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya.</summary>
     /// <summary>
-    /// Membuka halaman di jendela utama. Kalau MiniPlayer atau layar penuh sedang menggantikan jendela utama
-    /// (misalnya Go to Album dari antrean di MiniPlayer), jendela itu ditutup dulu supaya halamannya terlihat.
+    /// Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya. Kalau MiniPlayer
+    /// atau layar penuh sedang menggantikan jendela utama (misalnya Go to Album dari antrean di MiniPlayer), jendela
+    /// itu ditutup dulu supaya halamannya terlihat. Editor dengan perubahan yang belum disimpan ditanya dulu.
     /// </summary>
-    public void ShowPage(Type page, object? parameter)
+    public void ShowPage(Type page, object? parameter) => _ = ShowPageAsync(page, parameter);
+
+    private async Task ShowPageAsync(Type page, object? parameter)
     {
         _replacement?.Close();
-        ContentFrame.Navigate(page, parameter, Animations.DrillIn);
+        if (await ConfirmLeaveAsync())
+            ContentFrame.Navigate(page, parameter, Animations.DrillIn);
     }
 
     private void LcdBorder_RightTapped(object sender, RightTappedRoutedEventArgs e) =>
@@ -419,7 +436,9 @@ public sealed partial class MainWindow : Window
         bool favourite = App.Favourites.IsFavourite(Playback.CurrentTrack);
         LcdStarOutline.Visibility = favourite ? Visibility.Collapsed : Visibility.Visible;
         LcdStarFilled.Visibility = favourite ? Visibility.Visible : Visibility.Collapsed;
-        ToolTipService.SetToolTip(LcdFavouriteButton, favourite ? "Remove from Favourites" : "Favourite");
+        string label = favourite ? "Remove from Favourites" : "Favourite";
+        ToolTipService.SetToolTip(LcdFavouriteButton, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(LcdFavouriteButton, label);
     }
 
     // Waktu berjalan dan sisa waktu hanya tampil saat kursor di atas LCD, supaya LCD tetap lega seperti Apple Music
@@ -547,9 +566,23 @@ public sealed partial class MainWindow : Window
             ? "settings"
             : args.InvokedItemContainer?.Tag as string ?? "songs";
 
+        // Tag dibaca sekarang; dialog "Discard changes?" (kalau ada) ditunggu di luar event ini
+        _ = OpenNavItemAsync(tag);
+    }
+
+    private async Task OpenNavItemAsync(string tag)
+    {
+        if (!await ConfirmLeaveAsync())
+        {
+            // Tetap di editor: sorotan sidebar sudah pindah ke menu yang diklik, jadi dikembalikan ke menu editor itu
+            NavView.SelectedItem = FindNavItem(_currentSection);
+            return;
+        }
+
         if (tag == NewPlaylistTag)
         {
-            _ = CreatePlaylistAsync();
+            // Ditanya sebelum dialog nama, karena playlist baru langsung dibuka setelah dibuat
+            await CreatePlaylistAsync();
             return;
         }
 
@@ -632,10 +665,10 @@ public sealed partial class MainWindow : Window
     private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         _searchTimer.Stop();
-        ShowSearch(args.QueryText);
+        _ = ShowSearchAsync(args.QueryText);
     }
 
-    private void ShowSearch(string text)
+    private async Task ShowSearchAsync(string text)
     {
         string query = text.Trim();
         if (query.Length == 0)
@@ -647,6 +680,10 @@ public sealed partial class MainWindow : Window
             searchPage.ShowResults(query);
             return;
         }
+
+        // Mengetik di kotak pencarian saat mengedit: perubahan editor tidak dibuang tanpa ditanya
+        if (!await ConfirmLeaveAsync())
+            return;
 
         _currentSection = "search";
         NavView.SelectedItem = null; // tidak ada menu sidebar yang aktif saat melihat hasil pencarian
@@ -668,15 +705,20 @@ public sealed partial class MainWindow : Window
 
     private void BackButton_Click(object sender, RoutedEventArgs e) => GoBack();
 
-    private void GoBack()
+    // Tombol, shortcut, dan tombol mouse tidak menunggu hasilnya; dialog "Discard changes?" (kalau ada) ditunggu di dalam
+    private void GoBack() => _ = GoBackAsync();
+
+    private void GoForward() => _ = GoForwardAsync();
+
+    private async Task GoBackAsync()
     {
-        if (ContentFrame.CanGoBack)
+        if (ContentFrame.CanGoBack && await ConfirmLeaveAsync())
             ContentFrame.GoBack();
     }
 
-    private void GoForward()
+    private async Task GoForwardAsync()
     {
-        if (ContentFrame.CanGoForward)
+        if (ContentFrame.CanGoForward && await ConfirmLeaveAsync())
             ContentFrame.GoForward();
     }
 
@@ -715,5 +757,79 @@ public sealed partial class MainWindow : Window
             };
             root.KeyboardAccelerators.Add(accelerator);
         }
+    }
+
+    // ── Perubahan yang belum disimpan ────────────────────────
+
+    // Dialog "Discard changes?" sedang tampil: permintaan pindah berikutnya (misalnya tombol back mouse ditekan dua
+    // kali) ditolak, supaya tidak muncul dua dialog
+    private bool _confirmingLeave;
+    // Pengguna sudah memilih Discard saat menutup jendela: penutupan berikutnya tidak ditanya lagi
+    private bool _closeConfirmed;
+
+    /// <summary>
+    /// Dipanggil sebelum meninggalkan halaman yang sedang terbuka. Kalau halaman itu editor dengan perubahan yang belum
+    /// disimpan (IUnsavedChanges), pengguna ditanya dulu. True kalau boleh pergi.
+    /// </summary>
+    public async Task<bool> ConfirmLeaveAsync()
+    {
+        if (ContentFrame.Content is not IUnsavedChanges { HasUnsavedChanges: true })
+            return true;
+        if (_confirmingLeave || Content?.XamlRoot is not { } xamlRoot)
+            return false;
+        // WinUI hanya bisa menampilkan satu ContentDialog sekaligus, misalnya saat Paste Lyrics masih terbuka
+        if (Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot).Any(p => p.Child is ContentDialog))
+            return false;
+
+        var dialog = new ContentDialog
+        {
+            Title = "Discard changes?",
+            Content = new TextBlock { Text = "Your changes haven't been saved.", TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = "Discard",
+            CloseButtonText = "Keep Editing",
+            // Enter tidak langsung membuang perubahan
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = xamlRoot,
+        };
+
+        _confirmingLeave = true;
+        try
+        {
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }
+        finally
+        {
+            _confirmingLeave = false;
+        }
+    }
+
+    /// <summary>
+    /// Tombol tutup (atau Alt+F4) saat editor punya perubahan yang belum disimpan: penutupan dibatalkan dulu, lalu
+    /// jendela ditutup sungguhan kalau pengguna memilih Discard.
+    /// </summary>
+    private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        // Selama MiniPlayer atau layar penuh menggantikan jendela ini, jendela ini tersembunyi dan dialognya tidak
+        // akan terlihat, jadi ditutup seperti biasa
+        if (_closeConfirmed || _replacement is not null
+            || ContentFrame.Content is not IUnsavedChanges { HasUnsavedChanges: true })
+            return;
+
+        args.Cancel = true;
+        _ = ConfirmCloseAsync();
+    }
+
+    private async Task ConfirmCloseAsync()
+    {
+        // Ditutup dari taskbar saat di-minimize atau di belakang jendela lain: dimunculkan dulu supaya dialognya terlihat
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+            presenter.Restore();
+        Activate();
+
+        if (!await ConfirmLeaveAsync())
+            return;
+
+        _closeConfirmed = true;
+        Close();
     }
 }

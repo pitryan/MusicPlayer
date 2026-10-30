@@ -17,6 +17,7 @@
             Background="Transparent"
             BorderThickness="0"
             IsChecked="{x:Bind Playback.IsShuffle, Mode=OneWay}"
+            AutomationProperties.Name="Shuffle"
             ToolTipService.ToolTip="Shuffle"
             Click="Shuffle_Click">
             <Viewbox Width="16" Height="16">
@@ -31,6 +32,7 @@
             Background="Transparent"
             BorderThickness="0"
             IsChecked="{x:Bind Playback.IsRepeatOn, Mode=OneWay}"
+            AutomationProperties.Name="Repeat"
             ToolTipService.ToolTip="Repeat: off, all, or one"
             Click="Repeat_Click">
             <Viewbox Width="16" Height="16">
@@ -48,6 +50,7 @@
             Background="Transparent"
             BorderThickness="0"
             IsChecked="{x:Bind Playback.AutoplayEnabled, Mode=OneWay}"
+            AutomationProperties.Name="Autoplay"
             ToolTipService.ToolTip="Autoplay: when the queue ends, keep playing similar songs from your library"
             Click="Autoplay_Click">
             <TextBlock Text="∞" FontSize="20" FontWeight="SemiBold" Margin="0,-3,0,0" />

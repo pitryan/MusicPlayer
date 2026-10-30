@@ -23,7 +23,7 @@ namespace MusicPlayer.Pages;
 public sealed record ArtworkRequest(IReadOnlyList<Track> Tracks, bool FromAlbum);
 
 /// <summary>Change Artwork: ganti cover saja, dari file atau Cover Art Archive (lihat XAML-nya).</summary>
-public sealed partial class ArtworkPage : Page
+public sealed partial class ArtworkPage : Page, IUnsavedChanges
 {
     private const int PreviewPixels = 640;
     // Cover yang ditanam: ukuran terbesar yang umum di Cover Art Archive; rilis lama kadang hanya punya 500
@@ -37,6 +37,8 @@ public sealed partial class ArtworkPage : Page
     // Cover yang dipilih (asli), dan yang akan ditanam (asli, atau sudah dibuat persegi sesuai pilihan)
     private TagPicture? _sourceCover;
     private TagPicture? _newCover;
+    // Cover yang terakhir berhasil disimpan, supaya cover itu tidak lagi dihitung sebagai perubahan
+    private TagPicture? _savedCover;
     private int _shapeVersion;
     private bool _settingShape;
     private CancellationTokenSource? _searchCts;
@@ -48,6 +50,9 @@ public sealed partial class ArtworkPage : Page
         InitializeComponent();
         ResultsGrid.ItemsSource = _results;
     }
+
+    /// <summary>Cover baru sudah dipilih (dari file atau MusicBrainz) tapi belum disimpan.</summary>
+    public bool HasUnsavedChanges => !_saving && _newCover is not null && !ReferenceEquals(_newCover, _savedCover);
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -315,10 +320,14 @@ public sealed partial class ArtworkPage : Page
         {
             var paths = _request.Tracks.Select(t => t.FilePath).ToList();
             // Hanya cover depan: informasi lagu dan gambar lain di file tidak disentuh
-            var result = await App.TagEdits.SaveAsync(paths, new Dictionary<string, string>(), [_newCover], frontCoverOnly: true);
+            var cover = _newCover;
+            var result = await App.TagEdits.SaveAsync(paths, new Dictionary<string, string>(), [cover], frontCoverOnly: true);
             if (result.Failed.Count == 0)
             {
-                if (Frame.CanGoBack)
+                _savedCover = cover;
+                // Pengguna sudah pindah halaman selama menyimpan (misalnya tombol back mouse): jangan ikut mundur dari
+                // halaman barunya
+                if (ReferenceEquals(Frame.Content, this) && Frame.CanGoBack)
                     Frame.GoBack();
                 return;
             }

@@ -20,7 +20,7 @@ namespace MusicPlayer.Pages;
 public sealed record TagEditorRequest(IReadOnlyList<string> Paths, string Title, bool FromAlbum = false);
 
 /// <summary>Editor tag untuk satu atau banyak lagu. Hanya field yang diubah yang ditulis ke file.</summary>
-public sealed partial class TagEditorPage : Page
+public sealed partial class TagEditorPage : Page, IUnsavedChanges
 {
     private const int HeaderCoverPixels = 192;
     private const int ArtworkPixels = 520;
@@ -31,12 +31,19 @@ public sealed partial class TagEditorPage : Page
 
     // Perubahan artwork: null = tidak diubah, kosong = dihapus, satu gambar = cover baru
     private IReadOnlyList<TagPicture>? _artworkChange;
+    // Ada gambar di salah satu lagu saat dimuat: menghapus artwork dari lagu tanpa gambar bukan perubahan
+    private bool _hadArtwork;
     private bool _saving;
+    private bool _saved;
 
     public TagEditorPage()
     {
         InitializeComponent();
     }
+
+    /// <summary>Ada field atau artwork yang diubah dari nilai yang dimuat dan belum disimpan.</summary>
+    public bool HasUnsavedChanges => !_saving && !_saved
+        && (_rows.Any(r => r.IsChanged) || _artworkChange is { Count: > 0 } || (_artworkChange is not null && _hadArtwork));
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -145,7 +152,8 @@ public sealed partial class TagEditorPage : Page
         var first = covers.FirstOrDefault();
         bool same = covers.All(c => c is null ? first is null : first is not null && c.Data.AsSpan().SequenceEqual(first.Data));
 
-        RemoveArtworkButton.IsEnabled = covers.Any(c => c is not null);
+        _hadArtwork = covers.Any(c => c is not null);
+        RemoveArtworkButton.IsEnabled = _hadArtwork;
         if (!same)
         {
             ArtworkStatusText.Text = "Mixed";
@@ -206,10 +214,14 @@ public sealed partial class TagEditorPage : Page
 
     /// <summary>
     /// Membuka pencarian MusicBrainz untuk lagu-lagu yang sama, dengan judul album dan artis dari tag-nya sebagai awal
-    /// pencarian. Perubahan yang belum disimpan di sini tidak ikut terbawa.
+    /// pencarian. Perubahan yang belum disimpan di sini tidak ikut terbawa, jadi ditanyakan dulu seperti saat
+    /// meninggalkan editor lewat jendela utama.
     /// </summary>
-    private void MusicBrainz_Click(object sender, RoutedEventArgs e)
+    private async void MusicBrainz_Click(object sender, RoutedEventArgs e)
     {
+        if (!await App.MainWindow.ConfirmLeaveAsync())
+            return;
+
         string Hint(string key) => _rows.FirstOrDefault(r => r.Field.Key == key) is { IsMixed: false } row ? row.Text.Trim() : "";
         string artist = Hint("albumartist") is { Length: > 0 } albumArtist ? albumArtist : Hint("artist");
         Frame.Navigate(typeof(MusicBrainzPage), new MusicBrainzRequest(_paths, Hint("album"), artist, _request.FromAlbum), Animations.DrillIn);
@@ -238,7 +250,11 @@ public sealed partial class TagEditorPage : Page
             var result = await App.TagEdits.SaveAsync(_paths, changes, _artworkChange, frontCoverOnly: _artworkChange is { Count: > 0 });
             if (result.Failed.Count == 0)
             {
-                LeaveAfterSave(result.Saved);
+                _saved = true;
+                // Pengguna sudah pindah halaman selama menyimpan (misalnya tombol back mouse): jangan ikut mundur dari
+                // halaman barunya
+                if (ReferenceEquals(Frame.Content, this))
+                    LeaveAfterSave(result.Saved);
                 return;
             }
 

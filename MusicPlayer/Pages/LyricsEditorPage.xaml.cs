@@ -15,19 +15,28 @@ using MusicPlayer.ViewModels;
 namespace MusicPlayer.Pages;
 
 /// <summary>Editor lirik satu lagu (lihat XAML-nya). Parameter navigasinya lagu (Track).</summary>
-public sealed partial class LyricsEditorPage : Page
+public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
 {
     private readonly ObservableCollection<LyricEditRow> _rows = [];
     private CancellationTokenSource? _loadCts;
     private Track? _track;
     private bool _synced;
     private bool _saving;
+    // Yang akan ditulis Save untuk lirik yang dimuat (atau yang terakhir disimpan); null selama memuat
+    private Dictionary<string, string>? _loaded;
 
     public LyricsEditorPage()
     {
         InitializeComponent();
         RowsList.ItemsSource = _rows;
     }
+
+    /// <summary>
+    /// Isi tabel berbeda dari lirik yang dimuat. Dibandingkan dalam bentuk yang akan ditulis Save, jadi baris yang
+    /// diketik lalu dikembalikan seperti semula tidak dihitung sebagai perubahan.
+    /// </summary>
+    public bool HasUnsavedChanges =>
+        !_saving && _loaded is { } loaded && BuildChanges().Changes.Any(change => loaded[change.Key] != change.Value);
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -55,6 +64,7 @@ public sealed partial class LyricsEditorPage : Page
     {
         _loadCts?.Cancel();
         var cts = _loadCts = new CancellationTokenSource();
+        _loaded = null;
         SetBusy(LoadingRing, true);
         InfoText.Text = "Loading lyrics…";
         try
@@ -65,6 +75,7 @@ public sealed partial class LyricsEditorPage : Page
             if (cts.IsCancellationRequested)
                 return;
             ShowRows(found?.Lyrics, keepLayers: false);
+            _loaded = BuildChanges().Changes;
             InfoText.Text = found is null
                 ? "This song has no lyrics yet. Use Paste Lyrics to add them."
                 : $"{LyricsController.DescribeSource(found)} · {Formatters.Count(_rows.Count, "line")}";
@@ -75,6 +86,7 @@ public sealed partial class LyricsEditorPage : Page
         catch (Exception ex)
         {
             ShowRows(null, keepLayers: false);
+            _loaded = BuildChanges().Changes;
             InfoText.Text = $"Couldn't load the lyrics ({ex.Message}). You can still paste them.";
         }
         finally
@@ -105,7 +117,7 @@ public sealed partial class LyricsEditorPage : Page
                 _rows.Add(new LyricEditRow(line.Time, lyrics.IsSynced, line.Text,
                     keepLayers ? readings.ElementAtOrDefault(i) : line.Reading,
                     keepLayers ? translations.ElementAtOrDefault(i) : line.Translation,
-                    line.Extra, line.Words, line.WordsEnd));
+                    line.Extra));
             }
         }
         PasteReadingButton.IsEnabled = _rows.Count > 0;
@@ -191,9 +203,8 @@ public sealed partial class LyricsEditorPage : Page
         if (_saving || _track is null)
             return;
 
-        var rows = _synced ? _rows.ToList() : NormalizePlain(_rows);
-        var lyrics = new Lyrics(rows.Select(r => r.ToLine()).ToList(), _synced);
-        string text = rows.Count == 0 ? "" : LrcWriter.Format(lyrics);
+        var (rows, changes) = BuildChanges();
+        string text = changes["lyrics"];
 
         // Cara baca dan terjemahan dicocokkan per urutan baris: pastikan liriknya dibaca kembali dengan jumlah baris sama
         if (text.Length > 0 && LrcParser.Parse(text)?.Lines.Count != rows.Count)
@@ -202,13 +213,6 @@ public sealed partial class LyricsEditorPage : Page
                 + "so the reading and translation wouldn't line up. Edit those lines and try again.";
             return;
         }
-
-        var changes = new Dictionary<string, string>
-        {
-            ["lyrics"] = text,
-            ["lyrics_reading"] = LyricLayers.JoinLines(rows.Select(r => r.Reading)),
-            ["lyrics_translation"] = LyricLayers.JoinLines(rows.Select(r => r.Translation)),
-        };
 
         _saving = true;
         SaveButton.IsEnabled = false;
@@ -219,7 +223,10 @@ public sealed partial class LyricsEditorPage : Page
             var result = await App.TagEdits.SaveAsync([_track.FilePath], changes, null);
             if (result.Failed.Count == 0)
             {
-                if (Frame.CanGoBack)
+                _loaded = changes;
+                // Pengguna sudah pindah halaman selama menyimpan (misalnya tombol back mouse): jangan ikut mundur dari
+                // halaman barunya
+                if (ReferenceEquals(Frame.Content, this) && Frame.CanGoBack)
                     Frame.GoBack();
                 return;
             }
@@ -236,6 +243,23 @@ public sealed partial class LyricsEditorPage : Page
             CancelButton.IsEnabled = true;
             SetBusy(SavingRing, false);
         }
+    }
+
+    /// <summary>
+    /// Yang akan ditulis Save: lirik (LRC), cara baca, dan terjemahan, dari baris yang benar-benar disimpan. Dipakai
+    /// juga untuk mengetahui apakah ada perubahan yang belum disimpan.
+    /// </summary>
+    private (List<LyricEditRow> Rows, Dictionary<string, string> Changes) BuildChanges()
+    {
+        var rows = _synced ? _rows.ToList() : NormalizePlain(_rows);
+        var lyrics = new Lyrics(rows.Select(r => new LyricLine(r.Time, r.Original.Trim()) { Extra = r.Extra }).ToList(), _synced);
+        var changes = new Dictionary<string, string>
+        {
+            ["lyrics"] = rows.Count == 0 ? "" : LrcWriter.Format(lyrics),
+            ["lyrics_reading"] = LyricLayers.JoinLines(rows.Select(r => r.Reading)),
+            ["lyrics_translation"] = LyricLayers.JoinLines(rows.Select(r => r.Translation)),
+        };
+        return (rows, changes);
     }
 
     /// <summary>

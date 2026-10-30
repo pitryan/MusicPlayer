@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using MusicPlayer.Helpers;
 using MusicPlayer.Services;
@@ -13,7 +14,12 @@ public sealed partial class TransportButtons : UserControl
     {
         InitializeComponent();
         // Hanya mendengarkan selama tampil: kontrol di MiniPlayer dan layar penuh ikut dibuang bersama jendelanya
-        Loaded += (_, _) => Playback.PropertyChanged += Playback_PropertyChanged;
+        Loaded += (_, _) =>
+        {
+            Playback.PropertyChanged += Playback_PropertyChanged;
+            // MiniPlayer dan layar penuh bisa dibuka saat lagu sedang diputar
+            UpdatePlayPauseName();
+        };
         Unloaded += (_, _) => Playback.PropertyChanged -= Playback_PropertyChanged;
     }
 
@@ -23,8 +29,15 @@ public sealed partial class TransportButtons : UserControl
     private void Playback_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(PlaybackService.IsPlaying))
+        {
             Animations.Pop(PlayPauseButton);
+            UpdatePlayPauseName();
+        }
     }
+
+    // Nama untuk Narrator dan UI Automation menyebut apa yang dilakukan tombol sekarang, bukan "Play / Pause" seperti tooltip
+    private void UpdatePlayPauseName() =>
+        AutomationProperties.SetName(PlayPauseButton, Playback.IsPlaying ? "Pause" : "Play");
 
     private void Previous_Click(object sender, RoutedEventArgs e) => Playback.Previous();
 

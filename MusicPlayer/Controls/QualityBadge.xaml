@@ -14,9 +14,11 @@
     xmlns:helpers="using:MusicPlayer.Helpers"
     xmlns:controls="using:MusicPlayer.Controls">
 
+    <!-- Isi tombol berupa panel, jadi namanya tidak diambil dari teksnya; Narrator membaca golongan lengkapnya, juga saat ringkas -->
     <Button
         Style="{StaticResource QualityBadgeButtonStyle}"
-        Visibility="{x:Bind Playback.QualityVisibility, Mode=OneWay}">
+        Visibility="{x:Bind Playback.QualityVisibility, Mode=OneWay}"
+        AutomationProperties.Name="{x:Bind Playback.QualityBadgeText, Mode=OneWay}">
         <StackPanel Orientation="Horizontal" Spacing="3">
             <Viewbox Width="11" Height="11" VerticalAlignment="Center">
                 <Grid Width="20" Height="20">

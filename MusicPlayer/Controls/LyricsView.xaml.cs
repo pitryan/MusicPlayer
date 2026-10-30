@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Collections.Generic;
@@ -44,11 +43,6 @@ public sealed partial class LyricsView : UserControl
     private readonly PlaybackService _playback = App.Playback;
     private readonly DispatcherQueueTimer _timer;
     private readonly List<FrameworkElement> _rows = [];
-
-    // Pengisian karaoke per baris (null untuk lirik tanpa tanda waktu), urutannya sama dengan _rows
-    private readonly List<KaraokeRow?> _karaoke = [];
-    private readonly SmoothClock _clock = new();
-    private bool _isRendering;
 
     // Latar baris saat kursor di atasnya: tanda bahwa baris itu bisa diklik. Latar transparan (bukan kosong) supaya
     // seluruh baris, termasuk sela di antara kata, bisa diklik.
@@ -151,7 +145,6 @@ public sealed partial class LyricsView : UserControl
         else
         {
             _timer.Stop();
-            UpdateKaraokeLoop();
             _lyrics.Changed -= OnLyricsChanged;
             _lyrics.RemoveViewer();
         }
@@ -257,7 +250,6 @@ public sealed partial class LyricsView : UserControl
         if (lyrics is not null && App.Playback.CurrentTrack is { } track)
             _ = LoadCreditsAsync(track.FilePath);
         _rows.Clear();
-        _karaoke.Clear();
         LinesPanel.Children.Clear();
         _footer = null;
         _activeIndex = -1;
@@ -268,7 +260,7 @@ public sealed partial class LyricsView : UserControl
 
         for (int i = 0; i < lyrics.Lines.Count; i++)
         {
-            var row = CreateRow(lyrics, i);
+            var row = CreateRow(lyrics.Lines[i], i, lyrics.IsSynced);
             _rows.Add(row);
             LinesPanel.Children.Add(row);
         }
@@ -286,8 +278,6 @@ public sealed partial class LyricsView : UserControl
         UpdatePadding();
         _activeIndex = lyrics.IndexAt(_playback.Position + HighlightLead);
         ApplyOpacities();
-        FillActive();
-        UpdateKaraokeLoop();
 
         // Posisi baris baru diketahui setelah layout, jadi layout dijalankan sekarang sebelum menggulir
         Scroller.UpdateLayout();
@@ -297,45 +287,24 @@ public sealed partial class LyricsView : UserControl
             Scroller.ChangeView(null, 0, null, true);
     }
 
-    private FrameworkElement CreateRow(Lyrics lyrics, int index)
+    private FrameworkElement CreateRow(LyricLine line, int index, bool synced)
     {
-        var line = lyrics.Lines[index];
-        bool synced = lyrics.IsSynced;
-
         // Pemisah bait di lirik biasa: cukup ruang kosong
         if (!synced && line.IsBlank)
-        {
-            _karaoke.Add(null);
             return new Border { Height = LineFontSize * 0.7 };
-        }
 
         var content = new StackPanel { Spacing = 2 };
-        var main = new TextBlock
+        content.Children.Add(new TextBlock
         {
+            // Baris kosong di lirik bertanda waktu adalah jeda instrumental
+            Text = line.IsBlank ? "•  •  •" : line.Text,
             FontSize = LineFontSize,
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap,
-        };
-        content.Children.Add(main);
-
-        // Baris kosong di lirik bertanda waktu adalah jeda instrumental
-        string text = line.IsBlank ? "•  •  •" : line.Text;
-        KaraokeText? mainFill = null, readingFill = null;
-        if (synced)
-            mainFill = new KaraokeText(main,
-                KaraokeTiming.Plan(text, line.Words, line.WordsEnd, TimeUntilNext(lyrics, index), fillWholeGap: line.IsBlank));
-        else
-            main.Text = text;
-
-        // Urutan seperti Apple Music: lirik asli, cara baca, lalu terjemahan (lapisan dari editor lirik). Cara baca ikut
-        // diisi bersama lirik aslinya; terjemahan tidak.
+        });
+        // Urutan seperti Apple Music: lirik asli, cara baca, lalu terjemahan (lapisan dari editor lirik)
         if (LyricsDisplay.ShowReading && !line.IsBlank && line.Reading is { } reading)
-        {
-            var readingLine = SmallLine(synced ? "" : reading, FontWeights.SemiBold);
-            if (synced)
-                readingFill = new KaraokeText(readingLine, KaraokeTiming.Spread(reading, 1)); // diisi sejauh lirik aslinya
-            content.Children.Add(readingLine);
-        }
+            content.Children.Add(SmallLine(reading, FontWeights.SemiBold));
         foreach (string extra in line.Extra)
             content.Children.Add(SmallLine(extra, FontWeights.SemiBold));
         if (LyricsDisplay.ShowTranslation && !line.IsBlank && line.Translation is { } translation)
@@ -353,10 +322,6 @@ public sealed partial class LyricsView : UserControl
             OpacityTransition = new ScalarTransition { Duration = TimeSpan.FromMilliseconds(250) },
             ScaleTransition = new Vector3Transition { Duration = TimeSpan.FromMilliseconds(300) },
         };
-
-        _karaoke.Add(mainFill is null
-            ? null
-            : new KaraokeRow(mainFill, readingFill, line.Time, TimeSpan.FromSeconds(mainFill.Duration)));
 
         if (synced)
         {
@@ -393,143 +358,6 @@ public sealed partial class LyricsView : UserControl
     {
         UpdateLoadingRing();
         UpdateActiveLine(force: false);
-
-        // Selama lagu diputar, pengisian karaoke diperbarui setiap frame (OnRendering). Saat berhenti posisinya tetap
-        // bisa berubah (misalnya digeser di progress bar), jadi diperbarui di sini.
-        UpdateKaraokeLoop();
-        if (!_isRendering)
-            FillActive();
-    }
-
-    // ── Karaoke ──────────────────────────────────────────────
-
-    /// <summary>
-    /// Waktu sampai baris berikutnya (termasuk baris jeda) menyala, batas pengisian baris ini. Baris berikutnya menyala
-    /// HighlightLead lebih awal, jadi jarak itu dikurangi dulu supaya pengisian sempat selesai. Titik jeda instrumental
-    /// diisi selama seluruh jarak ini, seperti hitungan mundur.
-    /// </summary>
-    private TimeSpan TimeUntilNext(Lyrics lyrics, int index)
-    {
-        var line = lyrics.Lines[index];
-        var next = index + 1 < lyrics.Lines.Count ? lyrics.Lines[index + 1].Time : TimeSpan.FromSeconds(_playback.DurationSeconds);
-        var gap = next > line.Time ? next - line.Time : TimeSpan.FromSeconds(5);
-        return TimeSpan.FromSeconds(Math.Max((gap - HighlightLead).TotalSeconds, 0.1));
-    }
-
-    /// <summary>
-    /// Baris yang dinyanyikan diisi (FillActive). Baris sesudahnya sudah diredupkan seperti bagian yang belum
-    /// dinyanyikan, dengan kecerahan barisnya dinaikkan sebanding (lihat OpacityFor), jadi tampilannya tetap sama dan
-    /// saat baris itu mulai dinyanyikan hanya kecerahan barisnya yang naik, tanpa sempat meredup. Baris lain teks biasa.
-    /// </summary>
-    private void PrepareKaraoke()
-    {
-        for (int i = 0; i < _karaoke.Count; i++)
-        {
-            if (i == _activeIndex || _karaoke[i] is not { } row)
-                continue;
-            if (IsUpcomingKaraoke(i))
-                row.Dim();
-            else
-                row.Reset();
-        }
-    }
-
-    private bool IsUpcomingKaraoke(int index) =>
-        index == _activeIndex + 1 && index < _karaoke.Count && _karaoke[index] is not null;
-
-    private void FillActive()
-    {
-        if (_activeIndex < 0 || _activeIndex >= _karaoke.Count || _karaoke[_activeIndex] is not { } row)
-            return;
-
-        var position = _clock.Read(_playback.Position, _playback.IsPlaying);
-        row.Fill((position - row.Start).TotalSeconds);
-    }
-
-    /// <summary>
-    /// Diisi setiap frame hanya selama tampilan aktif dan terlihat (jendela tidak diminimalkan), lagu diputar, dan baris
-    /// yang dinyanyikan punya karaoke yang belum penuh. Selebihnya cukup OnTick 10 kali per detik.
-    /// </summary>
-    private void UpdateKaraokeLoop()
-    {
-        bool run = _isRunning && _playback.IsPlaying && XamlRoot?.IsHostVisible == true
-            && _activeIndex >= 0 && _activeIndex < _karaoke.Count
-            && _karaoke[_activeIndex] is { } row && _playback.Position < row.Start + row.Duration;
-        if (run == _isRendering)
-            return;
-
-        _isRendering = run;
-        if (run)
-            CompositionTarget.Rendering += OnRendering;
-        else
-            CompositionTarget.Rendering -= OnRendering;
-    }
-
-    private void OnRendering(object? sender, object e)
-    {
-        FillActive();
-        UpdateKaraokeLoop(); // baris sudah penuh: berhenti sampai baris berikutnya
-    }
-
-    private sealed record KaraokeRow(KaraokeText Main, KaraokeText? Reading, TimeSpan Start, TimeSpan Duration)
-    {
-        /// <summary>Mengisi sampai <paramref name="seconds"/> detik sejak baris mulai; cara baca ikut sejauh lirik aslinya.</summary>
-        public void Fill(double seconds)
-        {
-            double sung = Main.Fill(seconds);
-            Reading?.Fill(sung);
-        }
-
-        /// <summary>Semua huruf redup seperti belum dinyanyikan.</summary>
-        public void Dim()
-        {
-            Main.Fill(double.NegativeInfinity);
-            Reading?.Fill(double.NegativeInfinity);
-        }
-
-        public void Reset()
-        {
-            Main.Reset();
-            Reading?.Reset();
-        }
-    }
-
-    /// <summary>
-    /// Posisi lagu yang bergerak mulus setiap frame. Posisi dari engine naik bertahap per blok audio yang dibaca, jadi
-    /// di antara pembacaan itu posisinya diteruskan dengan Stopwatch dan pelan-pelan disesuaikan ke posisi engine.
-    /// Lompatan besar (seek, ganti lagu) langsung diikuti.
-    /// </summary>
-    private sealed class SmoothClock
-    {
-        private static readonly TimeSpan JumpThreshold = TimeSpan.FromMilliseconds(250);
-        private const double Correction = 0.1;
-
-        private readonly Stopwatch _watch = new();
-        private TimeSpan _anchor;
-
-        public TimeSpan Read(TimeSpan raw, bool playing)
-        {
-            if (!playing || !_watch.IsRunning)
-                return Restart(raw, playing);
-
-            var predicted = _anchor + _watch.Elapsed;
-            var error = raw - predicted;
-            if (error.Duration() > JumpThreshold)
-                return Restart(raw, playing);
-
-            _anchor += error * Correction;
-            return predicted + error * Correction;
-        }
-
-        private TimeSpan Restart(TimeSpan raw, bool playing)
-        {
-            _anchor = raw;
-            if (playing)
-                _watch.Restart();
-            else
-                _watch.Reset();
-            return raw;
-        }
     }
 
     private void UpdateActiveLine(bool force)
@@ -541,10 +369,8 @@ public sealed partial class LyricsView : UserControl
         int index = lyrics.IndexAt(_playback.Position + HighlightLead);
         if (index != _activeIndex || force)
         {
-            // Baris baru langsung diisi sesuai posisi lagu; yang selesai dinyanyikan kembali ke teks biasa (ApplyOpacities)
             _activeIndex = index;
             ApplyOpacities();
-            FillActive();
             if (!browsing)
                 ScrollToActive(animate: true);
         }
@@ -558,13 +384,10 @@ public sealed partial class LyricsView : UserControl
 
     private void ApplyOpacities()
     {
-        PrepareKaraoke();
         for (int i = 0; i < _rows.Count; i++)
         {
             var row = _rows[i];
-            double opacity = OpacityFor(i);
-            // Baris berikutnya sudah diredupkan per huruf (PrepareKaraoke), jadi kecerahan barisnya diimbangi
-            row.Opacity = IsUpcomingKaraoke(i) ? Math.Min(1, opacity / KaraokeText.UnsungOpacity) : opacity;
+            row.Opacity = OpacityFor(i);
 
             // Baris aktif tampil penuh, baris lain sedikit mengecil; diskalakan dari tepi kiri, tempat teksnya dimulai
             row.CenterPoint = new Vector3(0, (float)(row.ActualHeight / 2), 0);

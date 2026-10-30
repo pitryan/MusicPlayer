@@ -31,21 +31,8 @@ public sealed record LyricLine(TimeSpan Time, string Text)
     /// <summary>Terjemahan baris ini, ditulis manual di editor lirik.</summary>
     public string? Translation { get; init; }
 
-    /// <summary>
-    /// Waktu per kata dari Enhanced LRC ("[00:02.35]&lt;00:02.35&gt;もう&lt;00:02.80&gt;ちょっと..."), untuk karaoke yang
-    /// sinkron. Kosong kalau barisnya hanya punya waktu per baris; teks semua kata, tanpa spasi, sama dengan
-    /// <see cref="Text"/> tanpa spasi.
-    /// </summary>
-    public IReadOnlyList<LyricWord> Words { get; init; } = [];
-
-    /// <summary>Kapan kata terakhir selesai, relatif terhadap <see cref="Time"/>; null kalau file tidak menuliskannya.</summary>
-    public TimeSpan? WordsEnd { get; init; }
-
     public bool IsBlank => Text.Length == 0;
 }
-
-/// <summary>Satu kata (atau huruf, untuk bahasa Jepang) dan kapan mulai dinyanyikan, relatif terhadap waktu barisnya.</summary>
-public sealed record LyricWord(TimeSpan Start, string Text);
 
 /// <summary>Lirik sebuah lagu: bertanda waktu (bisa disorot per baris) atau teks biasa.</summary>
 public sealed class Lyrics
@@ -82,40 +69,6 @@ public sealed class Lyrics
                 high = middle - 1;
         }
         return low;
-    }
-
-    /// <summary>
-    /// Versi untuk ditampilkan: baris yang punya waktu per kata dimulai saat kata pertamanya dinyanyikan. Tanda waktu
-    /// baris di banyak file LRC sedikit terlalu awal (sampai lebih dari satu detik), jadi tanpa ini baris berikutnya sudah
-    /// menyala sementara baris ini masih dinyanyikan. Baris tidak dimundurkan melewati awal baris sesudahnya, dan waktu
-    /// katanya ikut disesuaikan supaya tetap jatuh di waktu yang sama.
-    /// </summary>
-    public Lyrics WithWordStarts()
-    {
-        if (!IsSynced || Lines.All(l => l.Words.Count == 0))
-            return this;
-
-        var lines = Lines.ToArray();
-        var limit = TimeSpan.MaxValue;
-        for (int i = lines.Length - 1; i >= 0; i--)
-        {
-            var line = lines[i];
-            var start = line.Words.Count > 0 ? line.Time + line.Words[0].Start : line.Time;
-            if (start > limit)
-                start = limit;
-            limit = start;
-            if (start == line.Time)
-                continue;
-
-            var shift = start - line.Time;
-            lines[i] = line with
-            {
-                Time = start,
-                Words = [.. line.Words.Select(w => w with { Start = w.Start > shift ? w.Start - shift : TimeSpan.Zero })],
-                WordsEnd = line.WordsEnd is { } end ? (end > shift ? end - shift : TimeSpan.Zero) : null,
-            };
-        }
-        return new Lyrics(lines, isSynced: true);
     }
 
     /// <summary>

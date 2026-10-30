@@ -16,6 +16,7 @@
         MinHeight="40"
         Background="Transparent"
         BorderThickness="0"
+        AutomationProperties.Name="Volume"
         ToolTipService.ToolTip="Volume (scroll to adjust)"
         PointerWheelChanged="VolumeButton_PointerWheelChanged">
         <FontIcon Glyph="{x:Bind Playback.VolumeGlyph, Mode=OneWay}" FontSize="16" />
@@ -35,6 +36,7 @@
                             BorderThickness="0"
                             IsChecked="{x:Bind Playback.IsMuted, Mode=OneWay}"
                             Click="MuteToggle_Click"
+                            AutomationProperties.Name="Mute"
                             ToolTipService.ToolTip="Mute">
                             <FontIcon Glyph="&#xE74F;" FontSize="14" />
                         </ToggleButton>

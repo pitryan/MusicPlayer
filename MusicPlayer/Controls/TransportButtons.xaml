@@ -10,11 +10,12 @@
     xmlns:helpers="using:MusicPlayer.Helpers">
 
     <StackPanel Orientation="Horizontal" Spacing="4">
-        <Button Style="{StaticResource TransportButtonStyle}" Click="Previous_Click" ToolTipService.ToolTip="Previous">
+        <Button Style="{StaticResource TransportButtonStyle}" Click="Previous_Click" AutomationProperties.Name="Previous" ToolTipService.ToolTip="Previous">
             <PathIcon Data="F1 M10.0003 5.48714C10.0003 4.66804 9.06946 4.19635 8.40894 4.68074L2.52935 8.99243C1.84829 9.49188 1.84829 10.509 2.52935 11.0084L8.40894 15.3201C9.06946 15.8045 10.0003 15.3328 10.0003 14.5137V11.3538L15.4089 15.3201C16.0695 15.8045 17.0003 15.3328 17.0003 14.5137V5.48714C17.0003 4.66804 16.0695 4.19635 15.4089 4.68074L10.0003 8.64707V5.48714Z" />
         </Button>
 
-        <!-- Ikon Play dan Pause sama-sama ada di tombol; yang tampil mengikuti status pemutaran -->
+        <!-- Ikon Play dan Pause sama-sama ada di tombol; yang tampil mengikuti status pemutaran. Nama untuk Narrator
+             (Play atau Pause) diatur dari kode, juga mengikuti status pemutaran. -->
         <Button x:Name="PlayPauseButton" Style="{StaticResource TransportButtonStyle}" Click="PlayPause_Click" ToolTipService.ToolTip="Play / Pause">
             <Grid>
                 <PathIcon
@@ -26,7 +27,7 @@
             </Grid>
         </Button>
 
-        <Button Style="{StaticResource TransportButtonStyle}" Click="Next_Click" ToolTipService.ToolTip="Next">
+        <Button Style="{StaticResource TransportButtonStyle}" Click="Next_Click" AutomationProperties.Name="Next" ToolTipService.ToolTip="Next">
             <PathIcon Data="F1 M10.0183 5.48617C10.0183 4.66707 10.9491 4.19538 11.6097 4.67976L17.4893 8.99146C18.1703 9.4909 18.1703 10.508 17.4893 11.0075L11.6097 15.3192C10.9491 15.8036 10.0183 15.3319 10.0183 14.5128V11.3528L4.60967 15.3192C3.94915 15.8036 3.01831 15.3319 3.01831 14.5128V5.48617C3.01831 4.66707 3.94915 4.19538 4.60967 4.67976L10.0183 8.6461V5.48617Z" />
         </Button>
     </StackPanel>
