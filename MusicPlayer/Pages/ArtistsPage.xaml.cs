@@ -156,13 +156,15 @@ public sealed partial class ArtistsPage : Page
     {
         var tracks = _blocks.SelectMany(b => b.Tracks).ToList();
         if (tracks.Count > 0 && sender is FrameworkElement button)
-            TrackMenu.ShowForAlbum(button, new Point(0, button.ActualHeight), tracks);
+            TrackMenu.ShowForArtist(button, new Point(0, button.ActualHeight), tracks, _shownArtist);
     }
 
+    // Bukan halaman album: Get Album Info kembali ke sini setelah disimpan. Halaman ini memuat ulang albumnya sendiri
+    // saat kembali (lihat OnNavigatedTo).
     private void AlbumMore_Click(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: AlbumBlock block } button)
-            TrackMenu.ShowForAlbum(button, new Point(0, button.ActualHeight), block.Tracks);
+            TrackMenu.ShowForAlbum(button, new Point(0, button.ActualHeight), block.Tracks, fromAlbumPage: false);
     }
 
     private void RowMore_Click(object sender, RoutedEventArgs e)

@@ -94,17 +94,63 @@ public sealed class LibraryDatabase
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
         Execute(connection, "DELETE FROM library_folders WHERE path = $path", ("$path", folder));
-
-        // Hapus semua lagu yang tidak lagi berada di bawah folder library mana pun
-        int removed = Execute(connection, """
-            DELETE FROM tracks
-            WHERE NOT EXISTS (
-                SELECT 1 FROM library_folders f
-                WHERE substr(tracks.path, 1, length(f.path)) = f.path COLLATE NOCASE)
-            """);
-
+        int removed = DeleteOrphanTracks(connection);
         transaction.Commit();
         return removed;
+    }
+
+    /// <summary>
+    /// Menghapus lagu yang tidak berada di bawah folder library mana pun, misalnya sisa folder yang dihapus saat scan
+    /// masih berjalan di versi lama. Mengembalikan jumlah lagu yang dihapus.
+    /// </summary>
+    public int RemoveOrphanTracks()
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        int removed = DeleteOrphanTracks(connection);
+        transaction.Commit();
+        return removed;
+    }
+
+    /// <summary>
+    /// Folder yang sedang tidak tersedia tetap ada di library_folders, jadi lagunya tidak ikut terhapus. Diputuskan di C#
+    /// dengan <see cref="LibraryPaths.IsUnder"/>, sama seperti AddFolder dan scanner: NOCASE di SQLite hanya melipat huruf
+    /// ASCII, jadi lagu di "élan\" akan dianggap di luar folder "Élan\" (misalnya setelah folder diganti namanya) dan
+    /// terhapus beserta riwayat, favorit, dan isi playlist-nya. Dipanggil di dalam transaksi pemanggilnya.
+    /// </summary>
+    private static int DeleteOrphanTracks(SqliteConnection connection)
+    {
+        var folders = new List<string>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT path FROM library_folders";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                folders.Add(reader.GetString(0));
+        }
+
+        var orphans = new List<long>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT id, path FROM tracks";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                string path = reader.GetString(1);
+                if (!folders.Exists(folder => LibraryPaths.IsUnder(path, folder)))
+                    orphans.Add(reader.GetInt64(0));
+            }
+        }
+
+        using var delete = connection.CreateCommand();
+        delete.CommandText = "DELETE FROM tracks WHERE id = $id";
+        var parameter = delete.Parameters.Add("$id", SqliteType.Integer);
+        foreach (long id in orphans)
+        {
+            parameter.Value = id;
+            delete.ExecuteNonQuery();
+        }
+        return orphans.Count;
     }
 
     // ── Dipakai oleh LibraryScanner ──────────────────────────
@@ -122,7 +168,10 @@ public sealed class LibraryDatabase
         return stamps;
     }
 
-    /// <summary>Menambah lagu baru atau memperbarui lagu yang sudah ada (berdasarkan path).</summary>
+    /// <summary>
+    /// Menambah lagu baru atau memperbarui lagu yang sudah ada (berdasarkan path). Lagu yang tidak berada di bawah folder
+    /// library mana pun tidak disimpan.
+    /// </summary>
     public void UpsertTracks(IEnumerable<Track> tracks)
     {
         using var connection = Open();
@@ -190,10 +239,13 @@ public sealed class LibraryDatabase
             Set(command, "$has_lyrics", t.HasLyrics);
             // "Tanggal ditambahkan" = waktu ubah file saat pertama kali masuk library. Kolom ini tidak
             // ikut diperbarui saat scan ulang, jadi mengedit tag nanti tidak membuat lagu terlihat "baru".
-            Set(command, "$added_utc", t.ModifiedUtcTicks);
+            Set(command, "$added_utc", t.AddedUtcTicks);
             command.ExecuteNonQuery();
         }
 
+        // Scan membaca daftar folder di awal, jadi folder yang dihapus selama scan berjalan bisa saja ikut tersimpan
+        // di atas. Dibuang lagi di transaksi yang sama: scan ulang tidak akan menghapusnya karena di luar semua folder.
+        DeleteOrphanTracks(connection);
         transaction.Commit();
     }
 

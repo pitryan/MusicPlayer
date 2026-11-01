@@ -43,7 +43,7 @@ public static class TagEditor
                 TagFormat.Mp4 => ReadMp4((TagLib.Mpeg4.AppleTag)file.GetTag(TagTypes.Apple, true), field),
                 _ => ReadId3((TagLib.Id3v2.Tag)file.GetTag(TagTypes.Id3v2, true), field),
             };
-            var clean = values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList();
+            var clean = values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(field.Trim).ToList();
             if (clean.Count > 0)
                 fields[field.Key] = string.Join(TagFields.Separator, clean);
         }
@@ -64,11 +64,17 @@ public static class TagEditor
     public static void Write(string path, IReadOnlyDictionary<string, string> changes, IReadOnlyList<TagPicture>? pictures = null,
         bool frontCoverOnly = false)
     {
+        // File read-only ditolak sebelum disalin: File.Replace juga tidak bisa menimpanya, dan salinannya ikut
+        // read-only sehingga tertinggal. Pesannya menyebut lagunya, bukan nama salinan sementara.
+        if (System.IO.File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly))
+            throw new UnauthorizedAccessException($"\"{Path.GetFileName(path)}\" is read-only.");
+
         // Ditulis ke salinan di folder yang sama (supaya penggantian akhirnya atomik), bernama tersembunyi dan
         // berakhiran .tmp, jadi tidak ikut terbaca scan library kalau sampai tertinggal
         string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
         string temporary = Path.Combine(folder, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         System.IO.File.Copy(path, temporary);
+        bool complete = false;
         try
         {
             if (OperatingSystem.IsWindows())
@@ -89,10 +95,45 @@ public static class TagEditor
                 System.IO.File.SetAttributes(temporary, System.IO.File.GetAttributes(temporary) & ~FileAttributes.Hidden);
             System.IO.File.Replace(temporary, path, null);
         }
+        catch (IOException ex) when (ex.HResult is unchecked((int)0x80070498) or unchecked((int)0x80070499))
+        {
+            // Hanya ERROR_UNABLE_TO_MOVE_REPLACEMENT(_2) yang berarti File.Replace sendiri sudah menghapus file asli.
+            // Kalau file asli hilang karena aplikasi lain (dipindah atau dihapus), salinannya tidak boleh dikembalikan.
+            complete = true;
+            throw;
+        }
         finally
         {
-            if (System.IO.File.Exists(temporary))
-                System.IO.File.Delete(temporary);
+            CleanUpTemporary(temporary, path, complete);
+        }
+    }
+
+    /// <summary>
+    /// Membereskan salinan sementara dari <see cref="Write"/> kalau masih ada: biasanya dihapus. Tapi File.Replace bisa
+    /// gagal setelah file asli terhapus (ERROR_UNABLE_TO_MOVE_REPLACEMENT, misalnya antivirus sedang membuka salinannya);
+    /// kalau file asli sudah tidak ada dan <paramref name="complete"/> (Replace gagal dengan error itu), salinan itu
+    /// satu-satunya isi lagu, jadi dikembalikan ke nama aslinya. Tidak pernah melempar exception, supaya error yang
+    /// sebenarnya tidak tertutup.
+    /// </summary>
+    public static void CleanUpTemporary(string temporary, string path, bool complete)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(temporary))
+                return;
+            if (complete && !System.IO.File.Exists(path))
+            {
+                System.IO.File.Move(temporary, path); // tanpa overwrite: file asli yang ternyata masih ada tidak ditimpa
+                return;
+            }
+
+            // Atribut dibuang dulu, karena file read-only tidak bisa dihapus
+            System.IO.File.SetAttributes(temporary, FileAttributes.Normal);
+            System.IO.File.Delete(temporary);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Salinan tertinggal; namanya berakhiran .tmp, jadi tidak ikut terbaca scan library
         }
     }
 
@@ -119,7 +160,7 @@ public static class TagEditor
             if (!field.IsSupported(format))
                 continue;
 
-            var values = TagFields.Split(value, field.MultiValue);
+            var values = TagFields.Split(value, field);
             switch (format)
             {
                 case TagFormat.Vorbis:

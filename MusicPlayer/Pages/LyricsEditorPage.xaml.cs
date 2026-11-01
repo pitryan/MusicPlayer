@@ -38,6 +38,8 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
     public bool HasUnsavedChanges =>
         !_saving && _loaded is { } loaded && BuildChanges().Changes.Any(change => loaded[change.Key] != change.Value);
 
+    public bool IsSaving => _saving;
+
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);

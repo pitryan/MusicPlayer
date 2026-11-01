@@ -79,11 +79,15 @@ public sealed class TagEditService
         var failedPaths = new HashSet<string>(failed.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
         var saved = await Task.Run(() =>
         {
+            // Tag yang gagal dibaca ulang (misalnya file langsung dibuka aplikasi lain) tidak disimpan, supaya data lama
+            // tidak tertimpa data kosong. Stempel data lama sudah beda dengan file, jadi scan berikutnya membaca tag
+            // barunya; lagu yang belum ada di database juga akan ditemukan scan berikutnya.
             var tracks = paths.Where(p => !failedPaths.Contains(p)).Select(path =>
             {
                 var info = new FileInfo(path);
-                return TagReader.Read(path, new FileStamp(info.Length, info.LastWriteTimeUtc.Ticks), out _);
-            }).ToList();
+                var track = TagReader.Read(path, new FileStamp(info.Length, info.LastWriteTimeUtc.Ticks), out string? error);
+                return error is null ? track : null;
+            }).OfType<Track>().ToList();
             _database.UpsertTracks(tracks);
             return tracks;
         });

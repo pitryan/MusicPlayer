@@ -761,19 +761,24 @@ public sealed partial class MainWindow : Window
 
     // ── Perubahan yang belum disimpan ────────────────────────
 
-    // Dialog "Discard changes?" sedang tampil: permintaan pindah berikutnya (misalnya tombol back mouse ditekan dua
-    // kali) ditolak, supaya tidak muncul dua dialog
+    // Dialog "Discard changes?" atau "Still saving" sedang tampil: permintaan pindah berikutnya (misalnya tombol back
+    // mouse ditekan dua kali) ditolak, supaya tidak muncul dua dialog
     private bool _confirmingLeave;
     // Pengguna sudah memilih Discard saat menutup jendela: penutupan berikutnya tidak ditanya lagi
     private bool _closeConfirmed;
 
+    /// <summary>Halaman yang terbuka editor yang masih menyimpan, atau yang punya perubahan belum disimpan.</summary>
+    private IUnsavedChanges? PendingEditor =>
+        ContentFrame.Content is IUnsavedChanges editor && (editor.IsSaving || editor.HasUnsavedChanges) ? editor : null;
+
     /// <summary>
     /// Dipanggil sebelum meninggalkan halaman yang sedang terbuka. Kalau halaman itu editor dengan perubahan yang belum
-    /// disimpan (IUnsavedChanges), pengguna ditanya dulu. True kalau boleh pergi.
+    /// disimpan (IUnsavedChanges), pengguna ditanya dulu; kalau editor itu masih menyimpan, pengguna diminta menunggu.
+    /// True kalau boleh pergi.
     /// </summary>
     public async Task<bool> ConfirmLeaveAsync()
     {
-        if (ContentFrame.Content is not IUnsavedChanges { HasUnsavedChanges: true })
+        if (PendingEditor is not { } editor)
             return true;
         if (_confirmingLeave || Content?.XamlRoot is not { } xamlRoot)
             return false;
@@ -781,7 +786,7 @@ public sealed partial class MainWindow : Window
         if (Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot).Any(p => p.Child is ContentDialog))
             return false;
 
-        var dialog = new ContentDialog
+        var dialog = editor.IsSaving ? CreateStillSavingDialog(xamlRoot) : new ContentDialog
         {
             Title = "Discard changes?",
             Content = new TextBlock { Text = "Your changes haven't been saved.", TextWrapping = TextWrapping.Wrap },
@@ -804,15 +809,28 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Editor masih menyimpan: belum boleh pergi, karena pesan "Couldn't save" hanya tampil di halaman editor itu, dan
+    /// jendela yang ditutup menghentikan aplikasi di tengah penulisan file. Hanya ada tombol OK, jadi selalu tetap di sini.
+    /// </summary>
+    private static ContentDialog CreateStillSavingDialog(XamlRoot xamlRoot) => new()
+    {
+        Title = "Still saving",
+        Content = new TextBlock { Text = "Wait until your changes are saved.", TextWrapping = TextWrapping.Wrap },
+        CloseButtonText = "OK",
+        DefaultButton = ContentDialogButton.Close,
+        XamlRoot = xamlRoot,
+    };
+
+    /// <summary>
     /// Tombol tutup (atau Alt+F4) saat editor punya perubahan yang belum disimpan: penutupan dibatalkan dulu, lalu
-    /// jendela ditutup sungguhan kalau pengguna memilih Discard.
+    /// jendela ditutup sungguhan kalau pengguna memilih Discard. Saat editor masih menyimpan, penutupan dibatalkan dan
+    /// pengguna diminta menunggu.
     /// </summary>
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         // Selama MiniPlayer atau layar penuh menggantikan jendela ini, jendela ini tersembunyi dan dialognya tidak
         // akan terlihat, jadi ditutup seperti biasa
-        if (_closeConfirmed || _replacement is not null
-            || ContentFrame.Content is not IUnsavedChanges { HasUnsavedChanges: true })
+        if (_closeConfirmed || _replacement is not null || PendingEditor is null)
             return;
 
         args.Cancel = true;
@@ -826,7 +844,9 @@ public sealed partial class MainWindow : Window
             presenter.Restore();
         Activate();
 
-        if (!await ConfirmLeaveAsync())
+        // "Still saving" hanya punya OK: kalau penyimpanannya selesai selama dialog terbuka, tidak ada lagi yang
+        // ditunggu, jadi jendela langsung ditutup tanpa menekan X lagi. Keep Editing atau gagal menyimpan tetap di sini.
+        if (!await ConfirmLeaveAsync() && PendingEditor is not null)
             return;
 
         _closeConfirmed = true;

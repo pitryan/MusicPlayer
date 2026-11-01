@@ -191,8 +191,8 @@ public sealed partial class ArtistPage : Page
     private void ArtistMore_Click(object sender, RoutedEventArgs e)
     {
         var tracks = OwnTracks();
-        if (tracks.Count > 0)
-            TrackMenu.ShowForAlbum(MoreButton, new Point(0, MoreButton.ActualHeight), tracks);
+        if (tracks.Count > 0 && _overview is { } overview)
+            TrackMenu.ShowForArtist(MoreButton, new Point(0, MoreButton.ActualHeight), tracks, overview.Name, goToArtist: false);
     }
 
     // Banner selebar halaman dengan tinggi sekitar sepertiga lebarnya, seperti Apple Music

@@ -45,6 +45,9 @@ public sealed partial class MusicBrainzPage : Page, IUnsavedChanges
     /// </summary>
     public bool HasUnsavedChanges => !_saving && !_saved && _release is not null && _matches.Any(m => m.Track is not null);
 
+    /// <summary>Termasuk mengunduh cover dari MusicBrainz sebelum tag-nya ditulis.</summary>
+    public bool IsSaving => _saving;
+
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);

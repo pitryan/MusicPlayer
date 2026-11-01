@@ -1,9 +1,9 @@
 using System;
-using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
+using MusicPlayer.Services;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -31,9 +31,40 @@ public sealed partial class SettingsPage : Page
             LyricsDisplay.Changed += OnLyricsDisplayChanged;
         };
         Unloaded += (_, _) => LyricsDisplay.Changed -= OnLyricsDisplayChanged;
+
+        // Scan bisa masih berjalan dari halaman Settings sebelumnya, karena halaman ini dibuat baru setiap kali dibuka
+        Loaded += (_, _) =>
+        {
+            LibraryScanState.Changed += OnLibraryScanChanged;
+            SyncScanState();
+            if (LibraryScanState.IsRunning)
+                StatusText.Text = LibraryScanState.Status;
+        };
+        Unloaded += (_, _) => LibraryScanState.Changed -= OnLibraryScanChanged;
     }
 
     private void OnLyricsDisplayChanged(object? sender, EventArgs e) => SyncLyricsToggles();
+
+    private void OnLibraryScanChanged(object? sender, EventArgs e)
+    {
+        SyncScanState();
+        StatusText.Text = LibraryScanState.Status;
+        if (!LibraryScanState.IsRunning)
+            RefreshFolders();
+    }
+
+    /// <summary>
+    /// Selama scan berjalan, daftar folder tidak boleh berubah: scan sudah membaca daftar itu di awal. Mematikan
+    /// FolderList ikut mematikan semua tombol Remove di dalamnya, termasuk yang dibuat ulang oleh RefreshFolders.
+    /// </summary>
+    private void SyncScanState()
+    {
+        bool scanning = LibraryScanState.IsRunning;
+        AddFolderButton.IsEnabled = !scanning;
+        ScanButton.IsEnabled = !scanning;
+        FolderList.IsEnabled = !scanning;
+        ScanProgressBar.Visibility = scanning ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void SyncLyricsToggles()
     {
@@ -122,7 +153,7 @@ public sealed partial class SettingsPage : Page
 
         RefreshFolders();
         App.MainWindow.RefreshFolderItems();
-        await ScanAsync();
+        await LibraryScanState.ScanAsync(App.Database);
     }
 
     private void RemoveFolder_Click(object sender, RoutedEventArgs e)
@@ -136,42 +167,6 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private async void Scan_Click(object sender, RoutedEventArgs e) => await ScanAsync();
-
-    private async Task ScanAsync()
-    {
-        AddFolderButton.IsEnabled = false;
-        ScanButton.IsEnabled = false;
-        ScanProgressBar.Visibility = Visibility.Visible;
-
-        // Progress<T> yang dibuat di UI thread otomatis melapor kembali ke UI thread
-        var progress = new Progress<ScanProgress>(p =>
-            StatusText.Text = p.Total > 0 ? $"{p.Stage}... {p.Done}/{p.Total}" : $"{p.Stage}...");
-
-        try
-        {
-            var scanner = new LibraryScanner(App.Database);
-            var result = await Task.Run(() => scanner.Scan(progress));
-
-            string message =
-                $"Done in {result.Elapsed.TotalSeconds:0.0} s: {result.Added} added, {result.Updated} updated, " +
-                $"{result.Removed} removed, {result.Unchanged} unchanged.";
-            if (result.Errors.Count > 0)
-                message += $" {result.Errors.Count} files had unreadable tags.";
-            if (result.UnavailableFolders.Count > 0)
-                message += $" {result.UnavailableFolders.Count} folders were unavailable and skipped.";
-            StatusText.Text = message;
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"Scan failed: {ex.Message}";
-        }
-        finally
-        {
-            ScanProgressBar.Visibility = Visibility.Collapsed;
-            AddFolderButton.IsEnabled = true;
-            ScanButton.IsEnabled = true;
-            RefreshFolders();
-        }
-    }
+    // Tombol dan kemajuan diatur OnLibraryScanChanged, juga untuk halaman Settings lain yang dibuka selama scan
+    private async void Scan_Click(object sender, RoutedEventArgs e) => await LibraryScanState.ScanAsync(App.Database);
 }

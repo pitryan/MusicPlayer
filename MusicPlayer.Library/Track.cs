@@ -12,6 +12,15 @@ public sealed record Track
     public long FileSize { get; init; }
     public long ModifiedUtcTicks { get; init; }
 
+    /// <summary>
+    /// "Tanggal ditambahkan" yang disimpan saat lagu pertama kali masuk library: waktu ubah file saat ditemukan. Sama
+    /// dengan <see cref="ModifiedUtcTicks"/>, kecuali stempel itu sengaja dikosongkan supaya file dibaca ulang (lihat
+    /// LibraryScanner). Tidak dibaca dari database.
+    /// </summary>
+    public long AddedUtcTicks { get => _addedUtcTicks ?? ModifiedUtcTicks; init => _addedUtcTicks = value; }
+
+    private readonly long? _addedUtcTicks;
+
     public string? Title { get; init; }
     public string? Artist { get; init; }
     public string? Album { get; init; }

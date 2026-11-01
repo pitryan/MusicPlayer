@@ -22,7 +22,14 @@ public sealed class LibraryScanner(LibraryDatabase database)
     public ScanResult Scan(IProgress<ScanProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
+
+        // Lagu yang tertinggal di luar semua folder library (sisa versi lama) tidak akan pernah terhapus oleh
+        // perbandingan di bawah, jadi dibuang dulu
+        int orphans = database.RemoveOrphanTracks();
         var known = database.GetFileStamps();
+        // Path lagu lama ditulis persis seperti di database: kalau foldernya diganti namanya hanya huruf besar/kecil
+        // non-ASCII ("élan" → "Élan"), NOCASE di SQLite menganggapnya path lain dan lagunya tersimpan ganda
+        var knownPaths = new HashSet<string>(known.Keys, StringComparer.OrdinalIgnoreCase);
         var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var toRead = new List<(string Path, FileStamp Stamp, bool IsNew)>();
         var availableFolders = new List<string>();
@@ -58,7 +65,7 @@ public sealed class LibraryScanner(LibraryDatabase database)
                 if (!known.TryGetValue(file, out var old))
                     toRead.Add((file, stamp, true));
                 else if (old != stamp)
-                    toRead.Add((file, stamp, false));
+                    toRead.Add((knownPaths.TryGetValue(file, out string? stored) ? stored : file, stamp, false));
                 else
                     unchanged++;
 
@@ -77,9 +84,21 @@ public sealed class LibraryScanner(LibraryDatabase database)
             new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
             item =>
             {
-                tracks.Add(TagReader.Read(item.Path, item.Stamp, out string? error));
-                if (error is not null)
+                var track = TagReader.Read(item.Path, item.Stamp, out string? error);
+                if (error is null)
+                {
+                    tracks.Add(track);
+                }
+                else
+                {
+                    // Misalnya file sedang dikunci aplikasi lain. Lagu yang sudah ada dibiarkan dengan data dan stempel
+                    // lamanya; lagu baru tetap masuk daftar, tapi dengan waktu ubah 0. Keduanya lalu dibaca ulang di
+                    // scan berikutnya, tidak tersimpan kosong selamanya. Tanggal ditambahkan lagu baru tetap waktu ubah
+                    // saat ditemukan, walaupun filenya berubah lagi sebelum terbaca.
                     errors.Add($"{item.Path}: {error}");
+                    if (item.IsNew)
+                        tracks.Add(track with { AddedUtcTicks = track.ModifiedUtcTicks, ModifiedUtcTicks = 0 });
+                }
 
                 int count = Interlocked.Increment(ref done);
                 if (count % 20 == 0 || count == toRead.Count)
@@ -95,11 +114,13 @@ public sealed class LibraryScanner(LibraryDatabase database)
             .ToList();
         database.DeleteTracks(removed);
 
+        // Semua lagu baru tersimpan (yang gagal dibaca sebagai baris sementara); lagu lama yang gagal dibaca tidak
+        // tersimpan, jadi tidak dihitung "updated"
         int added = toRead.Count(x => x.IsNew);
         return new ScanResult(
             Added: added,
-            Updated: toRead.Count - added,
-            Removed: removed.Count,
+            Updated: tracks.Count - added,
+            Removed: removed.Count + orphans,
             Unchanged: unchanged,
             Errors: errors.ToList(),
             UnavailableFolders: unavailableFolders,
