@@ -81,5 +81,8 @@ public sealed class PlaylistsService
         Raise();
     }
 
+    /// <summary>Isi playlist diubah langsung di database (folder library dipindah), jadi semua tampilan memuat ulang.</summary>
+    public void NotifyChanged() => Raise();
+
     private void Raise() => Changed?.Invoke(this, EventArgs.Empty);
 }

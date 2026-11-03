@@ -103,6 +103,7 @@
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
                                             <FontIcon
                                                 Glyph="&#xE8B7;"
@@ -115,7 +116,14 @@
                                                 ToolTipService.ToolTip="{Binding}"
                                                 VerticalAlignment="Center"
                                                 TextTrimming="CharacterEllipsis" />
-                                            <Button Grid.Column="2" Content="Remove" Tag="{Binding}" Click="RemoveFolder_Click" />
+                                            <!-- Folder yang dipindah: riwayat, favorit, dan playlist lagunya ikut pindah -->
+                                            <Button
+                                                Grid.Column="2"
+                                                Content="Change location"
+                                                Tag="{Binding}"
+                                                ToolTipService.ToolTip="Moved this folder? Choose its new location to keep play history, favourites, and playlists."
+                                                Click="RelocateFolder_Click" />
+                                            <Button Grid.Column="3" Content="Remove" Tag="{Binding}" Click="RemoveFolder_Click" />
                                         </Grid>
                                     </StackPanel>
                                 </DataTemplate>
@@ -312,6 +320,25 @@
                                 IsTextSelectionEnabled="True"
                                 Style="{StaticResource CaptionTextStyle}" />
                         </StackPanel>
+                        <Border Style="{StaticResource RowSeparatorStyle}" />
+                        <Grid Padding="0,12" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Crash log" />
+                                <TextBlock
+                                    x:Name="CrashLogPathText"
+                                    IsTextSelectionEnabled="True"
+                                    Style="{StaticResource CaptionTextStyle}" />
+                            </StackPanel>
+                            <Button
+                                Grid.Column="1"
+                                Content="Open folder"
+                                VerticalAlignment="Center"
+                                Click="OpenCrashLogFolder_Click" />
+                        </Grid>
                     </StackPanel>
                 </Border>
             </StackPanel>
