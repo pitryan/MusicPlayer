@@ -75,6 +75,8 @@ public partial class App : Application
 
     public App()
     {
+        // Sebelum yang lain, supaya error saat aplikasi baru mulai juga tercatat
+        CrashLog.Install(this);
         InitializeComponent();
     }
 
@@ -94,6 +96,16 @@ public partial class App : Application
 
         MainWindow = new MainWindow();
         MainWindow.Activate();
+    }
+
+    /// <summary>
+    /// Aplikasi dibuka lagi selagi sudah berjalan (lihat Program): jendelanya dimunculkan. Dipanggil dari thread lain.
+    /// </summary>
+    public static void BringToFront()
+    {
+        // Bisa terjadi sebelum jendela utama selesai dibuat; jendela itu tetap akan muncul sendiri
+        if (MainWindow is { } window)
+            window.DispatcherQueue.TryEnqueue(window.BringToFront);
     }
 
     private static MediaControlsSync? CreateMediaControls()

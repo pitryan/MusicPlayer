@@ -7,6 +7,14 @@ public enum AddFolderStatus { Added, AlreadyCovered, NotFound }
 /// <summary>Hasil AddFolder. Untuk AlreadyCovered, Folder berisi folder induk yang sudah ada di library.</summary>
 public sealed record AddFolderResult(AddFolderStatus Status, string Folder);
 
+public enum RelocateFolderStatus { Relocated, NotInLibrary, SameFolder, NotFound }
+
+/// <summary>Hasil RelocateFolder. Folder berisi lokasi baru yang sudah dirapikan, Songs jumlah lagu yang ikut pindah.</summary>
+public sealed record RelocateFolderResult(RelocateFolderStatus Status, string Folder, int Songs);
+
+/// <summary>Hasil PreviewRelocation: jumlah lagu di folder lama, dan berapa di antaranya ada di lokasi baru.</summary>
+public sealed record RelocationPreview(int Songs, int Found);
+
 public sealed record LibraryStats(
     int Tracks, TimeSpan TotalDuration, int Flac, int Mp3, int HiRes,
     int Albums, int Artists, int WithCover, int WithLyrics);
@@ -97,6 +105,143 @@ public sealed class LibraryDatabase
         int removed = DeleteOrphanTracks(connection);
         transaction.Commit();
         return removed;
+    }
+
+    /// <summary>
+    /// Folder library yang dipindah ke tempat lain (misalnya ke drive baru): path lagu-lagunya diganti ke lokasi baru,
+    /// beserta riwayat putar, favorit, isi playlist, dan hasil pemeriksaan kualitasnya, yang semuanya disambungkan lewat
+    /// path. Tanpa ini, semua itu terputus kalau folder lama dihapus lalu folder barunya ditambahkan. Lagu yang ternyata
+    /// tidak ada di lokasi baru dibuang oleh scan berikutnya, sama seperti file yang terhapus.
+    /// </summary>
+    public RelocateFolderResult RelocateFolder(string oldFolderPath, string newFolderPath)
+    {
+        string newFolder = LibraryPaths.NormalizeFolder(newFolderPath);
+        string requested = LibraryPaths.NormalizeFolder(oldFolderPath);
+        var existing = GetFolders();
+        string? oldFolder = existing.FirstOrDefault(f => string.Equals(f, requested, StringComparison.OrdinalIgnoreCase));
+        if (oldFolder is null)
+            return new RelocateFolderResult(RelocateFolderStatus.NotInLibrary, requested, 0);
+
+        // Ordinal: folder yang diganti namanya hanya huruf besar/kecil tetap boleh dipindah ke nama barunya
+        if (string.Equals(oldFolder, newFolder, StringComparison.Ordinal))
+            return new RelocateFolderResult(RelocateFolderStatus.SameFolder, newFolder, 0);
+        if (!Directory.Exists(newFolder))
+            return new RelocateFolderResult(RelocateFolderStatus.NotFound, newFolder, 0);
+
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+
+        Execute(connection, "DELETE FROM library_folders WHERE path = $path", ("$path", oldFolder));
+
+        // Sama seperti AddFolder: lokasi baru yang sudah termasuk folder library lain cukup ikut folder itu, dan folder
+        // library lain di dalam lokasi baru tidak perlu disimpan terpisah lagi
+        var others = existing.Where(f => !string.Equals(f, oldFolder, StringComparison.Ordinal)).ToList();
+        if (!others.Exists(f => LibraryPaths.IsUnder(newFolder, f)))
+        {
+            foreach (string child in others.Where(f => LibraryPaths.IsUnder(f, newFolder)))
+                Execute(connection, "DELETE FROM library_folders WHERE path = $path", ("$path", child));
+            Execute(connection, "INSERT INTO library_folders (path) VALUES ($path)", ("$path", newFolder));
+        }
+
+        int songs = MovePaths(connection, "tracks", oldFolder, newFolder, keepEarliest: "added_utc", withFolder: true);
+        MovePaths(connection, "plays", oldFolder, newFolder);
+        MovePaths(connection, "favourites", oldFolder, newFolder, keepEarliest: "added_utc");
+        MovePaths(connection, "playlist_items", oldFolder, newFolder);
+        MovePaths(connection, "quality_reports", oldFolder, newFolder);
+
+        DeleteOrphanTracks(connection);
+        transaction.Commit();
+        return new RelocateFolderResult(RelocateFolderStatus.Relocated, newFolder, songs);
+    }
+
+    /// <summary>
+    /// Berapa lagu di folder library ini yang juga ada di lokasi baru, untuk konfirmasi sebelum <see cref="RelocateFolder"/>.
+    /// Mengecek setiap file, jadi untuk library besar sebaiknya dipanggil di luar UI thread.
+    /// </summary>
+    public RelocationPreview PreviewRelocation(string oldFolderPath, string newFolderPath)
+    {
+        string oldFolder = LibraryPaths.NormalizeFolder(oldFolderPath);
+        string newFolder = LibraryPaths.NormalizeFolder(newFolderPath);
+
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT path FROM tracks";
+        using var reader = command.ExecuteReader();
+
+        int songs = 0, found = 0;
+        while (reader.Read())
+        {
+            string path = reader.GetString(0);
+            if (!LibraryPaths.IsUnder(path, oldFolder))
+                continue;
+            songs++;
+            if (File.Exists(LibraryPaths.Relocate(path, oldFolder, newFolder)))
+                found++;
+        }
+        return new RelocationPreview(songs, found);
+    }
+
+    /// <summary>
+    /// Mengganti path baris yang berada di dalam folder lama ke lokasi barunya, dipilih di C# dengan IsUnder seperti
+    /// DeleteOrphanTracks. Kalau path barunya sudah ada di tabel yang path-nya unik (lokasi baru sempat di-scan lebih
+    /// dulu), baris yang sudah ada dipakai dan baris lama dibuang. Tanggal di kolom <paramref name="keepEarliest"/> diambil
+    /// yang paling awal, supaya lagu yang dipindah tidak tiba-tiba terlihat baru ditambahkan. Mengembalikan jumlah baris
+    /// yang dipindah. Dipanggil di dalam transaksi pemanggilnya.
+    /// </summary>
+    /// <param name="withFolder">Kolom "folder" (khusus tabel tracks) ikut dipindah.</param>
+    private static int MovePaths(
+        SqliteConnection connection, string table, string oldFolder, string newFolder,
+        string? keepEarliest = null, bool withFolder = false)
+    {
+        var rows = new List<(long RowId, string Path, string? Folder)>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"SELECT rowid, path, {(withFolder ? "folder" : "NULL")} FROM {table}";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                string path = reader.GetString(1);
+                if (LibraryPaths.IsUnder(path, oldFolder))
+                    rows.Add((reader.GetInt64(0), path, reader.IsDBNull(2) ? null : reader.GetString(2)));
+            }
+        }
+
+        using var update = connection.CreateCommand();
+        update.CommandText = withFolder
+            ? $"UPDATE OR IGNORE {table} SET path = $path, folder = $folder WHERE rowid = $id"
+            : $"UPDATE OR IGNORE {table} SET path = $path WHERE rowid = $id";
+        var updateId = update.Parameters.Add("$id", SqliteType.Integer);
+        var updatePath = update.Parameters.Add("$path", SqliteType.Text);
+        var updateFolder = withFolder ? update.Parameters.Add("$folder", SqliteType.Text) : null;
+
+        foreach (var row in rows)
+        {
+            string path = LibraryPaths.Relocate(row.Path, oldFolder, newFolder);
+            updateId.Value = row.RowId;
+            updatePath.Value = path;
+            if (updateFolder is not null)
+            {
+                updateFolder.Value = row.Folder is not null && LibraryPaths.IsUnder(row.Folder, oldFolder)
+                    ? LibraryPaths.Relocate(row.Folder, oldFolder, newFolder)
+                    : row.Folder;
+            }
+
+            if (update.ExecuteNonQuery() > 0)
+                continue;
+
+            // Path barunya sudah dipakai baris lain (UNIQUE ... COLLATE NOCASE)
+            if (keepEarliest is not null)
+            {
+                Execute(connection,
+                    $"""
+                    UPDATE {table} SET {keepEarliest} = min({keepEarliest}, (SELECT {keepEarliest} FROM {table} WHERE rowid = $id))
+                    WHERE path = $path AND rowid <> $id
+                    """,
+                    ("$id", row.RowId), ("$path", path));
+            }
+            Execute(connection, $"DELETE FROM {table} WHERE rowid = $id", ("$id", row.RowId));
+        }
+        return rows.Count;
     }
 
     /// <summary>

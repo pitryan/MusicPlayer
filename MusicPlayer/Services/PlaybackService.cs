@@ -1657,6 +1657,39 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Folder library dipindah (lihat LibraryDatabase.RelocateFolder): lagu dari folder itu di lagu sekarang, antrean, dan
+    /// daftar Previous memakai path barunya, supaya tetap bisa diputar dan status favoritnya tetap terbaca. Kedua folder
+    /// sudah dirapikan dengan LibraryPaths.NormalizeFolder.
+    /// </summary>
+    public void RelocateTracks(string oldFolder, string newFolder)
+    {
+        Track? Moved(Track track) => LibraryPaths.IsUnder(track.FilePath, oldFolder)
+            ? track with
+            {
+                FilePath = LibraryPaths.Relocate(track.FilePath, oldFolder, newFolder),
+                FolderPath = LibraryPaths.Relocate(track.FolderPath, oldFolder, newFolder),
+            }
+            : null;
+
+        for (int i = 0; i < _previous.Count; i++)
+        {
+            if (Moved(_previous[i]) is { } moved)
+                _previous[i] = moved;
+        }
+
+        // Entri yang sama bisa ada di UpNext dan _originalOrder. Dipindah sekali saja: lokasi baru bisa berada di dalam
+        // folder lama, dan entri yang dipindah dua kali akan menunjuk ke folder yang salah.
+        foreach (var entry in UpNext.Concat(_originalOrder).Distinct())
+        {
+            if (Moved(entry.Track) is { } moved)
+                entry.UpdateTrack(moved);
+        }
+
+        if (CurrentTrack is { } current && Moved(current) is { } now)
+            CurrentTrack = now;
+    }
+
     /// <summary>Lagu ini menjadi lagu sekarang di tampilan.</summary>
     /// <param name="keepHistory">
     /// Lagu sebelumnya masuk daftar Previous, juga kalau file-nya sama (lagu yang sama dua kali di antrean, dua kali putar).

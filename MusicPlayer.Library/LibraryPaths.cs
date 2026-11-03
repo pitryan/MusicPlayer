@@ -30,4 +30,15 @@ public static class LibraryPaths
     public static bool IsUnder(string path, string normalizedFolder) =>
         path.StartsWith(normalizedFolder, StringComparison.OrdinalIgnoreCase)
         || string.Equals(path + Path.DirectorySeparatorChar, normalizedFolder, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Path yang sama setelah folder dipindah: "D:\Musik\Jepang\a.flac" dari "D:\Musik\" ke "E:\Lagu\" menjadi
+    /// "E:\Lagu\Jepang\a.flac". Folder itu sendiri ("D:\Musik", seperti di kolom "folder") menjadi "E:\Lagu". Path harus
+    /// berada di dalam folder lama (lihat <see cref="IsUnder"/>); kedua folder sudah dirapikan dengan NormalizeFolder.
+    /// </summary>
+    public static string Relocate(string path, string oldFolder, string newFolder)
+    {
+        string rest = path.Length > oldFolder.Length ? path[oldFolder.Length..] : "";
+        return rest.Length > 0 ? newFolder + rest : WithoutTrailingSeparator(newFolder);
+    }
 }

@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using MusicPlayer.Helpers;
@@ -6,6 +8,7 @@ using MusicPlayer.Library;
 using MusicPlayer.Services;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using Windows.System;
 using WinRT.Interop;
 
 namespace MusicPlayer.Pages;
@@ -16,7 +19,8 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         DatabasePathText.Text = App.Database.DatabasePath;
-        VersionText.Text = $"Version {GetAppVersion()}";
+        CrashLogPathText.Text = CrashLog.FilePath;
+        VersionText.Text = $"Version {AppInfo.Version}";
         RefreshFolders();
 
         // Baris status hanya tampil kalau ada isinya, supaya kartu Library tidak punya ruang kosong di bawah
@@ -113,18 +117,17 @@ public sealed partial class SettingsPage : Page
             LyricsDisplay.ShowTranslation = ShowTranslationToggle.IsOn;
     }
 
-    private static string GetAppVersion()
+    private async void OpenCrashLogFolder_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            var version = Windows.ApplicationModel.Package.Current.Id.Version;
-            return $"{version.Major}.{version.Minor}.{version.Build}";
+            // Folder-nya baru dibuat saat error pertama dicatat
+            Directory.CreateDirectory(CrashLog.Folder);
+            await Launcher.LaunchFolderPathAsync(CrashLog.Folder);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Package.Current melempar kalau aplikasi berjalan tanpa identitas package (mis. unpackaged saat debug)
-            Version? version = typeof(App).Assembly.GetName().Version;
-            return version is null ? "unknown" : $"{version.Major}.{version.Minor}.{version.Build}";
+            // Folder data aplikasi tidak bisa dibuat: path-nya tetap tampil dan bisa disalin
         }
     }
 
@@ -165,6 +168,80 @@ public sealed partial class SettingsPage : Page
             RefreshFolders();
             App.MainWindow.RefreshFolderItems();
         }
+    }
+
+    /// <summary>
+    /// Folder musik yang dipindah (misalnya ke drive lain): library diarahkan ke lokasi barunya. Kalau folder lama dihapus
+    /// lalu folder baru ditambahkan, riwayat putar, favorit, dan isi playlist lagu-lagunya terputus karena disambungkan
+    /// lewat path.
+    /// </summary>
+    private async void RelocateFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not string oldFolder)
+            return;
+
+        var picker = new FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(App.MainWindow));
+
+        StorageFolder? picked = await picker.PickSingleFolderAsync();
+        if (picked is null)
+            return;
+
+        string newFolder = LibraryPaths.NormalizeFolder(picked.Path);
+        if (string.Equals(newFolder, oldFolder, StringComparison.Ordinal))
+        {
+            StatusText.Text = "That's where this folder already is. Choose the folder's new location.";
+            return;
+        }
+
+        // Mengecek setiap file, jadi tidak di UI thread
+        var preview = await Task.Run(() => App.Database.PreviewRelocation(oldFolder, newFolder));
+        if (!await Dialogs.ConfirmAsync("Change Folder Location?", DescribeRelocation(preview, newFolder), "Change Location"))
+            return;
+
+        // Scan yang dimulai selama dialog terbuka sudah membaca daftar folder yang lama
+        if (LibraryScanState.IsRunning)
+        {
+            StatusText.Text = "Wait for the library scan to finish, then try again.";
+            return;
+        }
+
+        var result = App.Database.RelocateFolder(oldFolder, newFolder);
+        switch (result.Status)
+        {
+            case RelocateFolderStatus.NotFound:
+                StatusText.Text = $"Folder not found: {result.Folder}";
+                return;
+            case RelocateFolderStatus.NotInLibrary or RelocateFolderStatus.SameFolder:
+                RefreshFolders();
+                return;
+        }
+
+        App.Playback.RelocateTracks(oldFolder, result.Folder);
+        App.Favourites.Reload();
+        App.Playlists.NotifyChanged();
+        RefreshFolders();
+        App.MainWindow.RefreshFolderItems();
+
+        // Lagu yang tidak ada di lokasi baru dibuang, dan lagu baru di sana ditambahkan
+        await LibraryScanState.ScanAsync(App.Database);
+    }
+
+    private static string DescribeRelocation(RelocationPreview preview, string newFolder)
+    {
+        const string Keeps = "Their play history, favourites, playlists, and quality checks move with them.";
+        const string Missing = "Songs that aren't there will be removed from your library when it's rescanned.";
+
+        if (preview.Songs == 0)
+            return $"Your library will use \"{newFolder}\" instead. There are no songs from this folder in your library yet.";
+        if (preview.Found == 0)
+            return $"None of the {Formatters.Count(preview.Songs, "song")} from this folder were found in \"{newFolder}\". " +
+                   $"Make sure it's the right folder. {Missing}";
+        if (preview.Found == preview.Songs)
+            return $"All {Formatters.Count(preview.Songs, "song")} from this folder were found in \"{newFolder}\". {Keeps}";
+        return $"{preview.Found} of {Formatters.Count(preview.Songs, "song")} from this folder were found in \"{newFolder}\". " +
+               $"{Keeps} {Missing}";
     }
 
     // Tombol dan kemajuan diatur OnLibraryScanChanged, juga untuk halaman Settings lain yang dibuka selama scan

@@ -392,6 +392,18 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Aplikasi dibuka lagi dari Start atau taskbar selagi sudah berjalan (lihat Program): jendela yang sedang dipakai
+    /// dimunculkan di depan, yaitu MiniPlayer atau layar penuh kalau salah satunya sedang menggantikan jendela ini.
+    /// </summary>
+    public void BringToFront()
+    {
+        Window window = _replacement ?? this;
+        if (window.AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+            presenter.Restore();
+        window.Activate();
+    }
+
+    /// <summary>
     /// Membuka halaman di dalam menu yang sedang aktif; tombol back kembali ke halaman sebelumnya. Kalau MiniPlayer
     /// atau layar penuh sedang menggantikan jendela utama (misalnya Go to Album dari antrean di MiniPlayer), jendela
     /// itu ditutup dulu supaya halamannya terlihat. Editor dengan perubahan yang belum disimpan ditanya dulu.

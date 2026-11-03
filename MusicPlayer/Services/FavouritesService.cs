@@ -44,4 +44,12 @@ public sealed class FavouritesService
             _paths.Remove(track.FilePath);
         Changed?.Invoke(this, EventArgs.Empty);
     }
+
+    /// <summary>Membaca ulang favorit setelah path-nya diubah langsung di database (folder library dipindah).</summary>
+    public void Reload()
+    {
+        _paths.Clear();
+        _paths.UnionWith(_database.GetFavouritePaths());
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 }
