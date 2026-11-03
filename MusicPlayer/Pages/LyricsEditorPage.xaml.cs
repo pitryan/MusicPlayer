@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,8 +23,13 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
     private Track? _track;
     private bool _synced;
     private bool _saving;
-    // Yang akan ditulis Save untuk lirik yang dimuat (atau yang terakhir disimpan); null selama memuat
+    // Bentuk baku (BuildChanges) lirik yang dimuat atau yang terakhir disimpan; null selama memuat
     private Dictionary<string, string>? _loaded;
+    // Teks asal baris-baris di tabel apa adanya (isi tag LYRICS, file .lrc, atau teks yang ditempel), supaya Save tidak
+    // membuang baris info LRC dan tanda waktu per katanya (LyricsTagText); null untuk lirik dari LRCLIB
+    private string? _sourceText;
+    // _sourceText adalah isi tag LYRICS sekarang: kalau liriknya tidak diubah, tag itu tidak ditulis ulang
+    private bool _sourceInTag;
 
     public LyricsEditorPage()
     {
@@ -32,7 +38,7 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
     }
 
     /// <summary>
-    /// Isi tabel berbeda dari lirik yang dimuat. Dibandingkan dalam bentuk yang akan ditulis Save, jadi baris yang
+    /// Isi tabel berbeda dari lirik yang dimuat. Dibandingkan dalam bentuk baku tulisan Save (LrcWriter), jadi baris yang
     /// diketik lalu dikembalikan seperti semula tidak dihitung sebagai perubahan.
     /// </summary>
     public bool HasUnsavedChanges =>
@@ -68,22 +74,36 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
         var cts = _loadCts = new CancellationTokenSource();
         _loaded = null;
         SetBusy(LoadingRing, true);
+        PasteLyricsButton.IsEnabled = false;
         InfoText.Text = "Loading lyrics…";
         try
         {
             var finder = App.Lyrics.Finder;
-            var found = await Task.Run(() => finder.FindLocal(track), cts.Token)
-                ?? (await finder.FindOnlineAsync(track, cts.Token)).Lyrics;
+            var (local, sourceText) = await Task.Run(() =>
+            {
+                var lyrics = finder.FindLocal(track);
+                return (lyrics, lyrics is null ? null : ReadSourceText(track, lyrics));
+            }, cts.Token);
+
+            // Lirik di file sudah terbaca: yang masih ditunggu hanya LRCLIB, yang boleh dihentikan oleh lirik yang ditempel
+            // (StopLoading). Selama file masih dibaca, menempel akan menghapus cara baca dan terjemahan di tag yang belum
+            // tampil, karena ShowRows hanya mempertahankan lapisan dari baris yang sudah ada.
+            if (!cts.IsCancellationRequested)
+                PasteLyricsButton.IsEnabled = true;
+            var found = local ?? (await finder.FindOnlineAsync(track, cts.Token)).Lyrics;
             if (cts.IsCancellationRequested)
                 return;
             ShowRows(found?.Lyrics, keepLayers: false);
+            _sourceText = sourceText;
+            _sourceInTag = found?.Source == LyricsSource.Tag;
             _loaded = BuildChanges().Changes;
             InfoText.Text = found is null
                 ? "This song has no lyrics yet. Use Paste Lyrics to add them."
                 : $"{LyricsController.DescribeSource(found)} · {Formatters.Count(_rows.Count, "line")}";
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (Exception) when (cts.IsCancellationRequested)
         {
+            // Halaman ditinggalkan, atau lirik sudah ditempel selama memuat (StopLoading): hasilnya tidak dipakai lagi
         }
         catch (Exception ex)
         {
@@ -97,8 +117,31 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
             {
                 SetBusy(LoadingRing, false);
                 SaveButton.IsEnabled = true;
+                PasteLyricsButton.IsEnabled = true; // juga kalau membaca file gagal
             }
         }
+    }
+
+    /// <summary>Teks lirik lokal apa adanya: isi tag LYRICS, atau isi file .lrc-nya. Membaca disk.</summary>
+    private static string? ReadSourceText(Track track, FoundLyrics found) => found.Source switch
+    {
+        LyricsSource.Tag => TagReader.ReadLyrics(track.FilePath),
+        LyricsSource.LrcFile when found.FileName is { } name && Path.GetDirectoryName(track.FilePath) is { } folder =>
+            TextFiles.ReadSmallText(Path.Combine(folder, name)),
+        _ => null,
+    };
+
+    /// <summary>
+    /// Lirik ditempel sebelum lirik lagunya selesai dimuat (pencarian LRCLIB bisa makan waktu puluhan detik): pencariannya
+    /// dihentikan, supaya hasilnya tidak menimpa lirik yang ditempel. Lagunya dianggap belum punya lirik, jadi lirik
+    /// tempelan terhitung perubahan yang belum disimpan.
+    /// </summary>
+    private void StopLoading()
+    {
+        _loadCts?.Cancel();
+        _loaded = BuildChanges().Changes;
+        SetBusy(LoadingRing, false);
+        SaveButton.IsEnabled = true;
     }
 
     /// <summary>
@@ -140,8 +183,12 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
             InfoText.Text = "There were no lyrics in the pasted text.";
             return;
         }
+        if (_loaded is null)
+            StopLoading();
         // LRC tiga lapis yang ditempel membawa cara baca dan terjemahannya sendiri
         ShowRows(lyrics, keepLayers: !LyricLayers.HasLayers(lyrics));
+        _sourceText = text;
+        _sourceInTag = false;
         InfoText.Text = $"{Formatters.Count(lyrics.Lines.Count, "line")}{(lyrics.IsSynced ? ", time-synced" : "")}. Check that the reading and translation still match each line.";
     }
 
@@ -205,11 +252,18 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
         if (_saving || _track is null)
             return;
 
-        var (rows, changes) = BuildChanges();
-        string text = changes["lyrics"];
+        var (rows, lyrics, changes) = BuildChanges();
+        // Tag LYRICS hanya ditulis ulang kalau perlu, dengan baris info LRC dan tanda waktu per kata dari teks asalnya
+        // (null = tidak ditulis; tag lama tetap dibaca menjadi baris yang sama, jadi cara baca dan terjemahan tetap cocok)
+        string? text = LyricsTagText.ForSave(lyrics, _sourceText, _sourceInTag);
+        var toWrite = new Dictionary<string, string>(changes);
+        if (text is null)
+            toWrite.Remove("lyrics");
+        else
+            toWrite["lyrics"] = text;
 
         // Cara baca dan terjemahan dicocokkan per urutan baris: pastikan liriknya dibaca kembali dengan jumlah baris sama
-        if (text.Length > 0 && LrcParser.Parse(text)?.Lines.Count != rows.Count)
+        if (text is { Length: > 0 } && LrcParser.Parse(text)?.Lines.Count != rows.Count)
         {
             MessageText.Text = "Some lines would change when the lyrics are read back (for example a line that starts with \"[\"), "
                 + "so the reading and translation wouldn't line up. Edit those lines and try again.";
@@ -222,10 +276,15 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
         SetBusy(SavingRing, true);
         try
         {
-            var result = await App.TagEdits.SaveAsync([_track.FilePath], changes, null);
+            var result = await App.TagEdits.SaveAsync([_track.FilePath], toWrite, null);
             if (result.Failed.Count == 0)
             {
                 _loaded = changes;
+                if (text is not null)
+                {
+                    _sourceText = text;
+                    _sourceInTag = true;
+                }
                 // Pengguna sudah pindah halaman selama menyimpan (misalnya tombol back mouse): jangan ikut mundur dari
                 // halaman barunya
                 if (ReferenceEquals(Frame.Content, this) && Frame.CanGoBack)
@@ -248,20 +307,26 @@ public sealed partial class LyricsEditorPage : Page, IUnsavedChanges
     }
 
     /// <summary>
-    /// Yang akan ditulis Save: lirik (LRC), cara baca, dan terjemahan, dari baris yang benar-benar disimpan. Dipakai
-    /// juga untuk mengetahui apakah ada perubahan yang belum disimpan.
+    /// Yang akan ditulis Save dalam bentuk baku: lirik (LRC), cara baca, dan terjemahan, dari baris yang benar-benar
+    /// disimpan. Dipakai juga untuk mengetahui apakah ada perubahan yang belum disimpan. Lyrics: baris-baris yang sama
+    /// beserta cara baca dan terjemahannya, untuk LyricsTagText.
     /// </summary>
-    private (List<LyricEditRow> Rows, Dictionary<string, string> Changes) BuildChanges()
+    private (List<LyricEditRow> Rows, Lyrics Lyrics, Dictionary<string, string> Changes) BuildChanges()
     {
         var rows = _synced ? _rows.ToList() : NormalizePlain(_rows);
-        var lyrics = new Lyrics(rows.Select(r => new LyricLine(r.Time, r.Original.Trim()) { Extra = r.Extra }).ToList(), _synced);
+        var lyrics = new Lyrics(rows.Select(r => new LyricLine(r.Time, r.Original.Trim())
+        {
+            Extra = r.Extra,
+            Reading = r.Reading,
+            Translation = r.Translation,
+        }).ToList(), _synced);
         var changes = new Dictionary<string, string>
         {
             ["lyrics"] = rows.Count == 0 ? "" : LrcWriter.Format(lyrics),
             ["lyrics_reading"] = LyricLayers.JoinLines(rows.Select(r => r.Reading)),
             ["lyrics_translation"] = LyricLayers.JoinLines(rows.Select(r => r.Translation)),
         };
-        return (rows, changes);
+        return (rows, lyrics, changes);
     }
 
     /// <summary>

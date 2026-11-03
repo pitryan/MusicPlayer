@@ -10,6 +10,7 @@ public sealed class LibraryScannerTests : IDisposable
 {
     private static readonly DateTime FirstModified = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime SecondModified = new(2026, 2, 1, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime ThirdModified = new(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc);
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "MusicPlayer.Tests", Guid.NewGuid().ToString("N"));
     private readonly LibraryDatabase _database;
@@ -234,6 +235,86 @@ public sealed class LibraryScannerTests : IDisposable
         Assert.Equal(1, result.Updated);
     }
 
+    [Fact]
+    public void Scan_LeftoverDuplicateRowFromCaseOnlyRename_IsStillUpdated()
+    {
+        string song = CopyFixture("first.flac", Path.Combine("Music", "élan"), FirstModified);
+        _database.AddFolder(Path.Combine(_root, "Music"));
+        _scanner.Scan();
+        long id = Assert.Single(_database.GetTracks()).Id;
+
+        // Scanner versi lama menyimpan lagu yang berubah setelah "élan" diganti menjadi "Élan" sebagai baris kedua
+        string renamed = Path.Combine(_root, "Music", "Élan");
+        Directory.Move(Path.GetDirectoryName(song)!, renamed);
+        string renamedSong = Path.Combine(renamed, "song.flac");
+        File.SetLastWriteTimeUtc(renamedSong, SecondModified);
+        SaveLikeTagEditor(renamedSong);
+        Assert.Equal(2, _database.GetTracks().Count);
+
+        // Tag-nya lalu diubah aplikasi lain
+        CopyFixture("second.flac", Path.Combine("Music", "Élan"), ThirdModified);
+        var result = _scanner.Scan();
+
+        Assert.Equal("Second Title", _database.GetTracks().Single(t => t.Id == id).Title);
+        Assert.Equal(1, result.Updated);
+        Assert.Equal(0, _scanner.Scan().Updated); // stempelnya sudah sama, jadi tidak dibaca lagi setiap scan
+    }
+
+    [Fact]
+    public void Scan_TagsSavedWhileScanning_AreNotOverwrittenWithTheOldTags()
+    {
+        string song = CopyFixture("first.flac", "Music", FirstModified);
+        _database.AddFolder(Path.GetDirectoryName(song)!);
+        _scanner.Scan();
+
+        // Filenya berubah, jadi scan ulang membaca tag lamanya. Setelah itu, tepat sebelum hasil scan disimpan, tag barunya
+        // disimpan di editor tag
+        File.SetLastWriteTimeUtc(song, SecondModified);
+        var result = _scanner.Scan(new InlineProgress(p =>
+        {
+            if (p.Stage == "Menyimpan")
+            {
+                CopyFixture("second.flac", "Music", ThirdModified);
+                SaveLikeTagEditor(song);
+            }
+        }));
+
+        var track = Assert.Single(_database.GetTracks());
+        Assert.Equal("Second Title", track.Title);
+        Assert.Equal(ThirdModified.Ticks, track.ModifiedUtcTicks);
+        Assert.Equal(0, result.Updated);
+        Assert.Equal(1, result.Unchanged);
+
+        // Stempel di database sama dengan file, jadi scan berikutnya tidak perlu membacanya lagi
+        var next = _scanner.Scan();
+        Assert.Equal(0, next.Updated);
+        Assert.Equal(1, next.Unchanged);
+    }
+
+    [Fact]
+    public void Scan_NewSongTaggedWhileScanning_KeepsTheSavedTags()
+    {
+        string folder = Path.Combine(_root, "Music");
+        Directory.CreateDirectory(folder);
+        _database.AddFolder(folder);
+        string song = CopyFixture("first.flac", "Music", FirstModified);
+
+        var result = _scanner.Scan(new InlineProgress(p =>
+        {
+            if (p.Stage == "Menyimpan")
+            {
+                CopyFixture("second.flac", "Music", SecondModified);
+                SaveLikeTagEditor(song);
+            }
+        }));
+
+        var track = Assert.Single(_database.GetTracks());
+        Assert.Equal("Second Title", track.Title);
+        Assert.Equal(SecondModified.Ticks, track.ModifiedUtcTicks);
+        Assert.Equal(0, result.Added);
+        Assert.Equal(1, result.Unchanged);
+    }
+
     /// <summary>Menyalin fixture ke folder musik sementara sebagai song.flac dengan waktu ubah tertentu.</summary>
     private string CopyFixture(string fixture, string folderName, DateTime modifiedUtc)
     {
@@ -243,6 +324,14 @@ public sealed class LibraryScannerTests : IDisposable
         File.Copy(Path.Combine(AppContext.BaseDirectory, "TestData", "Scanner", fixture), path, overwrite: true);
         File.SetLastWriteTimeUtc(path, modifiedUtc);
         return path;
+    }
+
+    /// <summary>Seperti TagEditService setelah menulis file: tag-nya dibaca ulang dari file lalu disimpan ke database.</summary>
+    private void SaveLikeTagEditor(string path)
+    {
+        var track = TagReader.Read(path, FileStamp.From(new FileInfo(path)), out string? error);
+        Assert.Null(error);
+        _database.UpsertTracks([track]);
     }
 
     // Seperti aplikasi lain yang membuka file tanpa berbagi: TagLib tidak bisa membukanya, tapi ukuran dan waktu ubahnya

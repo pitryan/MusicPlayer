@@ -94,11 +94,11 @@ public sealed class TagEditService
 
         if (pictures is not null)
             _invalidateCovers(saved.Select(t => t.FilePath));
+        // Data lama lagu yang sedang diputar diambil sebelum diganti, untuk dibandingkan dengan data barunya
+        var playing = _playback.CurrentTrack;
         _playback.UpdateTrackInfo(saved);
-        bool lyricsChanged = edits.Any(e => e.Changes.ContainsKey("lyrics"));
-        if (lyricsChanged && _playback.CurrentTrack is { } current
-            && saved.Any(t => string.Equals(t.FilePath, current.FilePath, StringComparison.OrdinalIgnoreCase)))
-            _reloadLyrics(); // lirik lagu yang sedang diputar baru saja diubah
+        if (playing is not null && LyricsNeedReload(playing, edits, saved))
+            _reloadLyrics();
 
         if (saved.Count > 0)
         {
@@ -106,6 +106,27 @@ public sealed class TagEditService
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
         return new TagSaveResult(saved, failed);
+    }
+
+    /// <summary>
+    /// Lirik lagu yang sedang diputar perlu dimuat ulang: liriknya, cara baca, atau terjemahannya diedit, atau judul,
+    /// artis, artis album, atau albumnya berubah. Keempatnya bahan pencarian LRCLIB dan kunci cache-nya, jadi lirik yang
+    /// tidak ditemukan atau salah lagu karena tag yang salah dicari ulang dengan tag yang sudah dibetulkan. Tanpa ini
+    /// lirik lama tetap tampil: LyricsController tidak memuat ulang saat data lagu yang sama diganti (lihat Refresh).
+    /// </summary>
+    private static bool LyricsNeedReload(Track playing,
+        IReadOnlyList<(string Path, IReadOnlyDictionary<string, string> Changes)> edits, IReadOnlyList<Track> saved)
+    {
+        bool Same(string path) => string.Equals(path, playing.FilePath, StringComparison.OrdinalIgnoreCase);
+
+        // Lagu yang gagal disimpan atau dibaca ulang tidak berubah di aplikasi
+        if (saved.FirstOrDefault(t => Same(t.FilePath)) is not { } updated)
+            return false;
+
+        // Tag yang dibaca bersama lirik dari file (LyricsFinder.FindLocal)
+        return edits.Any(e => Same(e.Path) && e.Changes.Keys.Any(k => k is "lyrics" or "lyrics_reading" or "lyrics_translation"))
+            || updated.Title != playing.Title || updated.Artist != playing.Artist
+            || updated.AlbumArtist != playing.AlbumArtist || updated.Album != playing.Album;
     }
 
     private static string Describe(Exception ex) => ex switch
