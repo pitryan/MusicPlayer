@@ -63,11 +63,14 @@ public static class TrackMenu
 
     /// <summary>
     /// "Get Info…" untuk satu lagu, atau "Get Album Info…" untuk semua lagu satu album: membuka editor tag.
-    /// Dipakai juga oleh menu LCD, panel antrean, History, dan header album.
+    /// Dipakai juga oleh menu LCD, panel antrean, History, dan header album. Menu album di luar halaman album memberi
+    /// <paramref name="fromAlbumPage"/> false: setelah disimpan, editornya kembali ke halaman asal, bukan pindah ke
+    /// halaman album.
     /// </summary>
-    public static void AddInfoItem(MenuFlyout menu, IReadOnlyList<Track> tracks, bool album = false)
+    public static void AddInfoItem(MenuFlyout menu, IReadOnlyList<Track> tracks, bool album = false, bool fromAlbumPage = true)
     {
-        var request = new TagEditorRequest(tracks.Select(t => t.FilePath).ToList(), album ? "Album Info" : "Song Info", FromAlbum: album);
+        var request = new TagEditorRequest(tracks.Select(t => t.FilePath).ToList(), album ? "Album Info" : "Song Info",
+            FromAlbum: album && fromAlbumPage);
         menu.Items.Add(CreateItem(album ? "Get Album Info…" : "Get Info…", "\uE946",
             () => App.MainWindow.ShowPage(typeof(TagEditorPage), request)));
     }
@@ -131,16 +134,50 @@ public static class TrackMenu
     }
 
     /// <summary>
-    /// Menu untuk satu album (tombol ••• di header halaman album): Play Next, Add to Queue, Add to Playlist,
-    /// Go to Artist, dan Show in File Explorer.
+    /// Menu untuk satu album (tombol ••• di header halaman album, dan di blok album halaman Artists): Play Next, Add to
+    /// Queue, Add to Playlist, Go to Artist, Show in File Explorer, Get Album Info, dan Change Artwork.
+    /// Di luar halaman album, <paramref name="fromAlbumPage"/> false (lihat <see cref="AddInfoItem"/>).
     /// </summary>
-    public static void ShowForAlbum(UIElement target, Point position, IReadOnlyList<Track> tracks)
+    public static void ShowForAlbum(UIElement target, Point position, IReadOnlyList<Track> tracks, bool fromAlbumPage = true)
     {
         if (tracks.Count == 0)
             return;
 
         var menu = new MenuFlyout();
+        AddQueueItems(menu, tracks);
+        AddPlaylistItem(menu, tracks, tracks[0].DisplayAlbum);
+        AddGoToItems(menu, tracks[0], goToAlbum: false);
+        AddInfoItem(menu, tracks, album: true, fromAlbumPage: fromAlbumPage);
+        AddArtworkItem(menu, tracks, album: true);
+        menu.ShowAt(target, position);
+    }
 
+    /// <summary>
+    /// Menu untuk satu artis (tombol ••• di halaman Artists dan halaman artis), untuk semua lagunya sekaligus.
+    /// Tanpa Change Artwork: lagu artis tersebar di banyak album, jadi satu cover tidak boleh ditanam ke semuanya.
+    /// Halaman artis menyembunyikan "Go to Artist", karena kamu sudah berada di sana.
+    /// </summary>
+    public static void ShowForArtist(UIElement target, Point position, IReadOnlyList<Track> tracks, string artist,
+        bool goToArtist = true)
+    {
+        if (tracks.Count == 0)
+            return;
+
+        var menu = new MenuFlyout();
+        AddQueueItems(menu, tracks);
+        AddPlaylistItem(menu, tracks, artist);
+        AddGoToItems(menu, tracks[0], goToAlbum: false, goToArtist: goToArtist);
+
+        // Diedit sebagai banyak lagu, bukan album (FromAlbum false): setelah disimpan kembali ke halaman artis (dengan
+        // nama barunya kalau diubah), bukan pindah ke album lagu pertamanya; tanpa Artwork dan MusicBrainz
+        var request = new TagEditorRequest(tracks.Select(t => t.FilePath).ToList(), "Artist Info", Artist: artist);
+        menu.Items.Add(CreateItem("Get Artist Info…", "\uE946", () => App.MainWindow.ShowPage(typeof(TagEditorPage), request)));
+        menu.ShowAt(target, position);
+    }
+
+    /// <summary>Play Next dan Add to Queue untuk banyak lagu sekaligus (satu album atau satu artis).</summary>
+    private static void AddQueueItems(MenuFlyout menu, IReadOnlyList<Track> tracks)
+    {
         // Play Next dari lagu terakhir ke pertama: setiap lagu masuk ke depan antrean, jadi urutan album tetap terjaga
         menu.Items.Add(CreateItem("Play Next", "\uE893", () =>
         {
@@ -152,11 +189,6 @@ public static class TrackMenu
             foreach (var track in tracks)
                 App.Playback.AddToQueue(track);
         }));
-        AddPlaylistItem(menu, tracks, tracks[0].DisplayAlbum);
-        AddGoToItems(menu, tracks[0], goToAlbum: false);
-        AddInfoItem(menu, tracks, album: true);
-        AddArtworkItem(menu, tracks, album: true);
-        menu.ShowAt(target, position);
     }
 
     /// <summary>

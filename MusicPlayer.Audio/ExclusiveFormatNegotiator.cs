@@ -19,13 +19,13 @@ public static class ExclusiveFormatNegotiator
 {
     public static (PcmFormat? Format, string? Reason) Find(MMDevice device, WaveFormat source)
     {
-        int bits = source.BitsPerSample;
-        if (source.Encoding != WaveFormatEncoding.Pcm || bits is not (16 or 24 or 32))
-            return (null, $"The decoded format ({source.Encoding}, {bits}-bit) isn't supported in exclusive mode yet.");
+        var (candidates, reason) = GetCandidates(source);
+        if (reason is not null)
+            return (null, reason);
 
         using var client = device.CreateAudioClient();
 
-        foreach (var candidate in GetCandidates(source.SampleRate, source.Channels, bits))
+        foreach (var candidate in candidates)
         {
             try
             {
@@ -47,15 +47,31 @@ public static class ExclusiveFormatNegotiator
     }
 
     /// <summary>
+    /// Bagian negosiasi yang tidak butuh perangkat: format yang akan dicoba untuk sumber ini, atau alasan kenapa
+    /// sumber ini sama sekali tidak bisa dikirim dalam exclusive mode (daftarnya kosong).
     /// Urutan prioritas: format asli lebih dulu, lalu wadah yang lebih besar.
     /// Wadah yang lebih kecil (misalnya 24 → 16-bit) tidak pernah dicoba karena membuang data.
     /// </summary>
-    private static IEnumerable<PcmFormat> GetCandidates(int sampleRate, int channels, int bits)
+    public static (IReadOnlyList<PcmFormat> Candidates, string? Reason) GetCandidates(WaveFormat source)
     {
-        if (bits is 16 or 24) yield return new PcmFormat(sampleRate, channels, bits, bits);
-        if (bits == 16) yield return new PcmFormat(sampleRate, channels, 24, 24);
-        if (bits <= 24) yield return new PcmFormat(sampleRate, channels, 32, 24);
-        yield return new PcmFormat(sampleRate, channels, 32, 32);
+        int bits = source.BitsPerSample;
+        if (source.Encoding != WaveFormatEncoding.Pcm || bits is not (16 or 24 or 32))
+            return ([], $"The decoded format ({source.Encoding}, {bits}-bit) isn't supported in exclusive mode yet.");
+
+        // Di exclusive mode, perangkat seperti receiver HDMI memetakan channel ke speaker lewat mask ini. Tanpa
+        // tata letak standar, channel bisa keluar dari speaker yang salah, jadi biarkan mixer Windows yang mengurus.
+        if (PcmFormat.GetChannelMask(source) is not { } mask)
+            return ([], $"{source.Channels}-channel audio has no standard speaker layout for exclusive mode.");
+
+        var candidates = new List<PcmFormat>();
+        void Add(int containerBits, int validBits) =>
+            candidates.Add(new PcmFormat(source.SampleRate, source.Channels, containerBits, validBits) { ChannelMask = mask });
+
+        if (bits is 16 or 24) Add(bits, bits);
+        if (bits == 16) Add(24, 24);
+        if (bits <= 24) Add(32, 24);
+        Add(32, 32);
+        return (candidates, null);
     }
 
     public static string DescribeError(COMException ex) => ex.HResult switch

@@ -12,4 +12,10 @@ public interface IUnsavedChanges
     /// setelah menyimpan, dan kalau isinya sudah dikembalikan seperti semula.
     /// </summary>
     bool HasUnsavedChanges { get; }
+
+    /// <summary>
+    /// True selama Save masih menulis ke file. Halaman tidak boleh ditinggalkan dan jendela tidak boleh ditutup sampai
+    /// selesai: pesan "Couldn't save" hanya tampil di halaman ini, dan proses yang berhenti memutus penulisan file.
+    /// </summary>
+    bool IsSaving { get; }
 }

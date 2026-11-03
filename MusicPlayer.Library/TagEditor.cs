@@ -22,7 +22,8 @@ public sealed record TagValues(TagFormat Format, IReadOnlyDictionary<string, str
 /// Membaca dan menulis semua field di <see cref="TagFields"/> dengan nama penyimpanan Picard. Penulisan dilakukan pada
 /// salinan file dulu, lalu salinan itu menggantikan file asli; kalau aplikasi tertutup di tengah jalan, file musiknya
 /// tidak pernah setengah tertulis. Tag MP3/WAV disimpan sebagai ID3v2.4 (bawaan Picard), karena ID3v2.3 tidak bisa
-/// menyimpan daftar kredit (arranger, producer, ...) dengan benar lewat TagLib.
+/// menyimpan daftar kredit (arranger, producer, ...) dengan benar lewat TagLib. Tag lama yang sudah ada di file (ID3v1,
+/// APE, RIFF INFO) ikut diperbarui, karena library juga membacanya (lihat LegacyTypes).
 /// </summary>
 public static class TagEditor
 {
@@ -34,6 +35,8 @@ public static class TagEditor
         using var file = TagLib.File.Create(path);
         var format = FormatOf(file);
         var fields = new Dictionary<string, string>();
+        // Nilai yang hanya ada di tag lama juga dibaca library, jadi ikut ditampilkan (lihat LegacyTypes)
+        var legacy = LegacyTags(file, format) is { Count: > 0 } tags ? new CombinedTag(tags.ToArray()) : null;
 
         foreach (var field in TagFields.All.Where(f => f.IsSupported(format)))
         {
@@ -43,7 +46,9 @@ public static class TagEditor
                 TagFormat.Mp4 => ReadMp4((TagLib.Mpeg4.AppleTag)file.GetTag(TagTypes.Apple, true), field),
                 _ => ReadId3((TagLib.Id3v2.Tag)file.GetTag(TagTypes.Id3v2, true), field),
             };
-            var clean = values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => v.Trim()).ToList();
+            var clean = values.Where(v => !string.IsNullOrWhiteSpace(v)).Select(field.Trim).ToList();
+            if (clean.Count == 0 && legacy is not null && LegacyFields.TryGetValue(field.Key, out var common))
+                clean = common.Read(legacy).Where(v => !string.IsNullOrWhiteSpace(v)).Select(field.Trim).ToList();
             if (clean.Count > 0)
                 fields[field.Key] = string.Join(TagFields.Separator, clean);
         }
@@ -64,20 +69,37 @@ public static class TagEditor
     public static void Write(string path, IReadOnlyDictionary<string, string> changes, IReadOnlyList<TagPicture>? pictures = null,
         bool frontCoverOnly = false)
     {
+        // File read-only ditolak sebelum disalin: File.Replace juga tidak bisa menimpanya, dan salinannya ikut
+        // read-only sehingga tertinggal. Pesannya menyebut lagunya, bukan nama salinan sementara.
+        if (System.IO.File.GetAttributes(path).HasFlag(FileAttributes.ReadOnly))
+            throw new UnauthorizedAccessException($"\"{Path.GetFileName(path)}\" is read-only.");
+
+        // File MP4 berekstensi lain (misalnya M4A yang dinamai .mp3 atau .aac) dibaca editor dan library sesuai ekstensinya:
+        // tag MP4 yang ditulis ke sana tidak pernah terbaca, dan tag ID3 di depan box "ftyp" membuat file tidak bisa
+        // diputar. Jadi ditolak tanpa diubah, dengan pesan yang jelas.
+        string extension = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        bool mp4 = extension is "m4a" or "mp4" or "m4b";
+        if (!mp4 && StartsWithFtyp(path))
+            throw new InvalidDataException(
+                $"\"{Path.GetFileName(path)}\" is an M4A file with a .{extension} extension. Rename it to .m4a to edit its tags.");
+
         // Ditulis ke salinan di folder yang sama (supaya penggantian akhirnya atomik), bernama tersembunyi dan
-        // berakhiran .tmp, jadi tidak ikut terbaca scan library kalau sampai tertinggal
+        // berakhiran .tmp, jadi tidak ikut terbaca scan library kalau sampai tertinggal. Namanya pendek dan tidak memuat
+        // nama lagu: nama file di NTFS paling panjang 255 karakter, dan lagu yang namanya hampir sepanjang itu juga
+        // harus bisa disimpan.
         string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        string temporary = Path.Combine(folder, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        string temporary = Path.Combine(folder, $".{Guid.NewGuid():N}.tmp");
         System.IO.File.Copy(path, temporary);
+        bool complete = false;
         try
         {
             if (OperatingSystem.IsWindows())
                 System.IO.File.SetAttributes(temporary, System.IO.File.GetAttributes(temporary) | FileAttributes.Hidden);
 
-            // TagLib memilih pembaca dari ekstensi, jadi jenis file asli diberikan langsung. File MP4 dibuka lewat
-            // turunan kelasnya sendiri, supaya atom freeform bisa ditulis dengan struktur yang benar (lihat Mp4File).
-            string extension = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
-            using (var file = extension is "m4a" or "mp4" or "m4b" or "aac"
+            // TagLib memilih pembaca dari ekstensi, jadi jenis file asli diberikan langsung (.aac adalah AAC mentah/ADTS,
+            // yang dibaca TagLib seperti MP3). File MP4 dibuka lewat turunan kelasnya sendiri, supaya atom freeform bisa
+            // ditulis dengan struktur yang benar (lihat Mp4File).
+            using (var file = mp4
                        ? new Mp4File(temporary)
                        : TagLib.File.Create(temporary, "taglib/" + extension, ReadStyle.Average))
             {
@@ -89,11 +111,55 @@ public static class TagEditor
                 System.IO.File.SetAttributes(temporary, System.IO.File.GetAttributes(temporary) & ~FileAttributes.Hidden);
             System.IO.File.Replace(temporary, path, null);
         }
+        catch (IOException ex) when (ex.HResult is unchecked((int)0x80070498) or unchecked((int)0x80070499))
+        {
+            // Hanya ERROR_UNABLE_TO_MOVE_REPLACEMENT(_2) yang berarti File.Replace sendiri sudah menghapus file asli.
+            // Kalau file asli hilang karena aplikasi lain (dipindah atau dihapus), salinannya tidak boleh dikembalikan.
+            complete = true;
+            throw;
+        }
         finally
         {
-            if (System.IO.File.Exists(temporary))
-                System.IO.File.Delete(temporary);
+            CleanUpTemporary(temporary, path, complete);
         }
+    }
+
+    /// <summary>
+    /// Membereskan salinan sementara dari <see cref="Write"/> kalau masih ada: biasanya dihapus. Tapi File.Replace bisa
+    /// gagal setelah file asli terhapus (ERROR_UNABLE_TO_MOVE_REPLACEMENT, misalnya antivirus sedang membuka salinannya);
+    /// kalau file asli sudah tidak ada dan <paramref name="complete"/> (Replace gagal dengan error itu), salinan itu
+    /// satu-satunya isi lagu, jadi dikembalikan ke nama aslinya. Tidak pernah melempar exception, supaya error yang
+    /// sebenarnya tidak tertutup.
+    /// </summary>
+    public static void CleanUpTemporary(string temporary, string path, bool complete)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(temporary))
+                return;
+            if (complete && !System.IO.File.Exists(path))
+            {
+                System.IO.File.Move(temporary, path); // tanpa overwrite: file asli yang ternyata masih ada tidak ditimpa
+                return;
+            }
+
+            // Atribut dibuang dulu, karena file read-only tidak bisa dihapus
+            System.IO.File.SetAttributes(temporary, FileAttributes.Normal);
+            System.IO.File.Delete(temporary);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Salinan tertinggal; namanya berakhiran .tmp, jadi tidak ikut terbaca scan library
+        }
+    }
+
+    /// <summary>Isi file ini MP4: diawali box "ftyp" (4 byte ukuran, lalu jenis box).</summary>
+    private static bool StartsWithFtyp(string path)
+    {
+        Span<byte> header = stackalloc byte[8];
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        return stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) == header.Length
+            && header[4..].SequenceEqual("ftyp"u8);
     }
 
     public static TagFormat FormatOf(TagLib.File file) => file switch
@@ -113,13 +179,20 @@ public static class TagEditor
             TagLib.Id3v2.Tag.ForceDefaultVersion = true;
         }
 
+        // Tag lama yang hanya dibuat TagLib di memori tidak ikut disimpan: di MP3 itu ID3v1 berisi salinan nilai ID3v2
+        // sebelum diubah, yang muncul lagi di library begitu field-nya dikosongkan (di WAV: INFO, "MID ", dan DivX)
+        foreach (var type in LegacyTypes.Where(t => t != MainType(format) && !file.TagTypesOnDisk.HasFlag(t)))
+            file.RemoveTags(type);
+        var legacy = LegacyTags(file, format);
+        var main = file.GetTag(MainType(format), true);
+
         foreach (var (key, value) in changes)
         {
             var field = TagFields.Get(key);
             if (!field.IsSupported(format))
                 continue;
 
-            var values = TagFields.Split(value, field.MultiValue);
+            var values = TagFields.Split(value, field);
             switch (format)
             {
                 case TagFormat.Vorbis:
@@ -129,8 +202,15 @@ public static class TagEditor
                     WriteMp4((TagLib.Mpeg4.AppleTag)file.GetTag(TagTypes.Apple, true), (Mp4File)file, field, values);
                     break;
                 default:
-                    WriteId3((TagLib.Id3v2.Tag)file.GetTag(TagTypes.Id3v2, true), field, values);
+                    WriteId3((TagLib.Id3v2.Tag)file.GetTag(TagTypes.Id3v2, true), field, values, legacy);
                     break;
+            }
+
+            // Field yang sama di tag lama ikut diganti atau dihapus, supaya nilai lamanya tidak muncul lagi
+            if (LegacyFields.TryGetValue(key, out var common))
+            {
+                foreach (var tag in legacy)
+                    common.Copy(main, tag);
             }
         }
 
@@ -159,6 +239,69 @@ public static class TagEditor
         bool hasFront = types.Contains(PictureType.FrontCover);
         return types.Select(t => t == PictureType.FrontCover || (!hasFront && t == PictureType.Other)).ToArray();
     }
+
+    // ── Tag lama ────────────────────────────────────────────
+    // Selain tag utama yang disunting editor, file bisa membawa tag lain: ID3v1 dan APE di MP3/AAC, RIFF INFO di WAV,
+    // ID3 di FLAC. TagReader membaca tag gabungan TagLib (file.Tag), yang mengambil field kosong di tag utama dari tag
+    // lain itu. Tag lama tidak dihapus, karena ada pemutar dan aplikasi yang hanya membacanya (ID3v1 di pemutar lama,
+    // INFO di Windows Explorer), dan APE bisa berisi data aplikasi lain (ReplayGain dari mp3gain). Sebagai gantinya,
+    // field yang ditulis editor ikut ditulis ke tag lama, dan nilai yang hanya ada di tag lama ikut ditampilkan editor.
+    // Nilai yang tidak muat di tag lama (album artist dan lirik di ID3v1, judul lebih dari 30 karakter, huruf non-Latin)
+    // terpotong atau dilewati di sana saja; library tetap membaca tag utama lebih dulu.
+
+    // Urutannya sama dengan urutan baca TagLib, supaya nilai yang ditampilkan sama dengan yang dibaca library
+    private static readonly TagTypes[] LegacyTypes =
+        [TagTypes.Id3v2, TagTypes.Ape, TagTypes.Id3v1, TagTypes.RiffInfo, TagTypes.MovieId, TagTypes.DivX];
+
+    private static TagTypes MainType(TagFormat format) => format switch
+    {
+        TagFormat.Vorbis => TagTypes.Xiph,
+        TagFormat.Mp4 => TagTypes.Apple,
+        _ => TagTypes.Id3v2,
+    };
+
+    /// <summary>Tag lama yang memang ada di file, bukan yang hanya dibuat TagLib di memori.</summary>
+    private static List<TagLib.Tag> LegacyTags(TagLib.File file, TagFormat format) =>
+        LegacyTypes
+            .Where(type => type != MainType(format) && file.TagTypesOnDisk.HasFlag(type))
+            .Select(type => file.GetTag(type, false))
+            .OfType<TagLib.Tag>()
+            .ToList();
+
+    /// <summary>
+    /// Field editor yang juga bisa ada di tag lama, lewat properti umum TagLib: Read membacanya dari tag lama, Copy
+    /// menyalinnya dari tag utama ke tag lama. Isinya semua field yang dibaca TagReader, ditambah komentar dan komposer
+    /// yang juga disimpan ID3v1 atau INFO.
+    /// </summary>
+    private static readonly Dictionary<string, (Func<TagLib.Tag, string[]> Read, Action<TagLib.Tag, TagLib.Tag> Copy)> LegacyFields = new()
+    {
+        ["title"] = (t => [t.Title ?? ""], (from, to) => to.Title = from.Title),
+        ["artist"] = (t => t.Performers ?? [], (from, to) => to.Performers = from.Performers),
+        ["album"] = (t => [t.Album ?? ""], (from, to) => to.Album = from.Album),
+        ["albumartist"] = (t => t.AlbumArtists ?? [], (from, to) => to.AlbumArtists = from.AlbumArtists),
+        ["date"] = (t => Number(t.Year), (from, to) => to.Year = from.Year),
+        ["tracknumber"] = (t => Number(t.Track), (from, to) => to.Track = from.Track),
+        // Total disalin bersama nomornya: APE menulis "nomor/total" dengan nomornya sendiri, yang bisa masih kosong
+        ["totaltracks"] = (t => Number(t.TrackCount), (from, to) => (to.Track, to.TrackCount) = (from.Track, from.TrackCount)),
+        ["discnumber"] = (t => Number(t.Disc), (from, to) => to.Disc = from.Disc),
+        ["totaldiscs"] = (t => Number(t.DiscCount), (from, to) => (to.Disc, to.DiscCount) = (from.Disc, from.DiscCount)),
+        ["genre"] = (t => t.Genres ?? [], (from, to) => to.Genres = from.Genres),
+        ["comment"] = (t => [t.Comment ?? ""], (from, to) => to.Comment = from.Comment),
+        ["composer"] = (t => t.Composers ?? [], (from, to) => to.Composers = from.Composers),
+        ["copyright"] = (t => [t.Copyright ?? ""], (from, to) => to.Copyright = from.Copyright),
+        ["lyrics"] = (t => [t.Lyrics ?? ""], (from, to) => to.Lyrics = from.Lyrics),
+        ["releasetype"] = (t => [t.MusicBrainzReleaseType ?? ""], (from, to) => to.MusicBrainzReleaseType = ReleaseTypeOf(from)),
+    };
+
+    /// <summary>
+    /// Jenis rilis di tag utama. TagLib membaca jenis rilis Vorbis dari MUSICBRAINZ_ALBUMTYPE, sedangkan editor (seperti
+    /// Picard) menulis RELEASETYPE; nilai yang baru ditulis itu yang disalin ke tag lama. Beberapa nilai digabung dengan
+    /// ";", yang dipisah lagi oleh TagLib di ID3v2 dan APE.
+    /// </summary>
+    private static string? ReleaseTypeOf(TagLib.Tag tag) =>
+        tag is TagLib.Ogg.XiphComment xiph
+            ? (xiph.GetField("RELEASETYPE") is { Length: > 0 } types ? string.Join(";", types) : null)
+            : tag.MusicBrainzReleaseType;
 
     // ── Vorbis (FLAC, Ogg) ──────────────────────────────────
 
@@ -198,6 +341,10 @@ public static class TagEditor
 
     // ── ID3v2 (MP3, WAV, AIFF) ──────────────────────────────
 
+    // Nama TXXX berisi lirik yang juga dibaca TagReader.ReadLyrics kalau tidak ada USLT (foobar2000 dan plugin liriknya
+    // menulis TXXX:LYRICS)
+    private static readonly string[] Id3LyricsNames = ["LYRICS", "UNSYNCEDLYRICS", "UNSYNCED LYRICS"];
+
     private static string[] ReadId3(TagLib.Id3v2.Tag tag, TagField field)
     {
         string id = field.Id3;
@@ -207,8 +354,17 @@ public static class TagEditor
             case "totaltracks": return Number(tag.TrackCount);
             case "discnumber": return Number(tag.Disc);
             case "totaldiscs": return Number(tag.DiscCount);
+            // Nomor genre ("17", "(17)" dari ID3v1 atau tagger lama) dibaca sebagai namanya, seperti oleh library
+            case "genre": return tag.Genres ?? [];
             case "comment": return [tag.Comment ?? ""];
-            case "lyrics": return [tag.Lyrics ?? ""];
+            case "lyrics":
+                if (!string.IsNullOrWhiteSpace(tag.Lyrics))
+                    return [tag.Lyrics];
+                return Id3LyricsNames
+                    .Select(name => string.Join("\n", UserTextInformationFrame.Get(tag, name, StringType.UTF8, false, false)?.Text ?? []))
+                    .Where(text => !string.IsNullOrWhiteSpace(text))
+                    .Take(1)
+                    .ToArray();
             case "compilation": return tag.IsCompilation ? ["1"] : [];
         }
 
@@ -224,18 +380,19 @@ public static class TagEditor
         return TextInformationFrame.Get(tag, id, false)?.Text ?? [];
     }
 
-    private static void WriteId3(TagLib.Id3v2.Tag tag, TagField field, IReadOnlyList<string> values)
+    /// <param name="legacy">Tag lama di file (lihat LegacyTags), asal nomor track/disc yang ditampilkan editor.</param>
+    private static void WriteId3(TagLib.Id3v2.Tag tag, TagField field, IReadOnlyList<string> values, List<TagLib.Tag> legacy)
     {
         string id = field.Id3;
         string? single = values.Count > 0 ? values[0] : null;
         switch (field.Key)
         {
             case "tracknumber": SetNumberPair(tag, "TRCK", ParseNumber(single), null); return;
-            case "totaltracks": SetNumberPair(tag, "TRCK", null, ParseNumber(single)); return;
+            case "totaltracks": SetNumberPair(tag, "TRCK", null, ParseNumber(single), new CombinedTag(legacy.ToArray()).Track); return;
             case "discnumber": SetNumberPair(tag, "TPOS", ParseNumber(single), null); return;
-            case "totaldiscs": SetNumberPair(tag, "TPOS", null, ParseNumber(single)); return;
-            case "comment": tag.Comment = single; return;
-            case "lyrics": tag.Lyrics = single; return;
+            case "totaldiscs": SetNumberPair(tag, "TPOS", null, ParseNumber(single), new CombinedTag(legacy.ToArray()).Disc); return;
+            case "comment": SetComment(tag, single); return;
+            case "lyrics": SetLyrics(tag, single); return;
             case "compilation": tag.IsCompilation = IsTrue(single); return;
         }
 
@@ -281,13 +438,56 @@ public static class TagEditor
     }
 
     /// <summary>
+    /// Lirik ditulis sebagai satu-satunya USLT, dengan bahasa lirik yang diganti. Properti Lyrics milik TagLib hanya
+    /// mengganti frame berbahasa sistem ("eng"), jadi lirik berbahasa lain ("jpn", "XXX") tertinggal sebagai frame
+    /// pertama, yang dibaca pemutar lain. Lirik di TXXX dari aplikasi lain juga dihapus, karena library membacanya
+    /// kalau USLT kosong.
+    /// </summary>
+    private static void SetLyrics(TagLib.Id3v2.Tag tag, string? lyrics)
+    {
+        string language = UnsynchronisedLyricsFrame.GetPreferred(tag, "", TagLib.Id3v2.Tag.Language)?.Language is { Length: 3 } shown
+            ? shown
+            : TagLib.Id3v2.Tag.Language;
+        tag.RemoveFrames("USLT");
+        foreach (string name in Id3LyricsNames)
+        {
+            while (UserTextInformationFrame.Get(tag, name, StringType.UTF8, false, false) is { } frame)
+                tag.RemoveFrame(frame);
+        }
+
+        if (lyrics is not null)
+            UnsynchronisedLyricsFrame.Get(tag, "", language, true).Text = lyrics;
+    }
+
+    /// <summary>
+    /// Komentar menggantikan frame COMM yang tampil di editor dan semua COMM tanpa deskripsi (bahasa apa pun), dengan
+    /// alasan yang sama seperti lirik. COMM berdeskripsi milik aplikasi lain (iTunNORM dari iTunes, ...) tetap ada.
+    /// </summary>
+    private static void SetComment(TagLib.Id3v2.Tag tag, string? comment)
+    {
+        if (comment is not null)
+        {
+            var shown = CommentsFrame.GetPreferred(tag, "", TagLib.Id3v2.Tag.Language);
+            foreach (var frame in tag.GetFrames<CommentsFrame>().Where(f => f == shown || string.IsNullOrEmpty(f.Description)).ToList())
+                tag.RemoveFrame(frame);
+        }
+
+        // Nilai kosong: TagLib menghapus semua COMM yang bisa tampil sebagai komentar
+        tag.Comment = comment;
+    }
+
+    /// <summary>
     /// TRCK dan TPOS ditulis langsung sebagai "3/12" seperti Picard; properti Track milik TagLib menulis "03/12".
     /// Hanya bagian yang diberikan yang diganti (nomor atau totalnya), bagian lainnya diambil dari frame yang ada.
     /// </summary>
-    private static void SetNumberPair(TagLib.Id3v2.Tag tag, string frameId, uint? number, uint? total)
+    /// <param name="legacyNumber">
+    /// Nomor dari tag lama, dipakai kalau frame ini belum punya nomor: editor menampilkan nomor itu, jadi total yang diisi
+    /// pengguna tetap tersimpan (total tanpa nomor tidak bisa disimpan di frame ini).
+    /// </param>
+    private static void SetNumberPair(TagLib.Id3v2.Tag tag, string frameId, uint? number, uint? total, uint legacyNumber = 0)
     {
         string[] current = (TextInformationFrame.Get(tag, frameId, false)?.Text.FirstOrDefault() ?? "").Split('/');
-        uint n = number ?? ParseNumber(current[0]);
+        uint n = number ?? (ParseNumber(current[0]) is > 0 and var existing ? existing : legacyNumber);
         uint t = total ?? (current.Length > 1 ? ParseNumber(current[1]) : 0);
 
         tag.RemoveFrames(frameId);

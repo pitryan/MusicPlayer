@@ -30,9 +30,15 @@ public enum TagFormat
 /// <param name="Mp4">Atom MP4: "aART", "----:nama" (freeform com.apple.iTunes), atau "trkn"/"disk"/"cpil"/"tmpo";
 /// null kalau Picard tidak menyimpan field ini di M4A.</param>
 /// <param name="MultiValue">Bisa berisi beberapa nilai; di editor dipisahkan dengan "; ".</param>
-public sealed record TagField(string Key, string Label, TagGroup Group, string Vorbis, string Id3, string? Mp4, bool MultiValue = false)
+/// <param name="KeepLeadingLines">Satu baris per baris lirik (cara baca, terjemahan): baris kosong di awal nilai ikut
+/// ditulis dan dibaca, karena barisnya dicocokkan dengan lirik menurut urutan.</param>
+public sealed record TagField(string Key, string Label, TagGroup Group, string Vorbis, string Id3, string? Mp4, bool MultiValue = false,
+    bool KeepLeadingLines = false)
 {
     public bool IsSupported(TagFormat format) => format != TagFormat.Mp4 || Mp4 is not null;
+
+    /// <summary>Satu nilai tanpa spasi di awal dan akhir, kecuali baris kosong di awal untuk <see cref="KeepLeadingLines"/>.</summary>
+    public string Trim(string value) => KeepLeadingLines ? value.TrimEnd() : value.Trim();
 }
 
 public static class TagFields
@@ -111,8 +117,8 @@ public static class TagFields
         new("lyrics", "Lyrics", TagGroup.Lyrics, "LYRICS", "USLT", "\u00A9lyr"),
         // Cara baca dan terjemahan lirik, ditulis manual di editor lirik: satu baris per baris lirik di LYRICS (urutan
         // baris setelah dibaca LrcParser). Nama yang sama di semua format, seperti tag kustom Picard.
-        new("lyrics_reading", "Lyrics Reading", TagGroup.Lyrics, "LYRICS_READING", "TXXX:LYRICS_READING", "----:LYRICS_READING"),
-        new("lyrics_translation", "Lyrics Translation", TagGroup.Lyrics, "LYRICS_TRANSLATION", "TXXX:LYRICS_TRANSLATION", "----:LYRICS_TRANSLATION"),
+        new("lyrics_reading", "Lyrics Reading", TagGroup.Lyrics, "LYRICS_READING", "TXXX:LYRICS_READING", "----:LYRICS_READING", KeepLeadingLines: true),
+        new("lyrics_translation", "Lyrics Translation", TagGroup.Lyrics, "LYRICS_TRANSLATION", "TXXX:LYRICS_TRANSLATION", "----:LYRICS_TRANSLATION", KeepLeadingLines: true),
     ];
 
     private static readonly Dictionary<string, TagField> ByKey = All.ToDictionary(f => f.Key);
@@ -123,4 +129,10 @@ public static class TagFields
         multiValue
             ? value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             : value.Trim().Length > 0 ? [value.Trim()] : [];
+
+    /// <summary>Nilai dari editor untuk ditulis ke <paramref name="field"/>; kosong atau hanya spasi berarti field dihapus.</summary>
+    public static IReadOnlyList<string> Split(string value, TagField field) =>
+        field.MultiValue
+            ? Split(value, multiValue: true)
+            : string.IsNullOrWhiteSpace(value) ? [] : [field.Trim(value)];
 }

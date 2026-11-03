@@ -125,8 +125,18 @@ public partial class App : Application
     /// </summary>
     private static void RestorePlaybackSettings()
     {
-        Playback.Volume = AppSettings.Get("Volume", 100.0);
-        Playback.IsMuted = AppSettings.Get("Muted", false);
+        // Belum ada lagu, jadi slider mengatur volume aplikasi: nilai ini menjadi AppVolume. Versi lama menyimpan nilai slider
+        // di "Volume"/"Muted". Dalam exclusive mode nilai itu bisa volume DAC (lagu shared mode lalu lebih pelan sampai slider
+        // digeser) atau volume digital perangkat tanpa volume hardware (tanpa nilai itu, lagu pertama langsung keras). Lebih
+        // aman terlalu pelan, jadi nilai lama dipakai sampai volume aplikasi disimpan dengan kunci barunya.
+        Playback.Volume = AppSettings.Get("AppVolume", AppSettings.Get("Volume", 100.0));
+        Playback.IsMuted = AppSettings.Get("AppMuted", AppSettings.Get("Muted", false));
+
+        // Batas awal volume dari sesi sebelumnya (volume DAC yang terakhir terdengar), -1 kalau tidak ada
+        double startLimit = AppSettings.Get("StartVolumeLimit", -1.0);
+        string mutedDevice = AppSettings.Get("StartMutedDeviceId", "");
+        Playback.RestoreStartLimit(startLimit >= 0 ? startLimit : null, AppSettings.Get("StartMuted", false),
+            mutedDevice.Length > 0 ? mutedDevice : null);
         Playback.IsShuffle = AppSettings.Get("Shuffle", false);
         Playback.RepeatMode = (RepeatMode)AppSettings.Get("Repeat", (int)RepeatMode.Off);
 
@@ -148,8 +158,15 @@ public partial class App : Application
         {
             switch (e.PropertyName)
             {
-                case nameof(PlaybackService.Volume): AppSettings.Set("Volume", Playback.Volume); break;
-                case nameof(PlaybackService.IsMuted): AppSettings.Set("Muted", Playback.IsMuted); break;
+                // Volume aplikasi, bukan nilai slider: dalam exclusive mode slider menampilkan volume DAC, dan nilai itu
+                // tidak boleh dipakai lagi sebagai volume aplikasi
+                case nameof(PlaybackService.AppVolume): AppSettings.Set("AppVolume", Playback.AppVolume); break;
+                case nameof(PlaybackService.IsAppMuted): AppSettings.Set("AppMuted", Playback.IsAppMuted); break;
+                case nameof(PlaybackService.StartVolumeLimit):
+                    AppSettings.Set("StartVolumeLimit", Playback.StartVolumeLimit ?? -1.0);
+                    AppSettings.Set("StartMuted", Playback.StartMutedLimit);
+                    AppSettings.Set("StartMutedDeviceId", Playback.StartMutedDeviceId ?? "");
+                    break;
                 case nameof(PlaybackService.IsShuffle): AppSettings.Set("Shuffle", Playback.IsShuffle); break;
                 case nameof(PlaybackService.RepeatMode): AppSettings.Set("Repeat", (int)Playback.RepeatMode); break;
                 case nameof(PlaybackService.AutoplayEnabled): AppSettings.Set("Autoplay", Playback.AutoplayEnabled); break;

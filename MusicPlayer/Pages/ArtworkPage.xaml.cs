@@ -54,6 +54,8 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
     /// <summary>Cover baru sudah dipilih (dari file atau MusicBrainz) tapi belum disimpan.</summary>
     public bool HasUnsavedChanges => !_saving && _newCover is not null && !ReferenceEquals(_newCover, _savedCover);
 
+    public bool IsSaving => _saving;
+
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);

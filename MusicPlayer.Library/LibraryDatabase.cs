@@ -94,17 +94,63 @@ public sealed class LibraryDatabase
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
         Execute(connection, "DELETE FROM library_folders WHERE path = $path", ("$path", folder));
-
-        // Hapus semua lagu yang tidak lagi berada di bawah folder library mana pun
-        int removed = Execute(connection, """
-            DELETE FROM tracks
-            WHERE NOT EXISTS (
-                SELECT 1 FROM library_folders f
-                WHERE substr(tracks.path, 1, length(f.path)) = f.path COLLATE NOCASE)
-            """);
-
+        int removed = DeleteOrphanTracks(connection);
         transaction.Commit();
         return removed;
+    }
+
+    /// <summary>
+    /// Menghapus lagu yang tidak berada di bawah folder library mana pun, misalnya sisa folder yang dihapus saat scan
+    /// masih berjalan di versi lama. Mengembalikan jumlah lagu yang dihapus.
+    /// </summary>
+    public int RemoveOrphanTracks()
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        int removed = DeleteOrphanTracks(connection);
+        transaction.Commit();
+        return removed;
+    }
+
+    /// <summary>
+    /// Folder yang sedang tidak tersedia tetap ada di library_folders, jadi lagunya tidak ikut terhapus. Diputuskan di C#
+    /// dengan <see cref="LibraryPaths.IsUnder"/>, sama seperti AddFolder dan scanner: NOCASE di SQLite hanya melipat huruf
+    /// ASCII, jadi lagu di "élan\" akan dianggap di luar folder "Élan\" (misalnya setelah folder diganti namanya) dan
+    /// terhapus beserta riwayat, favorit, dan isi playlist-nya. Dipanggil di dalam transaksi pemanggilnya.
+    /// </summary>
+    private static int DeleteOrphanTracks(SqliteConnection connection)
+    {
+        var folders = new List<string>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT path FROM library_folders";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                folders.Add(reader.GetString(0));
+        }
+
+        var orphans = new List<long>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT id, path FROM tracks";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                string path = reader.GetString(1);
+                if (!folders.Exists(folder => LibraryPaths.IsUnder(path, folder)))
+                    orphans.Add(reader.GetInt64(0));
+            }
+        }
+
+        using var delete = connection.CreateCommand();
+        delete.CommandText = "DELETE FROM tracks WHERE id = $id";
+        var parameter = delete.Parameters.Add("$id", SqliteType.Integer);
+        foreach (long id in orphans)
+        {
+            parameter.Value = id;
+            delete.ExecuteNonQuery();
+        }
+        return orphans.Count;
     }
 
     // ── Dipakai oleh LibraryScanner ──────────────────────────
@@ -116,19 +162,70 @@ public sealed class LibraryDatabase
         command.CommandText = "SELECT path, file_size, modified_utc FROM tracks";
         using var reader = command.ExecuteReader();
 
+        // TryAdd: database versi lama bisa berisi dua baris untuk satu file ("élan\…" dan "Élan\…"; NOCASE di SQLite hanya
+        // melipat huruf ASCII). Path dan stempelnya harus dari baris yang sama, karena UpsertScannedTracks hanya menulis
+        // kalau stempel baris di path itu masih sama dengan yang dilihat scan.
         var stamps = new Dictionary<string, FileStamp>(StringComparer.OrdinalIgnoreCase);
         while (reader.Read())
-            stamps[reader.GetString(0)] = new FileStamp(reader.GetInt64(1), reader.GetInt64(2));
+            stamps.TryAdd(reader.GetString(0), new FileStamp(reader.GetInt64(1), reader.GetInt64(2)));
         return stamps;
     }
 
-    /// <summary>Menambah lagu baru atau memperbarui lagu yang sudah ada (berdasarkan path).</summary>
+    /// <summary>
+    /// Menambah lagu baru atau memperbarui lagu yang sudah ada (berdasarkan path). Lagu yang tidak berada di bawah folder
+    /// library mana pun tidak disimpan.
+    /// </summary>
     public void UpsertTracks(IEnumerable<Track> tracks)
     {
         using var connection = Open();
         using var transaction = connection.BeginTransaction();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
+        using var command = CreateUpsertCommand(connection, UpsertSql);
+        foreach (var t in tracks)
+        {
+            SetTrack(command, t);
+            command.ExecuteNonQuery();
+        }
+
+        // Scan membaca daftar folder di awal, jadi folder yang dihapus selama scan berjalan bisa saja ikut tersimpan
+        // di atas. Dibuang lagi di transaksi yang sama: scan ulang tidak akan menghapusnya karena di luar semua folder.
+        DeleteOrphanTracks(connection);
+        transaction.Commit();
+    }
+
+    /// <summary>
+    /// Seperti <see cref="UpsertTracks"/>, untuk hasil scan: lagu hanya ditulis kalau barisnya masih seperti yang dilihat
+    /// scan di awal, yaitu stempelnya masih <c>Seen</c> (dari <see cref="GetFileStamps"/>), atau barisnya tidak ada.
+    /// <c>Seen</c> null berarti lagu baru, jadi baris yang sudah ada tidak ditimpa. Tag yang disimpan editor selama scan
+    /// berjalan lebih baru dari yang dibaca scan, jadi tidak tertimpa tag lama. Mengembalikan lagu yang benar-benar ditulis.
+    /// </summary>
+    public IReadOnlyList<(Track Track, FileStamp? Seen)> UpsertScannedTracks(IEnumerable<(Track Track, FileStamp? Seen)> tracks)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        // "= NULL" tidak pernah benar, jadi lagu baru tidak memperbarui baris yang sudah ada
+        using var command = CreateUpsertCommand(connection,
+            UpsertSql + " WHERE tracks.file_size = $seen_size AND tracks.modified_utc = $seen_modified");
+        command.Parameters.AddWithValue("$seen_size", DBNull.Value);
+        command.Parameters.AddWithValue("$seen_modified", DBNull.Value);
+
+        var written = new List<(Track Track, FileStamp? Seen)>();
+        foreach (var item in tracks)
+        {
+            SetTrack(command, item.Track);
+            Set(command, "$seen_size", item.Seen?.Size);
+            Set(command, "$seen_modified", item.Seen?.ModifiedUtcTicks);
+            // 0 kalau barisnya sudah diubah di tempat lain dan dilewati
+            if (command.ExecuteNonQuery() > 0)
+                written.Add(item);
+        }
+
+        // Lihat UpsertTracks
+        DeleteOrphanTracks(connection);
+        transaction.Commit();
+        return written;
+    }
+
+    private const string UpsertSql = """
             INSERT INTO tracks (
                 path, folder, file_size, modified_utc, title, artist, album, album_artist, genre, year,
                 track_number, track_count, disc_number, disc_count, duration_ms, codec, sample_rate,
@@ -150,6 +247,11 @@ public sealed class LibraryDatabase
                 release_type = excluded.release_type
             """;
 
+    private static SqliteCommand CreateUpsertCommand(SqliteConnection connection, string sql)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+
         // Parameter dibuat sekali lalu diisi ulang untuk tiap lagu: jauh lebih cepat untuk ribuan baris
         string[] names =
         [
@@ -160,41 +262,39 @@ public sealed class LibraryDatabase
         ];
         foreach (string name in names)
             command.Parameters.AddWithValue(name, DBNull.Value);
+        return command;
+    }
 
-        foreach (var t in tracks)
-        {
-            Set(command, "$path", t.FilePath);
-            Set(command, "$folder", t.FolderPath);
-            Set(command, "$file_size", t.FileSize);
-            Set(command, "$modified_utc", t.ModifiedUtcTicks);
-            Set(command, "$title", t.Title);
-            Set(command, "$artist", t.Artist);
-            Set(command, "$album", t.Album);
-            Set(command, "$album_artist", t.AlbumArtist);
-            Set(command, "$genre", t.Genre);
-            Set(command, "$year", t.Year);
-            Set(command, "$track_number", t.TrackNumber);
-            Set(command, "$track_count", t.TrackCount);
-            Set(command, "$disc_number", t.DiscNumber);
-            Set(command, "$disc_count", t.DiscCount);
-            Set(command, "$release_date", t.ReleaseDate);
-            Set(command, "$copyright", t.Copyright);
-            Set(command, "$release_type", t.ReleaseType);
-            Set(command, "$duration_ms", (long)t.Duration.TotalMilliseconds);
-            Set(command, "$codec", t.Codec);
-            Set(command, "$sample_rate", t.SampleRate);
-            Set(command, "$bits_per_sample", t.BitsPerSample);
-            Set(command, "$channels", t.Channels);
-            Set(command, "$bitrate_kbps", t.BitrateKbps);
-            Set(command, "$has_cover", t.HasCover);
-            Set(command, "$has_lyrics", t.HasLyrics);
-            // "Tanggal ditambahkan" = waktu ubah file saat pertama kali masuk library. Kolom ini tidak
-            // ikut diperbarui saat scan ulang, jadi mengedit tag nanti tidak membuat lagu terlihat "baru".
-            Set(command, "$added_utc", t.ModifiedUtcTicks);
-            command.ExecuteNonQuery();
-        }
-
-        transaction.Commit();
+    private static void SetTrack(SqliteCommand command, Track t)
+    {
+        Set(command, "$path", t.FilePath);
+        Set(command, "$folder", t.FolderPath);
+        Set(command, "$file_size", t.FileSize);
+        Set(command, "$modified_utc", t.ModifiedUtcTicks);
+        Set(command, "$title", t.Title);
+        Set(command, "$artist", t.Artist);
+        Set(command, "$album", t.Album);
+        Set(command, "$album_artist", t.AlbumArtist);
+        Set(command, "$genre", t.Genre);
+        Set(command, "$year", t.Year);
+        Set(command, "$track_number", t.TrackNumber);
+        Set(command, "$track_count", t.TrackCount);
+        Set(command, "$disc_number", t.DiscNumber);
+        Set(command, "$disc_count", t.DiscCount);
+        Set(command, "$release_date", t.ReleaseDate);
+        Set(command, "$copyright", t.Copyright);
+        Set(command, "$release_type", t.ReleaseType);
+        Set(command, "$duration_ms", (long)t.Duration.TotalMilliseconds);
+        Set(command, "$codec", t.Codec);
+        Set(command, "$sample_rate", t.SampleRate);
+        Set(command, "$bits_per_sample", t.BitsPerSample);
+        Set(command, "$channels", t.Channels);
+        Set(command, "$bitrate_kbps", t.BitrateKbps);
+        Set(command, "$has_cover", t.HasCover);
+        Set(command, "$has_lyrics", t.HasLyrics);
+        // "Tanggal ditambahkan" = waktu ubah file saat pertama kali masuk library. Kolom ini tidak
+        // ikut diperbarui saat scan ulang, jadi mengedit tag nanti tidak membuat lagu terlihat "baru".
+        Set(command, "$added_utc", t.AddedUtcTicks);
     }
 
     public void DeleteTracks(IEnumerable<string> paths)

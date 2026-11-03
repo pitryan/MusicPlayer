@@ -17,7 +17,10 @@ using WinRT.Interop;
 namespace MusicPlayer.Pages;
 
 /// <summary>Lagu yang diedit, judul halaman ("Song Info" / "Album Info"), dan apakah dibuka dari halaman album.</summary>
-public sealed record TagEditorRequest(IReadOnlyList<string> Paths, string Title, bool FromAlbum = false);
+/// <param name="Artist">Nama kunci artis kalau dibuka dari menu artis ("Artist Info"; "" untuk Unknown Artist). Lagunya
+/// tersebar di banyak album, jadi tab Artwork dan MusicBrainz disembunyikan; setelah disimpan, halaman artis dibuka lagi
+/// dengan nama barunya kalau namanya diubah.</param>
+public sealed record TagEditorRequest(IReadOnlyList<string> Paths, string Title, bool FromAlbum = false, string? Artist = null);
 
 /// <summary>Editor tag untuk satu atau banyak lagu. Hanya field yang diubah yang ditulis ke file.</summary>
 public sealed partial class TagEditorPage : Page, IUnsavedChanges
@@ -45,6 +48,8 @@ public sealed partial class TagEditorPage : Page, IUnsavedChanges
     public bool HasUnsavedChanges => !_saving && !_saved
         && (_rows.Any(r => r.IsChanged) || _artworkChange is { Count: > 0 } || (_artworkChange is not null && _hadArtwork));
 
+    public bool IsSaving => _saving;
+
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
@@ -54,6 +59,10 @@ public sealed partial class TagEditorPage : Page, IUnsavedChanges
         _request = request;
         TitleText.Text = request.Title;
         SubtitleText.Text = "Loading…";
+        // Artist Info: satu cover atau satu rilis MusicBrainz tidak boleh dipakai untuk lagu dari banyak album
+        var albumActions = request.Artist is null ? Visibility.Visible : Visibility.Collapsed;
+        ArtworkTab.Visibility = albumActions;
+        MusicBrainzButton.Visibility = albumActions;
 
         // Tag dibaca di luar UI thread; file yang tidak bisa dibaca dilewati dan disebutkan
         var reads = await Task.Run(() => request.Paths.Select(path =>
@@ -277,19 +286,37 @@ public sealed partial class TagEditorPage : Page, IUnsavedChanges
 
     /// <summary>
     /// Dibuka dari halaman album: kembali ke album itu dengan data baru (nama album bisa saja berubah), dan halaman
-    /// album lama serta editor ini dikeluarkan dari riwayat Back. Dari tempat lain: kembali seperti biasa.
+    /// album lama serta editor ini dikeluarkan dari riwayat Back. Dari menu artis dengan nama artis yang diubah: sama,
+    /// ke halaman artis (atau Artists) dengan nama barunya. Dari tempat lain: kembali seperti biasa.
     /// </summary>
     private void LeaveAfterSave(IReadOnlyList<Track> saved)
     {
+        var history = Frame.BackStack;
         if (_request.FromAlbum && saved.Count > 0 && App.Database.FindAlbum(saved[0]) is { } album)
         {
             Frame.Navigate(typeof(AlbumDetailPage), album, Animations.DrillIn);
-            var history = Frame.BackStack;
             if (history.Count > 0 && history[^1].SourcePageType == typeof(TagEditorPage))
                 history.RemoveAt(history.Count - 1);
             if (history.Count > 0 && history[^1].SourcePageType == typeof(AlbumDetailPage))
                 history.RemoveAt(history.Count - 1);
             return;
+        }
+
+        // Halaman artis dengan nama lama sudah kosong, dan Artists akan memilih artis lain, jadi halaman yang sama
+        // dibuka lagi dengan nama kunci yang baru (aturan yang sama dengan halaman Artists)
+        if (_request.Artist is { } oldArtist && saved.Count > 0 && history.Count > 0
+            && history[^1].SourcePageType is var artistPage && (artistPage == typeof(ArtistPage) || artistPage == typeof(ArtistsPage)))
+        {
+            string artist = ArtistNames.Primary(saved[0].AlbumArtist ?? saved[0].Artist);
+            if (!string.Equals(artist, oldArtist, StringComparison.OrdinalIgnoreCase))
+            {
+                Frame.Navigate(artistPage, artist, Animations.DrillIn);
+                if (history.Count > 0 && history[^1].SourcePageType == typeof(TagEditorPage))
+                    history.RemoveAt(history.Count - 1);
+                if (history.Count > 0 && history[^1].SourcePageType == artistPage)
+                    history.RemoveAt(history.Count - 1);
+                return;
+            }
         }
 
         Leave();

@@ -57,7 +57,8 @@ public sealed class TagFieldRow : ObservableObject
     /// <summary>Compilation ditampilkan sebagai kotak centang (di file disimpan sebagai "1").</summary>
     public bool IsCheckBox => Field.Key == "compilation";
 
-    public bool IsLongText => Field.Key is "lyrics" or "comment";
+    // Cara baca dan terjemahan berisi satu baris per baris lirik, jadi butuh kotak yang menerima baris baru
+    public bool IsLongText => Field.Key is "lyrics" or "comment" || Field.KeepLeadingLines;
 
     public double TextMinHeight => Field.Key == "lyrics" ? 420 : IsLongText ? 72 : 0;
 
@@ -67,8 +68,16 @@ public sealed class TagFieldRow : ObservableObject
 
     public bool IsChanged => IsCheckBox
         ? IsChecked != OriginalChecked && IsChecked is not null
-        : IsMixed ? Text.Trim().Length > 0 : Text.Trim() != OriginalText.Trim();
+        : IsMixed ? Text.Trim().Length > 0 : Normalize(Text) != Normalize(OriginalText);
 
     /// <summary>Nilai yang ditulis ke file; kosong berarti field-nya dihapus.</summary>
-    public string NewValue => IsCheckBox ? (IsChecked == true ? "1" : "") : Text;
+    public string NewValue => IsCheckBox ? (IsChecked == true ? "1" : "")
+        : Field.KeepLeadingLines ? UnixLines(Text) // baris baru "\n", sama seperti yang ditulis editor lirik
+        : Text;
+
+    // Dibandingkan dengan aturan trim field-nya sendiri (baris kosong di awal cara baca/terjemahan ikut dihitung), dan
+    // dengan baris baru yang disamakan, karena TextBox mengubah "\n" menjadi "\r"
+    private string Normalize(string text) => Field.Trim(UnixLines(text));
+
+    private static string UnixLines(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n');
 }

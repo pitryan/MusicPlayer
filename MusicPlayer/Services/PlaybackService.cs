@@ -37,7 +37,26 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private bool _isMuted;
     private string _volumeDescription = "";
     private AudioEndpointVolume? _deviceVolume;
-    private bool _syncingFromDevice;
+
+    // True selama slider diisi PlaybackService sendiri (lihat ShowVolume), bukan digeser pengguna
+    private bool _showingVolume;
+
+    // Volume aplikasi (session volume atau volume digital) pilihan pengguna, yang juga disimpan di pengaturan. Terpisah dari
+    // slider: selama slider mengikuti volume perangkat (_volumeFollowsDevice), slider menampilkan volume DAC, dan nilai itu
+    // tidak boleh terpakai lagi sebagai volume aplikasi untuk lagu shared mode berikutnya.
+    private double _appVolume = 100;
+    private bool _appMuted;
+    private bool _volumeFollowsDevice;
+
+    // Volume dan mute perangkat yang terakhir tampil di slider sebelum slider berhenti mengikutinya, misalnya DAC yang dicabut
+    // di tengah lagu. Lagu berikutnya tidak mulai lebih keras dari itu di perangkat tanpa volume hardware, dan tidak mulai
+    // berbunyi kalau DAC tadi di-mute (lihat LimitStartVolume). Tidak disimpan sebagai volume aplikasi: lagu shared mode
+    // memakai volume aplikasi DI ATAS volume Windows perangkatnya, jadi volume DAC di situ membuatnya terlalu pelan.
+    private double? _lastDeviceLevel;
+    private bool _lastDeviceMuted;
+
+    // Perangkat yang terakhir diikuti slider, asal _lastDeviceMuted (lihat UnmuteFollowedDevice)
+    private string? _followedDeviceId;
 
     // Penanda untuk perubahan volume perangkat yang kita lakukan sendiri. Windows mengirim notifikasi
     // untuk SETIAP perubahan; yang membawa penanda ini diabaikan, supaya slider tidak "melompat balik"
@@ -55,6 +74,15 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     // HRESULT dari Windows kalau tidak ada perangkat output sama sekali (ERROR_NOT_FOUND)
     private const int NoDeviceFound = unchecked((int)0x80070490);
 
+    // HRESULT untuk file lagu yang tidak bisa dibuka. Media Foundation melaporkannya dengan pesan "Media Foundation
+    // error 0x...", jadi diganti dengan penjelasan yang bisa dibaca (lihat DescribeFileError).
+    private const int FileNotFound = unchecked((int)0x80070002);
+    private const int PathNotFound = unchecked((int)0x80070003);
+    private const int AccessDenied = unchecked((int)0x80070005);
+    private const int DriveNotReady = unchecked((int)0x80070015);
+    private const int SharingViolation = unchecked((int)0x80070020);
+    private const int NetworkPathNotFound = unchecked((int)0x80070035);
+
     // Output pilihan pengguna, diatur dari popup kualitas. _outputDeviceId null = ikut perangkat default Windows.
     private string? _outputDeviceId;
     private string _outputDeviceName = "";
@@ -66,6 +94,27 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     // Lagu berhenti karena perangkat (dicabut, atau perangkat pilihan tidak tersambung), bukan karena pause.
     // Kalau pengguna lalu memilih output lain, lagu langsung dilanjutkan di sana.
     private bool _interruptedByDevice;
+
+    // Lagu sekarang, kalau file-nya sedang dilepas untuk ditulis tag-nya (lihat WithFilesReleasedAsync). Null kalau tidak ada,
+    // dan dikosongkan begitu pengguna pindah ke lagu lain selama penyimpanan: lagu yang dilepas lalu tidak dimuat lagi.
+    private EditRelease? _editRelease;
+
+    // Semua file yang sedang dilepas, termasuk yang sudah ditinggal pengguna, sampai penyimpanan terakhirnya selesai. Selama
+    // itu file-nya tidak dibuka, juga kalau pengguna kembali ke lagu itu (lihat Play).
+    private readonly List<EditRelease> _releases = [];
+
+    // File lagu yang gagal dibuka (hilang, rusak). Tidak dipilih Autoplay, supaya antrean tidak terus melewatinya.
+    // Dikeluarkan lagi begitu file itu berhasil dibuka.
+    private readonly HashSet<string> _unplayable = new(StringComparer.OrdinalIgnoreCase);
+
+    // Lagu yang berhenti karena error di tengah file (rusak), berturut-turut tanpa satu pun lagu yang selesai dengan normal,
+    // dan batasnya: jumlah lagu di antrean saat error pertama. Supaya Repeat All atau Autoplay dengan file yang semuanya
+    // rusak tidak berputar terus.
+    private int _failedInARow;
+    private int _failedInARowLimit;
+
+    // Nomor permintaan cover terakhir (lihat LoadCoverAsync)
+    private int _coverRequest;
 
     // Untuk riwayat: berapa lama lagu sekarang benar-benar didengarkan (pause dan seek tidak dihitung)
     private double _listenedSeconds;
@@ -304,7 +353,8 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// Menyiapkan lagu Autoplay di antrean kalau antrean sendiri sudah habis. Dipanggil setiap lagu baru mulai, dan
     /// saat Autoplay atau Repeat berubah.
     /// </summary>
-    private void TopUpAutoplay()
+    /// <param name="skip">Path lagu yang tidak boleh dipilih, misalnya lagu yang baru saja dihapus dari antrean.</param>
+    private void TopUpAutoplay(IEnumerable<string>? skip = null)
     {
         if (!_autoplayEnabled || AutoplaySource is null || CurrentTrack is not { } current || RepeatMode != RepeatMode.Off)
             return;
@@ -319,6 +369,9 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             exclude.Add(entry.Track.FilePath);
         foreach (var track in _previous)
             exclude.Add(track.FilePath);
+        exclude.UnionWith(_unplayable);
+        if (skip is not null)
+            exclude.UnionWith(skip);
 
         foreach (var track in AutoplaySource(current, exclude, missing))
             UpNext.Add(new QueueEntry(track) { IsAutoplay = true });
@@ -340,11 +393,25 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         get => _volume;
         set
         {
-            if (SetProperty(ref _volume, Math.Clamp(Math.Round(value), 0, 100)))
+            if (!SetProperty(ref _volume, Math.Clamp(Math.Round(value), 0, 100)))
+                return;
+
+            OnPropertyChanged(nameof(VolumeGlyph));
+            if (!_showingVolume)
             {
-                OnPropertyChanged(nameof(VolumeGlyph));
+                if (!_volumeFollowsDevice)
+                {
+                    AppVolume = _volume; // slider sedang mengatur volume aplikasi, bukan volume perangkat
+
+                    // Dipilih sambil mendengar volume digital-nya, jadi batas dari perangkat sebelumnya tidak perlu lagi. Saat
+                    // tidak ada yang berbunyi, batasnya tetap: pengguna belum mendengar seberapa keras pilihan itu di perangkat
+                    // berikutnya.
+                    if (_engine.VolumeKind == VolumeKind.Digital && IsDeviceAttached)
+                        _lastDeviceLevel = null;
+                }
                 ApplyVolume();
             }
+            OnPropertyChanged(nameof(StartVolumeLimit));
         }
     }
 
@@ -353,12 +420,90 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         get => _isMuted;
         set
         {
-            if (SetProperty(ref _isMuted, value))
+            if (!SetProperty(ref _isMuted, value))
+                return;
+
+            OnPropertyChanged(nameof(VolumeGlyph));
+            if (!_showingVolume)
             {
-                OnPropertyChanged(nameof(VolumeGlyph));
+                if (!_volumeFollowsDevice)
+                {
+                    // Mute dari perangkat sebelumnya baru dihapus saat pengguna membuka mute. Selama mute aplikasi menyala
+                    // setiap lagu memang mulai tanpa suara, dan saat dibuka nanti mute DAC asalnya ikut dilepas.
+                    if (!_isMuted && _lastDeviceMuted)
+                    {
+                        UnmuteFollowedDevice();
+                        _lastDeviceMuted = false;
+                    }
+                    IsAppMuted = _isMuted;
+                }
                 ApplyVolume();
             }
+            OnPropertyChanged(nameof(StartVolumeLimit));
         }
+    }
+
+    // Lagu terbuka di perangkat yang benar-benar dipakai (tidak dilepas karena pause, error, atau edit tag)
+    private bool IsDeviceAttached => _engine.IsOpen && !_engine.IsDeviceReleased;
+
+    /// <summary>
+    /// Batas awal volume (lihat LimitStartVolume) yang berlaku kalau slider berhenti mengikuti perangkat sekarang, juga saat
+    /// aplikasi ditutup. App menyimpannya dengan kuncinya sendiri, tidak pernah sebagai volume aplikasi, supaya perangkat tanpa
+    /// volume hardware tidak mulai keras setelah aplikasi dibuka lagi. Null kalau tidak ada batas. PropertyChanged untuk
+    /// properti ini juga berarti <see cref="StartMutedLimit"/> mungkin berubah.
+    /// </summary>
+    public double? StartVolumeLimit => _volumeFollowsDevice ? _volume : _lastDeviceLevel;
+
+    /// <summary>Pasangan <see cref="StartVolumeLimit"/>: lagu berikutnya mulai tanpa suara karena DAC tadi di-mute.</summary>
+    public bool StartMutedLimit => _volumeFollowsDevice ? _isMuted : _lastDeviceMuted;
+
+    /// <summary>Perangkat asal <see cref="StartMutedLimit"/> (lihat UnmuteFollowedDevice); disimpan App bersama batasnya.</summary>
+    public string? StartMutedDeviceId => _followedDeviceId;
+
+    /// <summary>Batas awal dari sesi sebelumnya. Dipanggil App saat aplikasi dibuka, sebelum ada lagu.</summary>
+    public void RestoreStartLimit(double? level, bool muted, string? mutedDeviceId)
+    {
+        _lastDeviceLevel = level;
+        _lastDeviceMuted = muted;
+        _followedDeviceId = mutedDeviceId;
+    }
+
+    /// <summary>
+    /// Mute yang tampil berasal dari DAC yang tadi diikuti slider, misalnya dipasang lewat tombol mute selama exclusive mode.
+    /// Lagu shared mode di DAC itu tetap diam selama endpoint-nya di-mute, jadi saat pengguna membuka mute, mute DAC itu ikut
+    /// dilepas. Hanya mute: volume DAC tidak diubah, dan perangkat lain (atau mute dari Windows) tidak disentuh.
+    /// </summary>
+    private void UnmuteFollowedDevice()
+    {
+        try
+        {
+            // Perangkat tempat lagu ini (akan) berbunyi, yaitu output pilihan sekarang. _device bisa masih perangkat lama
+            // setelah output atau mode diganti selama pause, sampai lagunya dibuka lagi.
+            using var device = GetOutputDevice();
+            if (device.ID == _followedDeviceId && device.AudioEndpointVolume is { Mute: true } endpoint)
+                endpoint.Mute = false;
+        }
+        catch (Exception)
+        {
+            // Perangkat pilihan tidak tersambung, sudah dicabut, atau menolak perubahan: tidak ada yang bisa dilepas
+        }
+    }
+
+    /// <summary>
+    /// Volume aplikasi (0-100) untuk shared mode dan volume digital, yang disimpan di pengaturan. Hanya berubah saat slider
+    /// tidak mengikuti volume perangkat; volume DAC yang tampil di slider dalam exclusive mode tidak pernah masuk ke sini.
+    /// </summary>
+    public double AppVolume
+    {
+        get => _appVolume;
+        private set => SetProperty(ref _appVolume, value);
+    }
+
+    /// <summary>Mute untuk volume aplikasi, pasangan <see cref="AppVolume"/>.</summary>
+    public bool IsAppMuted
+    {
+        get => _appMuted;
+        private set => SetProperty(ref _appMuted, value);
     }
 
     /// <summary>Ikon tombol volume: speaker dicoret saat mute atau volume 0.</summary>
@@ -551,7 +696,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 UpNext.Add(new QueueEntry(track));
         }
 
-        Play(tracks[startIndex]);
+        PlayChosen(tracks[startIndex], keepHistory: false);
     }
 
     /// <summary>
@@ -567,19 +712,18 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         PlayQueue(tracks, Random.Shared.Next(tracks.Count));
     }
 
-    /// <summary>Langsung memutar sebuah lagu tanpa mengubah Playing Next (misalnya dari History).</summary>
-    public void PlayNow(Track track)
-    {
-        if (CurrentTrack is not null)
-            _previous.Add(CurrentTrack);
-        Play(track);
-    }
+    /// <summary>
+    /// Langsung memutar sebuah lagu tanpa mengubah Playing Next (misalnya dari History). Kalau itu lagu sekarang, lagu itu
+    /// diputar ulang tanpa masuk daftar Previous.
+    /// </summary>
+    public void PlayNow(Track track) =>
+        PlayChosen(track, keepHistory: CurrentTrack is not { } current || !IsSameFile(current.FilePath, track.FilePath));
 
     /// <summary>Menaruh lagu di urutan paling atas Playing Next. Kalau belum ada yang diputar, langsung diputar.</summary>
     public void PlayNext(Track track)
     {
         if (CurrentTrack is null)
-            Play(track);
+            PlayChosen(track, keepHistory: false);
         else
             UpNext.Insert(0, new QueueEntry(track));
     }
@@ -589,7 +733,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         if (CurrentTrack is null)
         {
-            Play(track);
+            PlayChosen(track, keepHistory: false);
             return;
         }
 
@@ -619,12 +763,18 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         for (int i = 0; i <= index; i++)
             UpNext.RemoveAt(0);
 
-        if (CurrentTrack is not null)
-            _previous.Add(CurrentTrack);
-        Play(entry.Track);
+        PlayChosen(entry.Track, keepHistory: true);
     }
 
-    public void RemoveFromQueue(QueueEntry entry) => UpNext.Remove(entry);
+    public void RemoveFromQueue(QueueEntry entry)
+    {
+        UpNext.Remove(entry);
+        _originalOrder.Remove(entry); // supaya tidak kembali saat shuffle dimatikan
+
+        // Sama seperti ClearQueue: kalau antrean sendiri sudah habis, lagu Autoplay langsung disiapkan (atau dilengkapi lagi
+        // kalau yang dihapus lagu Autoplay). Lagu yang baru dihapus tidak dipilih lagi sebagai penggantinya.
+        TopUpAutoplay(skip: [entry.Track.FilePath]);
+    }
 
     public void ClearQueue()
     {
@@ -638,7 +788,11 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (CurrentTrack is null)
             return;
 
-        if (_engine.State == PlaybackState.Playing)
+        // File lagu ini sedang ditulis (edit tag), jadi tidak dibuka sekarang: yang diubah adalah apakah lagu lanjut
+        // berbunyi setelah penyimpanan selesai. Ikon tombol mengikutinya (lihat RefreshPosition).
+        if (_editRelease is { } release)
+            release.Resume = !release.Resume;
+        else if (_engine.State == PlaybackState.Playing)
             Pause();
         else
             Resume();
@@ -661,6 +815,15 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         _releaseTimer.Stop();
 
+        // Tidak ada file yang terbuka: lagu ini tadi gagal dibuka (file hilang, atau gagal dimuat lagi setelah edit tag).
+        // Dicoba lagi dari awal, misalnya karena drive-nya sudah tersambung lagi. Selama file-nya sedang ditulis, tidak.
+        if (!_engine.IsOpen)
+        {
+            if (CurrentTrack is { } track && _editRelease is null)
+                PlayChosen(track, keepHistory: false);
+            return;
+        }
+
         // Output sedang diganti dan perangkat lama belum sempat dilepas: lepas sekarang, supaya Play memakai
         // pengaturan yang baru
         if (_outputChangePending)
@@ -674,6 +837,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (_engine.IsDeviceReleased && !ReopenDevice())
         {
             _interruptedByDevice = true;
+            StopFollowingDevice();
             return;
         }
 
@@ -719,6 +883,10 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 Resume();
                 RefreshPosition();
             }
+            else
+            {
+                StopFollowingDevice();
+            }
             return;
         }
 
@@ -731,9 +899,21 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         {
             _releaseTimer.Stop();
             _engine.ReleaseDevice();
+            StopFollowingDevice();
         }
 
         RefreshPosition();
+    }
+
+    /// <summary>
+    /// Lagu di-pause dan tidak lagi memakai perangkat lamanya (output atau mode diganti, atau perangkat gagal dibuka lagi):
+    /// slider berhenti mengikuti perangkat itu, supaya geserannya tidak mengubah volume hardware perangkat yang tidak dipakai
+    /// lagi. Saat Play, volume perangkat yang baru dipasang seperti biasa (AttachVolume).
+    /// </summary>
+    private void StopFollowingDevice()
+    {
+        if (_volumeFollowsDevice)
+            ShowAppVolume();
     }
 
     /// <summary>
@@ -814,33 +994,97 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _ => ex.Message,
     };
 
-    /// <summary>Tombol Next. Dalam mode Repeat One pun, tombol ini tetap pindah ke lagu berikutnya.</summary>
-    public void Next() => Advance();
-
-    private void Advance()
+    /// <summary>Alasan file lagu tidak bisa dibuka atau dibaca, untuk pesan di kanan atas.</summary>
+    private static string DescribeFileError(Exception ex) => ex switch
     {
-        if (UpNext.Count == 0)
-        {
-            if (RepeatMode == RepeatMode.Off || CurrentTrack is null)
-            {
-                StopAll();
-                return;
-            }
+        { HResult: FileNotFound or PathNotFound } => "the file wasn't found.",
+        { HResult: DriveNotReady or NetworkPathNotFound } => "the drive it's on isn't available.",
+        { HResult: AccessDenied } => "access to the file was denied.",
+        { HResult: SharingViolation } => "the file is in use by another app.",
+        // Pesan Media Foundation yang hanya berisi kode error, saat membuka file atau di tengah lagu (NAudio)
+        { Message: var m } when m.StartsWith("Media Foundation error", StringComparison.Ordinal) =>
+            $"the file couldn't be read (error 0x{ex.HResult:X8}).",
+        { Message: var m } when m.StartsWith("MediaFoundationReadError", StringComparison.Ordinal) => "the file couldn't be read.",
+        _ => ex.Message.EndsWith('.') ? ex.Message : ex.Message + ".",
+    };
 
-            RestartQueue();
-            return;
-        }
-
-        var next = UpNext[0];
-        UpNext.RemoveAt(0);
-        if (CurrentTrack is not null)
-            _previous.Add(CurrentTrack);
-        Play(next.Track);
+    /// <summary>Tombol Next. Dalam mode Repeat One pun, tombol ini tetap pindah ke lagu berikutnya.</summary>
+    public void Next()
+    {
+        _failedInARow = 0;
+        Advance();
     }
 
     /// <summary>
-    /// Repeat: antrean sudah habis, jadi semua lagu yang tadi diputar (ditambah lagu sekarang) diputar
-    /// lagi dari awal. Kalau shuffle aktif, urutannya diacak ulang.
+    /// Pindah ke lagu berikutnya di Playing Next (lagu selesai, atau tombol Next). Lagu yang file-nya tidak bisa dibuka
+    /// (hilang atau rusak) dilewati dan disebut di kanan atas. Percobaannya terbatas pada lagu di antrean saat ini, satu kali
+    /// tambahan lagu Autoplay, dan satu putaran ulang untuk Repeat, supaya antrean yang semua file-nya hilang (misalnya
+    /// drive-nya dicabut) tidak berputar terus. Masalah perangkat tidak dilewati, karena lagu lain pasti gagal dengan cara
+    /// yang sama: lagunya tampil dan menunggu tombol Play (lihat WaitForDevice).
+    /// </summary>
+    /// <param name="problem">Pesan yang ditampilkan lebih dulu, misalnya lagu sebelumnya yang berhenti karena error.</param>
+    private void Advance(string? problem = null)
+    {
+        var skippedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Track? firstSkipped = null;
+        string firstReason = "";
+        bool keepHistory = true, toppedUp = false, restarted = false;
+
+        while (true)
+        {
+            // Antrean habis tanpa sempat disiapkan lagu Autoplay (misalnya lagu terakhir dihapus dengan "Remove from Queue"),
+            // atau semua lagu Autoplay-nya gagal dibuka: disiapkan sekali lagi, tanpa lagu yang gagal dibuka
+            if (UpNext.Count == 0 && RepeatMode == RepeatMode.Off && !toppedUp)
+            {
+                toppedUp = true;
+                TopUpAutoplay();
+            }
+
+            if (UpNext.Count == 0)
+            {
+                if (RepeatMode == RepeatMode.Off || CurrentTrack is null || restarted)
+                {
+                    StopAll(); // mengosongkan StatusText, jadi pesannya diisi sesudahnya
+                    StatusText = JoinMessages(problem, DescribeSkipped(skippedPaths.Count, firstSkipped, firstReason));
+                    return;
+                }
+
+                restarted = true;
+                RestartQueue();
+                keepHistory = false; // lagu sekarang sudah ikut masuk antrean putaran ulang
+                continue;
+            }
+
+            var next = UpNext[0];
+            UpNext.RemoveAt(0);
+            if (Play(next.Track, keepHistory, out string error))
+            {
+                if (problem is not null || firstSkipped is not null)
+                    StatusText = JoinMessages(problem, DescribeSkipped(skippedPaths.Count, firstSkipped, firstReason), StatusText);
+                return;
+            }
+
+            // File-nya tidak bisa dibuka: dilewati, lagu sekarang dan riwayatnya tidak berubah
+            skippedPaths.Add(next.Track.FilePath);
+            if (firstSkipped is null)
+            {
+                firstSkipped = next.Track;
+                firstReason = error;
+            }
+        }
+    }
+
+    /// <summary>Pesan untuk lagu yang dilewati karena file-nya tidak bisa dibuka. Null kalau tidak ada.</summary>
+    private static string? DescribeSkipped(int count, Track? first, string reason) => first is null ? null
+        : count == 1 ? $"Skipped \"{first.DisplayTitle}\": {reason}"
+        : $"Skipped {count} songs that couldn't be played. \"{first.DisplayTitle}\": {reason}";
+
+    private static string JoinMessages(params string?[] messages) =>
+        string.Join(" ", messages.Where(m => !string.IsNullOrEmpty(m)));
+
+    /// <summary>
+    /// Repeat: antrean sudah habis, jadi semua lagu yang tadi diputar (ditambah lagu sekarang) masuk Playing Next lagi
+    /// dari awal; Advance lalu memutar yang paling atas. Kalau shuffle aktif, urutannya diacak ulang.
     /// </summary>
     private void RestartQueue()
     {
@@ -853,10 +1097,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             entries = QueueOrder.Shuffled(entries);
         }
 
-        var first = entries[0];
-        entries.RemoveAt(0);
         ReplaceUpNext(entries);
-        Play(first.Track);
     }
 
     private void ShuffleUpNext()
@@ -874,34 +1115,39 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
     public void Previous()
     {
-        if (CurrentTrack is null)
+        if (CurrentTrack is not { } current)
             return;
 
         // Seperti pemutar musik pada umumnya: kalau lagu sudah berjalan lebih dari
         // 3 detik, tombol ini mengulang lagu dari awal, bukan pindah ke lagu sebelumnya
-        if (_engine.Position > TimeSpan.FromSeconds(3) || _previous.Count == 0)
+        if (Position > TimeSpan.FromSeconds(3) || _previous.Count == 0)
         {
-            _engine.Seek(TimeSpan.Zero);
-            RefreshPosition();
+            if (_engine.IsOpen || _editRelease is not null)
+                SeekTo(TimeSpan.Zero);
+            else
+                PlayChosen(current, keepHistory: false); // lagu ini tadi gagal dibuka: dicoba lagi
             return;
         }
 
         // Lagu sekarang dikembalikan ke paling atas Playing Next
         var previous = _previous[^1];
         _previous.RemoveAt(_previous.Count - 1);
-        UpNext.Insert(0, new QueueEntry(CurrentTrack));
-        Play(previous);
+        UpNext.Insert(0, new QueueEntry(current));
+        PlayChosen(previous, keepHistory: false);
     }
 
     /// <summary>
     /// Posisi lagu saat ini, dibaca langsung dari engine. PositionSeconds hanya diperbarui 4 kali per detik, terlalu
     /// jarang untuk menyorot baris lirik tepat waktu.
     /// </summary>
-    public TimeSpan Position => CurrentTrack is null ? TimeSpan.Zero : _engine.Position;
+    public TimeSpan Position => CurrentTrack is null ? TimeSpan.Zero : _editRelease?.Position ?? _engine.Position;
+
+    // Durasi lagu sekarang; selama file-nya dilepas untuk edit tag, durasi dari sebelum dilepas
+    private TimeSpan TrackDuration => _editRelease?.Duration ?? _engine.Duration;
 
     /// <summary>Lompat ke posisi tertentu, dari 0 (awal lagu) sampai 1 (akhir lagu).</summary>
     public void SeekToFraction(double fraction) =>
-        SeekTo(TimeSpan.FromSeconds(Math.Clamp(fraction, 0, 1) * _engine.Duration.TotalSeconds));
+        SeekTo(TimeSpan.FromSeconds(Math.Clamp(fraction, 0, 1) * TrackDuration.TotalSeconds));
 
     /// <summary>Lompat ke waktu tertentu di lagu ini, misalnya saat baris lirik diklik.</summary>
     public void SeekTo(TimeSpan position)
@@ -909,8 +1155,12 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (CurrentTrack is null)
             return;
 
-        var duration = _engine.Duration;
-        _engine.Seek(position < TimeSpan.Zero ? TimeSpan.Zero : position > duration ? duration : position);
+        var duration = TrackDuration;
+        var target = position < TimeSpan.Zero ? TimeSpan.Zero : position > duration ? duration : position;
+        if (_editRelease is { } release)
+            release.Position = target; // file-nya sedang ditulis: posisi ini dipakai saat lagu dimuat lagi
+        else
+            _engine.Seek(target);
         RefreshPosition();
     }
 
@@ -925,8 +1175,30 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
     private void ApplyVolume()
     {
-        if (!_syncingFromDevice)
-            _engine.SetVolume((float)(Volume / 100), IsMuted);
+        // Volume aplikasi tidak pernah dikirim ke volume hardware perangkat. Setelah perangkat error (misalnya DAC dicabut)
+        // engine masih memegang perangkat lama dengan VolumeKind.Device, sedangkan slider sudah kembali ke volume aplikasi:
+        // DAC itu tidak boleh ikut berubah, karena volume-nya dibaca lagi ke slider saat lagu dilanjutkan di sana.
+        if (_engine.VolumeKind == VolumeKind.Device && !_volumeFollowsDevice)
+            return;
+
+        // Slider mengikuti DAC: diatur lewat endpoint yang dipegang di sini, karena engine tidak memegang perangkatnya lagi
+        // setelah Close atau OpenWithoutDevice (misalnya lagu yang di-pause lalu tag-nya disimpan). MMDevice menyimpan satu
+        // objek endpoint, jadi ini objek yang sama dengan milik engine, dan perubahannya tetap membawa OwnVolumeChange.
+        if (_volumeFollowsDevice && _deviceVolume is { } endpoint)
+        {
+            try
+            {
+                endpoint.Mute = IsMuted;
+                endpoint.MasterVolumeLevelScalar = (float)(Volume / 100);
+            }
+            catch (COMException)
+            {
+                // Perangkat dicabut atau menolak perubahan volume: abaikan, sama seperti AudioEngine.SetVolume
+            }
+            return;
+        }
+
+        _engine.SetVolume((float)(Volume / 100), IsMuted);
     }
 
     private void AttachVolume(MMDevice device)
@@ -935,9 +1207,15 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         {
             case VolumeKind.Device:
                 // Volume perangkat dipakai apa adanya, TIDAK ditimpa dengan nilai slider,
-                // supaya suara tidak tiba-tiba keras saat lagu pertama diputar
+                // supaya suara tidak tiba-tiba keras saat lagu pertama diputar. Slider hanya menampilkannya
+                // (termasuk mute perangkat); volume aplikasi yang tersimpan tidak ikut berubah. Batas dari perangkat
+                // sebelumnya tidak berlaku lagi: saat slider berhenti mengikuti perangkat ini, batasnya diambil dari sini.
+                _volumeFollowsDevice = true;
+                _lastDeviceLevel = null;
+                _lastDeviceMuted = false;
                 try
                 {
+                    _followedDeviceId = device.ID;
                     var endpoint = device.AudioEndpointVolume;
                     endpoint.NotificationGuid = OwnVolumeChange;
                     SyncFromDevice(endpoint.MasterVolumeLevelScalar, endpoint.Mute);
@@ -949,18 +1227,71 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                     // Gagal membaca volume perangkat: slider tetap bisa dipakai untuk mengubahnya
                 }
                 VolumeDescription = "Device volume: adjusts your DAC or speakers directly, so playback stays bit-perfect.";
+                OnPropertyChanged(nameof(StartVolumeLimit)); // juga kalau nilai slider tidak berubah
                 break;
 
             case VolumeKind.Digital:
-                ApplyVolume();
+                // Di sini volume digital satu-satunya peredam, jadi batas volume dari perangkat sebelumnya ikut berlaku
+                RestoreAppVolume();
+                LimitStartVolume(limitLevel: true);
                 VolumeDescription = "Digital volume: this device has no hardware volume, so playback is not bit-perfect below 100.";
                 break;
 
             default:
-                ApplyVolume();
+                // Shared mode: volume Windows perangkatnya tetap berlaku, jadi volume aplikasi dipakai apa adanya. Hanya mute
+                // dari perangkat sebelumnya yang ikut berlaku.
+                RestoreAppVolume();
+                LimitStartVolume(limitLevel: false);
                 VolumeDescription = "App volume, the same as the MusicPlayer slider in the Windows volume mixer.";
                 break;
         }
+    }
+
+    /// <summary>
+    /// Slider kembali menampilkan volume aplikasi, bukan volume perangkat yang tadi disalin ke slider (lagu sebelumnya dalam
+    /// exclusive mode), lalu volume itu dipakai untuk lagu yang terbuka sekarang. Volume perangkat yang tadi tampil diingat
+    /// sebagai batas awal (lihat LimitStartVolume).
+    /// </summary>
+    private void RestoreAppVolume()
+    {
+        if (_volumeFollowsDevice)
+        {
+            _lastDeviceLevel = Volume;
+            _lastDeviceMuted = IsMuted;
+        }
+        _volumeFollowsDevice = false;
+        ShowVolume(_appVolume, _appMuted);
+        ApplyVolume(); // juga kalau slider tidak berubah: session atau gain lagu yang baru dibuka belum diatur
+        OnPropertyChanged(nameof(StartVolumeLimit));
+    }
+
+    /// <summary>
+    /// Lagu yang baru dibuka setelah slider berhenti mengikuti DAC lain (misalnya DAC dicabut, lalu Windows pindah ke speaker)
+    /// tidak mulai berbunyi kalau DAC itu tadi di-mute, dan di perangkat tanpa volume hardware tidak mulai lebih keras dari
+    /// volume DAC tadi. Kira-kira saja: slider DAC memakai kurva volume Windows, volume digital linear. Hanya tampil di
+    /// slider, tidak disimpan; batas ini berlaku untuk lagu-lagu berikutnya juga, sampai pengguna mengatur volume sendiri.
+    /// </summary>
+    private void LimitStartVolume(bool limitLevel)
+    {
+        double volume = limitLevel && _lastDeviceLevel is { } limit ? Math.Min(Volume, limit) : Volume;
+        bool muted = IsMuted || _lastDeviceMuted;
+        if (volume == Volume && muted == IsMuted)
+            return;
+
+        ShowVolume(volume, muted);
+        ApplyVolume();
+    }
+
+    /// <summary>
+    /// Mengisi slider dari PlaybackService sendiri (volume perangkat, volume aplikasi, atau batas awal), bukan dari pengguna:
+    /// tidak disimpan sebagai volume aplikasi dan tidak langsung dikirim ke perangkat.
+    /// </summary>
+    private void ShowVolume(double volume, bool muted)
+    {
+        _showingVolume = true;
+        Volume = volume;
+        IsMuted = muted;
+        _showingVolume = false;
     }
 
     private void DetachDeviceVolume()
@@ -977,81 +1308,247 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (data.EventContext == OwnVolumeChange)
             return; // perubahan dari slider kita sendiri
 
-        // Bisa dipanggil dari thread lain (misalnya saat volume diubah dari Windows), jadi dipindah ke UI thread
-        _dispatcher.TryEnqueue(() => SyncFromDevice(data.MasterVolume, data.Muted));
+        // Bisa dipanggil dari thread lain (misalnya saat volume diubah dari Windows), jadi dipindah ke UI thread. Notifikasi
+        // yang baru tiba setelah lagu pindah ke shared mode diabaikan: slider sudah kembali ke volume aplikasi.
+        _dispatcher.TryEnqueue(() =>
+        {
+            if (_volumeFollowsDevice)
+                SyncFromDevice(data.MasterVolume, data.Muted);
+        });
     }
 
-    private void SyncFromDevice(float volume, bool muted)
-    {
-        _syncingFromDevice = true; // nilai ini datang dari perangkat, jadi tidak perlu dikirim balik
-        Volume = volume * 100;
-        IsMuted = muted;
-        _syncingFromDevice = false;
-    }
+    // Nilai ini datang dari perangkat, jadi tidak perlu dikirim balik, dan bukan volume aplikasi
+    private void SyncFromDevice(float volume, bool muted) => ShowVolume(volume * 100, muted);
 
-    private void Play(Track track)
+    /// <summary>
+    /// Membuka dan memutar lagu. False kalau file lagunya tidak bisa dibuka (hilang, rusak, atau formatnya tidak didukung),
+    /// dengan alasannya di <paramref name="error"/>: lagu sekarang, antrean, dan daftar Previous tidak berubah, tapi lagu
+    /// lama sudah ditutup. Masalah perangkat tidak dianggap gagal: lagunya tetap tampil dan menunggu (lihat WaitForDevice).
+    /// </summary>
+    /// <param name="keepHistory">Lagu sekarang masuk daftar Previous.</param>
+    private bool Play(Track track, bool keepHistory, out string error)
     {
+        error = "";
         _releaseTimer.Stop(); // lagu baru selalu langsung diputar, jadi DAC tidak perlu dilepas
         _outputChangePending = false;
         _interruptedByDevice = false;
-        MMDevice? device = null;
 
+        if (FindRelease(track.FilePath) is { } release)
+        {
+            PlayAfterEdit(track, keepHistory, release);
+            return true;
+        }
+
+        _editRelease = null; // pengguna pindah ke lagu lain: lagu yang dilepas tidak dimuat lagi setelah penyimpanan
+
+        MMDevice device;
         try
         {
             // Perangkat pilihan pengguna, atau perangkat default Windows saat ini
             device = GetOutputDevice();
+        }
+        catch (OutputDeviceUnavailableException ex)
+        {
+            return WaitForDevice(track, keepHistory,
+                $"{ex.DeviceName} isn't connected. Plug it in, or choose another output from the quality badge.", deviceError: null, out error);
+        }
+        catch (Exception ex)
+        {
+            // Misalnya tidak ada perangkat output sama sekali, atau layanan audio Windows bermasalah
+            string reason = DescribeDeviceError(ex);
+            return WaitForDevice(track, keepHistory, $"Couldn't play \"{track.DisplayTitle}\": {reason} Press Play to try again.", reason, out error);
+        }
 
+        try
+        {
             _engine.Open(track.FilePath, device, UseExclusiveMode); // player lama ditutup lebih dulu di sini
             DetachDeviceVolume();
             _device?.Dispose();
             _device = device;
             AttachVolume(device); // sebelum Play, supaya tidak ada sesaat suara dengan volume yang salah
             _engine.Play();
-
-            ShowTrack(track);
-            StatusText = "";
-            UpdateQualityInfo(track, device);
-        }
-        catch (OutputDeviceUnavailableException ex)
-        {
-            WaitForDevice(track, ex.DeviceName);
         }
         catch (Exception ex)
         {
             if (!ReferenceEquals(device, _device))
-                device?.Dispose();
-            StatusText = $"Couldn't play \"{track.DisplayTitle}\": {ex.Message}";
+                device.Dispose();
+
+            if (AudioErrors.IsDeviceError(ex))
+            {
+                // Perangkatnya yang bermasalah (misalnya dipakai aplikasi lain dalam exclusive mode), bukan file-nya
+                string reason = DescribeDeviceError(ex);
+                return WaitForDevice(track, keepHistory, $"Couldn't play \"{track.DisplayTitle}\": {reason} Press Play to try again.", reason, out error);
+            }
+
+            _engine.Close(); // tidak ada yang tertinggal terbuka, juga kalau Open sudah berhasil sebelum error-nya
+            return Unplayable(track, ex, out error);
         }
 
+        _unplayable.Remove(track.FilePath);
+        ShowTrack(track, keepHistory);
+        StatusText = "";
+        UpdateQualityInfo(track, device);
+        RefreshPosition();
+        return true;
+    }
+
+    /// <summary>File lagu tidak bisa dibuka: dicatat supaya Autoplay tidak memilihnya, dan alasannya untuk pesan.</summary>
+    private bool Unplayable(Track track, Exception ex, out string error)
+    {
+        _unplayable.Add(track.FilePath);
+        error = DescribeFileError(ex);
+        RefreshPosition();
+        return false;
+    }
+
+    /// <summary>
+    /// Memutar lagu yang dipilih langsung oleh pengguna (atau diulang oleh Repeat One). Kalau file-nya tidak bisa dibuka,
+    /// lagu itu tetap tampil dengan pesan error-nya, supaya layar sesuai dengan pilihan pengguna, tanpa ada yang dimuat.
+    /// Tombol Play lalu mencobanya lagi (lihat Resume).
+    /// </summary>
+    private void PlayChosen(Track track, bool keepHistory)
+    {
+        _failedInARow = 0;
+        if (Play(track, keepHistory, out string error))
+            return;
+
+        ShowTrack(track, keepHistory);
+        StatusText = $"Couldn't play \"{track.DisplayTitle}\": {error}";
+        QualityVisibility = Visibility.Collapsed; // tidak ada yang dimuat, jadi tidak ada kualitas yang bisa ditampilkan
+        ShowAppVolume();
         RefreshPosition();
     }
+
+    private static bool IsSameFile(string path, string otherPath) =>
+        string.Equals(path, otherPath, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Lagu yang file-nya dilepas selama tag-nya ditulis: posisi dan durasinya dari sebelum dilepas, dan apakah lagu lanjut
+    /// berbunyi setelah dimuat lagi. Beberapa penyimpanan untuk file yang sama bisa berjalan bersamaan; lagu baru dimuat lagi
+    /// setelah yang terakhir selesai.
+    /// </summary>
+    private sealed class EditRelease
+    {
+        public EditRelease(string filePath, TimeSpan position, TimeSpan duration, bool wasOpen, bool resume)
+        {
+            FilePath = filePath;
+            Position = position;
+            Duration = duration;
+            WasOpen = wasOpen;
+            Resume = resume;
+        }
+
+        public string FilePath { get; }
+        public TimeSpan Position { get; set; }
+        public TimeSpan Duration { get; }
+
+        /// <summary>False kalau lagu ini tadi gagal dibuka: setelah penyimpanan, lagu hanya dibuka kalau Play ditekan.</summary>
+        public bool WasOpen { get; }
+
+        /// <summary>Lanjut berbunyi setelah dimuat lagi. Tombol Play/Pause selama penyimpanan mengubah nilai ini.</summary>
+        public bool Resume { get; set; }
+
+        /// <summary>Jumlah penyimpanan yang masih berjalan untuk file ini.</summary>
+        public int Count { get; set; }
+    }
+
+    private EditRelease? FindRelease(string path) => _releases.Find(r => IsSameFile(r.FilePath, path));
 
     /// <summary>
     /// Menjalankan <paramref name="write"/> (menulis tag) dengan file lagu yang sedang dimuat dilepas lebih dulu, karena
     /// Windows tidak mengizinkan file yang sedang dibuka diganti. Setelah selesai, lagu itu dimuat lagi di posisi yang
     /// sama dan lanjut berbunyi kalau tadinya berbunyi. Lagu lain tidak terpengaruh.
     /// </summary>
+    /// <remarks>
+    /// Selama penyimpanan, file yang dilepas tidak dibuka: tombol Play/Pause hanya menentukan apakah lagu lanjut berbunyi
+    /// setelahnya, dan memilih lagu itu lagi memutarnya dari awal setelahnya. Kalau pengguna pindah ke lagu lain (Next,
+    /// Previous, memilih lagu), lagu itu langsung diputar dan lagu yang dilepas tidak dimuat lagi. Penyimpanan lain untuk
+    /// file yang sama yang mulai sebelum yang pertama selesai ikut memakai keadaan yang sama.
+    /// </remarks>
     public async Task WithFilesReleasedAsync(IReadOnlyCollection<string> paths, Func<Task> write)
     {
-        var track = CurrentTrack;
-        if (track is null || !paths.Contains(track.FilePath, StringComparer.OrdinalIgnoreCase))
+        bool Writes(string path) => paths.Contains(path, StringComparer.OrdinalIgnoreCase);
+
+        // File lagu sekarang ikut ditulis dan belum dilepas: dilepas sekarang. Juga kalau lagu itu tadi gagal dibuka,
+        // supaya tombol Play selama penyimpanan tidak membukanya.
+        if (_editRelease is null && CurrentTrack is { } track && Writes(track.FilePath) && FindRelease(track.FilePath) is null)
+        {
+            // Output yang sedang diganti mem-pause lagu sebentar (ApplyOutputChange); lagu itu tetap dianggap berbunyi
+            var created = new EditRelease(track.FilePath, _engine.Position, _engine.Duration, wasOpen: _engine.IsOpen,
+                resume: _engine.State == PlaybackState.Playing || _outputChangePending);
+            _releaseTimer.Stop();
+            _outputChangePending = false;
+            _engine.Close();
+            _editRelease = created;
+            _releases.Add(created);
+        }
+
+        // Penyimpanan ini ikut menahan setiap file yang sedang dilepas dan ikut ditulisnya, juga yang sudah ditinggal pengguna
+        var held = _releases.Where(r => Writes(r.FilePath)).ToList();
+        if (held.Count == 0)
         {
             await write();
             return;
         }
 
-        var position = _engine.Position;
-        bool wasPlaying = _engine.State == PlaybackState.Playing;
-        _releaseTimer.Stop();
-        _engine.Close();
+        foreach (var release in held)
+            release.Count++;
+        RefreshPosition();
         try
         {
             await write();
         }
         finally
         {
-            ReopenAfterEdit(track, position, wasPlaying);
+            foreach (var release in held)
+                EndRelease(release);
         }
+    }
+
+    /// <summary>
+    /// Satu penyimpanan untuk file yang dilepas selesai. Setelah yang terakhir, lagunya dimuat lagi, tapi hanya kalau pengguna
+    /// tidak pindah lagu selama itu (_editRelease dikosongkan saat lagu lain diputar atau antrean berhenti).
+    /// </summary>
+    private void EndRelease(EditRelease release)
+    {
+        if (--release.Count > 0)
+            return; // penyimpanan lain untuk file ini masih berjalan
+
+        _releases.Remove(release);
+        if (!ReferenceEquals(_editRelease, release))
+            return;
+
+        _editRelease = null;
+        if (CurrentTrack is not { } track || _engine.IsOpen)
+            RefreshPosition();
+        else if (release.WasOpen)
+            ReopenAfterEdit(track, release.Position, release.Resume);
+        else if (release.Resume)
+            PlayChosen(track, keepHistory: false); // lagu yang tadi gagal dibuka, dan Play ditekan selama penyimpanan
+        else
+            RefreshPosition();
+    }
+
+    /// <summary>
+    /// Lagu yang file-nya sedang ditulis diputar (dipilih lagi, Previous, atau Next ke lagu yang sama). File-nya tidak dibuka
+    /// sekarang, karena membukanya bisa membuat penyimpanan gagal: lagu ini menjadi lagu sekarang dan diputar dari awal
+    /// begitu penyimpanan terakhirnya selesai (lihat EndRelease).
+    /// </summary>
+    private void PlayAfterEdit(Track track, bool keepHistory, EditRelease release)
+    {
+        if (!ReferenceEquals(_editRelease, release))
+        {
+            // Kembali ke lagu yang tadi ditinggal selama penyimpanannya: lagu lain yang sedang dimuat ditutup
+            _engine.Close();
+            _editRelease = release;
+            QualityVisibility = Visibility.Collapsed; // dimuat lagi (dan badge-nya diisi) setelah penyimpanan
+        }
+
+        release.Position = TimeSpan.Zero;
+        release.Resume = true;
+        ShowTrack(track, keepHistory);
+        StatusText = "";
+        RefreshPosition();
     }
 
     private void ReopenAfterEdit(Track track, TimeSpan position, bool wasPlaying)
@@ -1069,6 +1566,13 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 AttachVolume(device);
                 _engine.Seek(position);
                 _engine.Play();
+                if (_interruptedByDevice && _engine.State == PlaybackState.Playing)
+                {
+                    // Lagu tadi menunggu perangkat, dan Play ditekan selama penyimpanan: sekarang sudah berbunyi, jadi pesan
+                    // perangkatnya tidak berlaku lagi. Pesan lain (misalnya lagu yang dilewati) tetap tampil.
+                    _interruptedByDevice = false;
+                    StatusText = "";
+                }
                 UpdateQualityInfo(track, device);
             }
             else
@@ -1078,23 +1582,49 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 _engine.Seek(position);
             }
         }
-        catch (OutputDeviceUnavailableException ex)
+        catch (Exception ex) when (ex is OutputDeviceUnavailableException || AudioErrors.IsDeviceError(ex))
         {
+            // Perangkatnya yang bermasalah, bukan file-nya: lagu dimuat tanpa perangkat di posisinya, dan lanjut begitu
+            // Play ditekan atau output lain dipilih
             if (!ReferenceEquals(device, _device))
                 device?.Dispose();
-            _engine.OpenWithoutDevice(track.FilePath);
-            _engine.Seek(position);
-            _interruptedByDevice = true;
-            StatusText = $"{ex.DeviceName} isn't connected. Plug it in, or choose another output from the quality badge.";
+            try
+            {
+                _engine.OpenWithoutDevice(track.FilePath);
+                _engine.Seek(position);
+                if (ex is OutputDeviceUnavailableException missing)
+                {
+                    ShowWaitingForDevice(track,
+                        $"{missing.DeviceName} isn't connected. Plug it in, or choose another output from the quality badge.", deviceError: null);
+                }
+                else
+                {
+                    string reason = DescribeDeviceError(ex);
+                    ShowWaitingForDevice(track, $"Couldn't resume \"{track.DisplayTitle}\": {reason} Press Play to try again.", reason);
+                }
+            }
+            catch (Exception fileError)
+            {
+                ShowResumeFailed(track, fileError);
+            }
         }
         catch (Exception ex)
         {
             if (!ReferenceEquals(device, _device))
                 device?.Dispose();
-            StatusText = $"Couldn't resume \"{track.DisplayTitle}\": {ex.Message}";
+            _engine.Close();
+            ShowResumeFailed(track, ex);
         }
 
         RefreshPosition();
+    }
+
+    /// <summary>Lagu gagal dimuat lagi setelah edit tag. Tidak ada yang dimuat; tombol Play mencobanya lagi dari awal (lihat Resume).</summary>
+    private void ShowResumeFailed(Track track, Exception ex)
+    {
+        StatusText = $"Couldn't resume \"{track.DisplayTitle}\": {DescribeFileError(ex)}";
+        QualityVisibility = Visibility.Collapsed;
+        ShowAppVolume();
     }
 
     /// <summary>
@@ -1127,8 +1657,16 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         }
     }
 
-    private void ShowTrack(Track track)
+    /// <summary>Lagu ini menjadi lagu sekarang di tampilan.</summary>
+    /// <param name="keepHistory">
+    /// Lagu sebelumnya masuk daftar Previous, juga kalau file-nya sama (lagu yang sama dua kali di antrean, dua kali putar).
+    /// Lagu sekarang yang diputar ulang (PlayNow, Repeat One) memberi false.
+    /// </param>
+    private void ShowTrack(Track track, bool keepHistory)
     {
+        if (keepHistory && CurrentTrack is { } old)
+            _previous.Add(old);
+
         CurrentTrack = track;
         _listenedSeconds = 0;
         _playRecorded = false;
@@ -1139,29 +1677,53 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Perangkat pilihan sedang tidak tersambung. Lagunya tetap dimuat dan di-pause di awal, supaya judul dan badge
-    /// kualitas tampil dan output lain bisa dipilih dari popup-nya. Begitu output lain dipilih (atau Play ditekan
-    /// setelah perangkatnya dicolok), lagu langsung diputar.
+    /// Lagu tidak bisa dibuka di perangkat output: perangkat pilihan tidak tersambung, atau perangkatnya error (misalnya
+    /// dipakai aplikasi lain, atau tidak ada perangkat sama sekali). Lagunya tetap dimuat dan di-pause di awal, supaya judul
+    /// dan badge kualitas tampil dan output lain bisa dipilih dari popup-nya. Begitu output lain dipilih (atau Play ditekan
+    /// setelah perangkatnya beres), lagu langsung diputar. False kalau file-nya sendiri juga tidak bisa dibuka.
     /// </summary>
-    private void WaitForDevice(Track track, string deviceName)
+    /// <param name="deviceError">Alasan perangkat gagal dibuka; null kalau perangkat pilihan tidak tersambung.</param>
+    private bool WaitForDevice(Track track, bool keepHistory, string message, string? deviceError, out string error)
     {
+        error = "";
         try
         {
             _engine.OpenWithoutDevice(track.FilePath);
         }
         catch (Exception ex)
         {
-            StatusText = $"Couldn't play \"{track.DisplayTitle}\": {ex.Message}";
-            return;
+            return Unplayable(track, ex, out error);
         }
 
-        DetachDeviceVolume();
+        _unplayable.Remove(track.FilePath);
+        ShowTrack(track, keepHistory);
+        ShowWaitingForDevice(track, message, deviceError);
+        RefreshPosition();
+        return true;
+    }
+
+    /// <summary>Lagu sudah dimuat tanpa perangkat (OpenWithoutDevice) dan menunggu perangkatnya; pesannya di kanan atas.</summary>
+    private void ShowWaitingForDevice(Track track, string message, string? deviceError)
+    {
+        ShowAppVolume();
         _device?.Dispose();
         _device = null;
-        ShowTrack(track);
         _interruptedByDevice = true;
-        StatusText = $"{deviceName} isn't connected. Plug it in, or choose another output from the quality badge.";
-        UpdateQualityInfo(track, device: null);
+        StatusText = message;
+        UpdateQualityInfo(track, device: null, deviceError);
+    }
+
+    /// <summary>
+    /// Tidak ada lagu yang terhubung ke perangkat (antrean berhenti, lagu gagal dibuka, perangkat error di tengah lagu, atau
+    /// menunggu perangkat): slider kembali mengatur volume aplikasi. VolumeKind engine masih milik lagu terakhir yang terbuka,
+    /// jadi volume perangkat lagu itu tidak boleh terus tampil sebagai nilai slider, dan volume aplikasi tidak dikirim ke
+    /// perangkat itu (lihat ApplyVolume).
+    /// </summary>
+    private void ShowAppVolume()
+    {
+        DetachDeviceVolume();
+        RestoreAppVolume();
+        VolumeDescription = "";
     }
 
     private void StopAll()
@@ -1169,20 +1731,25 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _releaseTimer.Stop();
         _outputChangePending = false;
         _interruptedByDevice = false;
+        _editRelease = null; // lagu yang sedang dilepas untuk edit tag tidak dimuat lagi setelah penyimpanan
         _engine.Close();
-        DetachDeviceVolume();
         _previous.Clear();
         CurrentTrack = null;
+        _coverRequest++; // cover yang masih dimuat tidak ditampilkan lagi
         CurrentCover = null;
         TitleText = IdleTitle;
         SubtitleText = IdleSubtitle;
         StatusText = "";
         QualityVisibility = Visibility.Collapsed;
+        ShowAppVolume(); // tidak ada lagu: slider mengatur volume aplikasi, yang dipakai lagu shared mode berikutnya
         RefreshPosition();
     }
 
-    /// <summary>Isi popup kualitas. <paramref name="device"/> null berarti perangkat pilihan sedang tidak tersambung.</summary>
-    private void UpdateQualityInfo(Track track, MMDevice? device)
+    /// <summary>
+    /// Isi popup kualitas. <paramref name="device"/> null berarti lagu tidak terhubung ke perangkat: perangkat pilihan
+    /// sedang tidak tersambung, atau perangkatnya gagal dibuka (<paramref name="deviceError"/>).
+    /// </summary>
+    private void UpdateQualityInfo(Track track, MMDevice? device, string? deviceError = null)
     {
         var quality = AudioQuality.Describe(track);
         QualityBadgeText = quality.Label;
@@ -1191,7 +1758,12 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         QualityKind = quality.Kind;
         DeviceText = device?.FriendlyName ?? "";
 
-        if (device is null)
+        if (deviceError is { Length: > 0 })
+        {
+            OutputModeText = "Couldn't open the device";
+            OutputDetailText = $"{char.ToUpperInvariant(deviceError[0])}{deviceError[1..]} Press Play to try again, or choose another output below.";
+        }
+        else if (device is null)
         {
             OutputModeText = "Not connected";
             OutputDetailText = $"{_outputDeviceName} isn't connected. Plug it in, or choose another output below.";
@@ -1233,7 +1805,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private void OnPlaybackStopped(object? sender, StoppedEventArgs e)
     {
         // WasapiPlayer mengirim event ini lewat UI thread, jadi aman mengubah tampilan di sini
-        if (e.Exception is not null)
+        if (e.Exception is { } deviceError && AudioErrors.IsDeviceError(deviceError))
         {
             // Perangkat bermasalah di tengah lagu, paling sering karena DAC dicabut. Player yang rusak dibuang
             // dan lagu berhenti di posisinya (antrean tidak maju). Lagu sengaja tidak dilanjutkan otomatis di
@@ -1242,9 +1814,10 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             _releaseTimer.Stop();
             _outputChangePending = false;
             _engine.ReleaseDevice();
+            ShowAppVolume(); // slider tidak lagi mengikuti perangkat yang mati, tanpa mengubah volume hardware-nya
             _interruptedByDevice = true;
-            StatusText = e.Exception.HResult != AudioClientErrorCode.DeviceInvalidated
-                ? $"Playback stopped: {e.Exception.Message}"
+            StatusText = deviceError.HResult != AudioClientErrorCode.DeviceInvalidated
+                ? $"Playback stopped: {deviceError.Message}"
                 : _outputDeviceId is null
                     ? "Audio device disconnected. Press Play to resume."
                     : $"{_outputDeviceName} disconnected. Plug it back in, or choose another output from the quality badge.";
@@ -1252,20 +1825,53 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             return;
         }
 
+        if (e.Exception is { } readError)
+        {
+            // File-nya rusak di tengah lagu (gagal di-decode atau dibaca): lagu ini dilewati dan antrean lanjut dengan
+            // aturan yang sama seperti Next, juga dalam mode Repeat One (lagu yang rusak akan berhenti di tempat yang sama
+            // lagi). Kalau semua lagu di antrean rusak, pemutaran berhenti setelah semuanya dicoba sekali.
+            string problem = $"Couldn't continue \"{CurrentTrack?.DisplayTitle}\": {DescribeFileError(readError)}";
+            if (_failedInARow++ == 0)
+                _failedInARowLimit = UpNext.Count + _previous.Count + 1;
+            if (_failedInARow >= _failedInARowLimit)
+            {
+                // Semua lagu di antrean sudah dicoba sekali: berhenti di lagu ini dengan pesannya, seperti PlayChosen yang
+                // gagal. Antrean tetap, tidak ada yang dimuat, dan tidak ada yang berjalan sendiri lagi (juga kalau Autoplay
+                // terus menambah lagu). Tombol Play mencobanya lagi dari awal (lihat Resume), Next lanjut ke Playing Next.
+                _releaseTimer.Stop();
+                _outputChangePending = false;
+                _interruptedByDevice = false;
+                _engine.Close();
+                StatusText = problem;
+                QualityVisibility = Visibility.Collapsed;
+                ShowAppVolume();
+                RefreshPosition();
+                return;
+            }
+
+            Advance(problem);
+            return;
+        }
+
         // Lagu selesai dengan normal: ulangi kalau Repeat One, selain itu lanjut ke lagu berikutnya
+        _failedInARow = 0;
         if (RepeatMode == RepeatMode.One && CurrentTrack is { } track)
-            Play(track);
+            PlayChosen(track, keepHistory: false);
         else
             Advance();
     }
 
     private async Task LoadCoverAsync(Track track)
     {
+        // Setiap permintaan diberi nomor, dan hanya yang terbaru yang boleh mengisi cover. Membandingkan CurrentTrack
+        // dengan ReferenceEquals tidak bisa dipakai: Track adalah record, jadi lagu yang sama dari daftar lain (sama
+        // isinya, beda objek) tidak menggantikan CurrentTrack, dan cover-nya lalu tidak pernah tampil.
+        int request = ++_coverRequest;
         CurrentCover = null;
         var cover = await CoverImageLoader.LoadAsync(track.FilePath, decodePixelWidth: 104);
 
-        // Lewati kalau sementara itu pengguna sudah pindah ke lagu lain
-        if (ReferenceEquals(CurrentTrack, track))
+        // Lewati kalau sementara itu pengguna sudah pindah ke lagu lain (atau kembali lagi: A → B → A)
+        if (request == _coverRequest)
             CurrentCover = cover;
     }
 
@@ -1304,15 +1910,18 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
     private void RefreshPosition()
     {
-        var position = _engine.Position;
-        var duration = _engine.Duration;
+        // Selama file lagu dilepas untuk edit tag, tampilan tetap menunjukkan posisi dari sebelum dilepas, dan tombol
+        // Play/Pause menunjukkan apakah lagu lanjut berbunyi setelah penyimpanan selesai
+        var release = _editRelease;
+        var position = release?.Position ?? _engine.Position;
+        var duration = TrackDuration;
         var remaining = duration > position ? duration - position : TimeSpan.Zero;
 
         PositionSeconds = position.TotalSeconds;
         DurationSeconds = Math.Max(duration.TotalSeconds, 1);
         ElapsedText = Formatters.Time(position);
         RemainingText = "-" + Formatters.Time(remaining);
-        IsPlaying = _engine.State == PlaybackState.Playing;
+        IsPlaying = release?.Resume ?? (_engine.State == PlaybackState.Playing);
         PlayPauseSymbol = IsPlaying ? Symbol.Pause : Symbol.Play;
     }
 }

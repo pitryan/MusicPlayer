@@ -56,6 +56,13 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool IsDeviceReleased => _output is not null && _player is null;
 
+    /// <summary>
+    /// True selama ada lagu yang terbuka (setelah <see cref="Open"/> atau <see cref="OpenWithoutDevice"/>, sampai
+    /// <see cref="Close"/>), dengan atau tanpa perangkat audio. False kalau belum ada lagu, atau kalau pembukaan
+    /// terakhir gagal (Open menutup lagu lama lebih dulu, jadi lagu lama juga sudah tidak terbuka).
+    /// </summary>
+    public bool IsOpen => _output is not null;
+
     public TimeSpan Position => _output?.CurrentTime ?? TimeSpan.Zero;
     public TimeSpan Duration => _output?.TotalTime ?? TimeSpan.Zero;
 
@@ -276,10 +283,14 @@ public sealed class AudioEngine : IDisposable
     {
         // Perangkat sudah dilepas (lihat ReleaseDevice): pemanggil harus membukanya lagi dengan ReopenDevice
         if (_player is null || _output is null) return;
-        if (_output.HasEnded)
-            _output.CurrentTime = TimeSpan.Zero; // lagu sudah habis: putar ulang dari awal
         _output.IsPaused = false;
         _player.Play();
+
+        // Lagu di-pause setelah datanya habis (lihat StopAfterDrain): selesaikan seperti lagu yang habis biasa,
+        // supaya PlaybackStopped terpicu dan pemanggil pindah ke lagu berikutnya (atau mengulang, kalau Repeat One).
+        // EndOfStream tidak akan terpicu lagi, karena provider yang sudah habis hanya mengirim hening.
+        if (_output.HasEnded)
+            StopAfterDrain(_output);
     }
 
     public void Pause()
@@ -318,20 +329,24 @@ public sealed class AudioEngine : IDisposable
 
     public void Dispose() => Close();
 
-    private void OnEndOfStream(object? sender, EventArgs e)
-    {
-        var output = (PcmOutputProvider)sender!;
+    private void OnEndOfStream(object? sender, EventArgs e) => StopAfterDrain((PcmOutputProvider)sender!);
 
-        // Event ini datang dari thread audio. Menghentikan player dari thread itu sendiri
-        // akan deadlock, jadi kita jadwalkan di thread lain, setelah sisa audio di buffer
-        // perangkat selesai diputar.
+    /// <summary>
+    /// Menghentikan player setelah sisa audio di buffer perangkat selesai diputar. Player yang berhenti memicu
+    /// PlaybackStopped, dan dari situ pemanggil pindah ke lagu berikutnya.
+    /// </summary>
+    private void StopAfterDrain(PcmOutputProvider output)
+    {
+        // EndOfStream datang dari thread audio. Menghentikan player dari thread itu sendiri
+        // akan deadlock, jadi kita jadwalkan di thread lain.
         _ = Task.Run(async () =>
         {
             await Task.Delay(DrainTime);
             lock (_playerLock)
             {
-                // Lewati kalau sementara itu file sudah diganti atau pengguna seek mundur
-                if (ReferenceEquals(_output, output) && output.HasEnded)
+                // Lewati kalau sementara itu file sudah diganti atau pengguna seek mundur. Lewati juga kalau
+                // pengguna menekan pause: lagunya tetap di-pause di akhir, dan Play nanti yang menyelesaikannya.
+                if (ReferenceEquals(_output, output) && output.HasEnded && !output.IsPaused)
                     _player?.Stop();
             }
         });
