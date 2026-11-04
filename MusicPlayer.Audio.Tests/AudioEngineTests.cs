@@ -51,11 +51,11 @@ public sealed class AudioEngineTests : IDisposable
     }
 
     [Fact]
-    public void Play_WithoutDevice_DoesNothing()
+    public async Task Play_WithoutDevice_DoesNothing()
     {
         // Pemanggil harus membuka perangkat lebih dulu dengan ReopenDevice (lihat PlaybackService.Resume)
         _engine.OpenWithoutDevice(_folder.CreateWav("song.wav", TimeSpan.FromMilliseconds(300)));
-        _engine.Seek(TimeSpan.FromMilliseconds(200));
+        await _engine.SeekAsync(TimeSpan.FromMilliseconds(200));
 
         _engine.Play();
 

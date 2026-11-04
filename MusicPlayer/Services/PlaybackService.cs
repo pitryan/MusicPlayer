@@ -970,7 +970,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (_editRelease is { } release)
             release.Position = target; // file-nya sedang ditulis: posisi ini dipakai saat lagu dimuat lagi
         else
-            _engine.Seek(target);
+            _ = _engine.SeekAsync(target); // posisi tujuan langsung tampil; suaranya menyusul (tidak pernah gagal)
         RefreshPosition();
     }
 
@@ -1374,7 +1374,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 _device?.Dispose();
                 _device = device;
                 AttachVolume(device);
-                _engine.Seek(position);
+                _ = _engine.SeekAsync(position); // hening sampai posisinya siap, lalu langsung berbunyi
                 _engine.Play();
                 if (_interruptedByDevice && _engine.State == PlaybackState.Playing)
                 {
@@ -1389,7 +1389,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             {
                 // Sedang di-pause: file dimuat tanpa perangkat, jadi DAC tetap bebas; Play membukanya lagi seperti biasa
                 _engine.OpenWithoutDevice(track.FilePath);
-                _engine.Seek(position);
+                _ = _engine.SeekAsync(position);
             }
         }
         catch (Exception ex) when (ex is OutputDeviceUnavailableException || AudioErrors.IsDeviceError(ex))
@@ -1401,7 +1401,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             try
             {
                 _engine.OpenWithoutDevice(track.FilePath);
-                _engine.Seek(position);
+                _ = _engine.SeekAsync(position);
                 if (ex is OutputDeviceUnavailableException missing)
                 {
                     ShowWaitingForDevice(track,

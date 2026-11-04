@@ -189,9 +189,8 @@
                                                         Foreground="{StaticResource SecondaryTextBrush}"
                                                         HorizontalAlignment="Right" />
                                                     <!-- Batang merah yang bergerak, di tempat nomor track lagu yang sedang diputar -->
-                                                    <controls:PlayingBars
-                                                        x:Name="PlayingIndicator"
-                                                        x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                                                    <controls:PlayingSlot
+                                                        IsPlaying="{x:Bind IsPlaying, Mode=OneWay}"
                                                         HorizontalAlignment="Right"
                                                         VerticalAlignment="Center" />
                                                     <TextBlock Grid.Column="1" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />
