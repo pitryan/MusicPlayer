@@ -49,7 +49,7 @@ public sealed class LibraryScannerTests : IDisposable
         _database.AddFolder(removedFolder);
         _scanner.Scan(new InlineProgress(p =>
         {
-            if (p.Stage == "Menyimpan")
+            if (p.Stage == ScanStage.Saving)
                 _database.RemoveFolder(removedFolder);
         }));
 
@@ -272,7 +272,7 @@ public sealed class LibraryScannerTests : IDisposable
         File.SetLastWriteTimeUtc(song, SecondModified);
         var result = _scanner.Scan(new InlineProgress(p =>
         {
-            if (p.Stage == "Menyimpan")
+            if (p.Stage == ScanStage.Saving)
             {
                 CopyFixture("second.flac", "Music", ThirdModified);
                 SaveLikeTagEditor(song);
@@ -301,7 +301,7 @@ public sealed class LibraryScannerTests : IDisposable
 
         var result = _scanner.Scan(new InlineProgress(p =>
         {
-            if (p.Stage == "Menyimpan")
+            if (p.Stage == ScanStage.Saving)
             {
                 CopyFixture("second.flac", "Music", SecondModified);
                 SaveLikeTagEditor(song);
