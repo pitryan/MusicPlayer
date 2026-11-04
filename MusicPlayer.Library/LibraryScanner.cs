@@ -27,9 +27,6 @@ public sealed record ScanResult(
 /// </summary>
 public sealed class LibraryScanner(LibraryDatabase database)
 {
-    private static readonly HashSet<string> SupportedExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".flac", ".wav", ".aac", ".m4a" };
-
     public ScanResult Scan(IProgress<ScanProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -59,7 +56,7 @@ public sealed class LibraryScanner(LibraryDatabase database)
             }
             availableFolders.Add(folder);
 
-            foreach (string file in EnumerateAudioFiles(folder))
+            foreach (string file in AudioFiles.InFolder(folder))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -139,20 +136,5 @@ public sealed class LibraryScanner(LibraryDatabase database)
             Errors: errors.ToList(),
             UnavailableFolders: unavailableFolders,
             Elapsed: stopwatch.Elapsed);
-    }
-
-    private static IEnumerable<string> EnumerateAudioFiles(string folder)
-    {
-        var options = new EnumerationOptions
-        {
-            RecurseSubdirectories = true,
-            IgnoreInaccessible = true,
-            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
-        };
-
-        return Directory.EnumerateFiles(folder, "*", options)
-            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f))
-                        // "._lagu.flac" adalah file sampah buatan macOS, bukan audio
-                        && !Path.GetFileName(f).StartsWith("._", StringComparison.Ordinal));
     }
 }

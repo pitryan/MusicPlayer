@@ -42,10 +42,13 @@ public sealed class SessionService
         };
     }
 
-    /// <summary>Memulihkan sesi yang tersimpan, lalu mulai menyimpan setiap perubahan. Dipanggil sekali saat aplikasi dibuka.</summary>
-    public void Start(LibraryDatabase database)
+    /// <summary>
+    /// Memulihkan sesi yang tersimpan (kecuali <paramref name="restore"/> false, misalnya aplikasi dibuka dengan file), lalu
+    /// mulai menyimpan setiap perubahan. Dipanggil sekali saat aplikasi dibuka.
+    /// </summary>
+    public void Start(LibraryDatabase database, bool restore = true)
     {
-        if (PlaybackSessionFile.Load(_path) is { } session)
+        if (restore && PlaybackSessionFile.Load(_path) is { } session)
         {
             var paths = session.Previous.Concat(session.UpNext.Select(e => e.Path)).Append(session.Current);
             var tracks = database.GetTracksByPath(paths);

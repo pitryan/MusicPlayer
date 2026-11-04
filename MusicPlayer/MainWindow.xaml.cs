@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
@@ -14,8 +15,11 @@ using MusicPlayer.Pages;
 using MusicPlayer.Helpers;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.ApplicationModel.DataTransfer.DragDrop;
 using Windows.Foundation;
 using Windows.Graphics;
+using Windows.Storage;
 using VirtualKey = Windows.System.VirtualKey;
 using VirtualKeyModifiers = Windows.System.VirtualKeyModifiers;
 
@@ -301,6 +305,58 @@ public sealed partial class MainWindow : Window
     {
         if ((e.OriginalSource as FrameworkElement)?.DataContext is QueueEntry entry)
             TrackMenu.ShowForQueueEntry(UpNextList, e.GetPosition(UpNextList), entry);
+    }
+
+    // ── Drag & drop dari Explorer ────────────────────────────
+
+    /// <summary>
+    /// Di-drop di atas panel Playing Next (atau sambil menahan Ctrl di mana saja): lagunya ditambahkan ke antrean, bukan
+    /// menggantikannya.
+    /// </summary>
+    private bool AddsToQueue(DragEventArgs e)
+    {
+        if (e.Modifiers.HasFlag(DragDropModifiers.Control))
+            return true;
+        if (QueuePanel.Visibility != Visibility.Visible)
+            return false;
+
+        Point point = e.GetPosition(QueuePanel);
+        return point.X >= 0 && point.Y >= 0 && point.X < QueuePanel.ActualWidth && point.Y < QueuePanel.ActualHeight;
+    }
+
+    /// <summary>File atau folder dari Explorer bisa di-drop di mana saja di jendela ini (lihat FileOpener).</summary>
+    private void Window_DragOver(object sender, DragEventArgs e)
+    {
+        // Geseran lain, misalnya mengurutkan Playing Next, tidak membawa file dan diurus kontrolnya sendiri
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            return;
+
+        e.AcceptedOperation = DataPackageOperation.Copy;
+        e.DragUIOverride.Caption = AddsToQueue(e) ? "Add to Playing Next" : "Play";
+    }
+
+    private async void Window_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+            return;
+
+        bool addToQueue = AddsToQueue(e);
+        IReadOnlyList<IStorageItem> items;
+        var deferral = e.GetDeferral();
+        try
+        {
+            items = await e.DataView.GetStorageItemsAsync();
+        }
+        catch (COMException)
+        {
+            return; // aplikasi asal file-nya sudah tidak menyediakan datanya
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+
+        await FileOpener.OpenAsync(items.Select(i => i.Path).Where(p => !string.IsNullOrEmpty(p)).ToList(), addToQueue);
     }
 
     // ── MiniPlayer dan layar penuh ───────────────────────────
