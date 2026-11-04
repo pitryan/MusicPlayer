@@ -109,6 +109,7 @@ public sealed partial class MainWindow : Window
             // Aplikasi ditutup: MiniPlayer atau layar penuh ikut ditutup, supaya tidak ada jendela yang tertinggal
             _isClosing = true;
             _replacement?.Close();
+            App.Session.SaveNow(); // posisi terakhir, selagi lagunya masih terbuka
             Playback.Dispose();
         };
     }

@@ -42,6 +42,9 @@ public partial class App : Application
     /// <summary>Pemeriksa kualitas sumber (popup badge kualitas): hi-res asli, upsampled, atau dari sumber lossy.</summary>
     public static QualityCheckService QualityChecks { get; private set; } = null!;
 
+    /// <summary>Antrean dan lagu terakhir, disimpan supaya bisa dilanjutkan saat aplikasi dibuka lagi.</summary>
+    public static SessionService Session { get; private set; } = null!;
+
     /// <summary>Klien MusicBrainz untuk editor tag (Look up on MusicBrainz). Satu instance, supaya batas 1 permintaan per detik berlaku di seluruh aplikasi.</summary>
     public static MusicBrainzClient MusicBrainz { get; } = new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
 
@@ -93,6 +96,12 @@ public partial class App : Application
         TagEdits = new TagEditService(Database, Playback, CoverCache.Invalidate, () => Lyrics.Retry());
         MediaControls = CreateMediaControls();
         QualityChecks = new QualityCheckService(Database, QualityCheckService.AnalyzeFile);
+
+        // Sesi terakhir dipulihkan sebelum jendela dibuat, supaya lagunya langsung tampil. Setelah lirik dan kontrol media
+        // Windows siap, supaya keduanya ikut menampilkan lagu itu.
+        string sessionPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "session.json");
+        Session = new SessionService(Playback, sessionPath, DispatcherQueue.GetForCurrentThread());
+        Session.Start(Database);
 
         MainWindow = new MainWindow();
         MainWindow.Activate();
