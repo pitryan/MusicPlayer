@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-
-namespace MusicPlayer.Helpers;
+namespace MusicPlayer.Library;
 
 /// <summary>Logika mengacak dan mengembalikan urutan antrean. Sengaja tanpa kode tampilan, supaya mudah diuji.</summary>
 public static class QueueOrder
