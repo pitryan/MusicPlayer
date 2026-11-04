@@ -7,17 +7,18 @@ namespace MusicPlayer.Audio;
 /// Penghubung antara decoder dan WASAPI. Tugasnya:
 /// 1. Mengubah wadah bit depth kalau perlu (misalnya 16 → 24-bit) tanpa mengubah isi sampel.
 /// 2. Membuat seek aman dipanggil dari thread lain selama audio diputar.
-/// 3. Mengirim hening saat pause dan setelah lagu habis (alasannya ada di <see cref="IsPaused"/>
-///    dan <see cref="EndOfStream"/>).
+/// 3. Mengirim hening saat pause, selama seek disiapkan, dan setelah lagu habis (alasannya ada di <see cref="IsPaused"/>,
+///    <see cref="BeginSeek"/>, dan <see cref="EndOfStream"/>).
 /// </summary>
 public sealed class PcmOutputProvider : IWaveProvider
 {
-    private readonly WaveStream _source;
     private readonly object _gate = new();
     private readonly int _inBytes;
     private readonly int _outBytes;
+    private WaveStream _source;
     private byte[] _sourceBuffer = [];
     private volatile bool _isPaused;
+    private volatile bool _isSeeking;
     private volatile bool _hasEnded;
     private volatile float _gain = 1f;
 
@@ -90,30 +91,75 @@ public sealed class PcmOutputProvider : IWaveProvider
         }
     }
 
+    /// <summary>
+    /// AudioEngine sedang menyiapkan reader baru di posisi tujuan (lihat AudioEngine.SeekAsync). Sampai
+    /// <see cref="EndSeek"/>, hanya hening yang dikirim, tanpa mengubah <see cref="IsPaused"/>. Akhir lagu yang sudah
+    /// tercapai juga tidak berlaku lagi, supaya AudioEngine tidak menghentikan lagu yang baru saja di-seek mundur.
+    /// </summary>
+    public void BeginSeek()
+    {
+        lock (_gate)
+        {
+            _isSeeking = true;
+            _hasEnded = false;
+        }
+    }
+
+    /// <summary>
+    /// Seek selesai: suara lanjut dari <paramref name="positionedSource"/>, reader baru dari file yang sama yang sudah berada
+    /// di posisi tujuan, atau dari reader yang lama kalau null. Reader lama tidak dipakai lagi setelah ini, jadi boleh
+    /// di-dispose pemanggil.
+    /// </summary>
+    public void EndSeek(WaveStream? positionedSource = null)
+    {
+        lock (_gate)
+        {
+            if (positionedSource is not null)
+                _source = positionedSource;
+            _hasEnded = false;
+            _isSeeking = false;
+        }
+    }
+
     public int Read(Span<byte> buffer)
     {
-        if (_isPaused || _hasEnded)
+        if (_isPaused || _isSeeking || _hasEnded)
         {
             buffer.Clear();
             return buffer.Length;
         }
 
         int total = 0;
-        bool justEnded = false;
+        bool justEnded = false, seeking = false;
 
         lock (_gate)
         {
-            int frameBytes = WaveFormat.BlockAlign;
-            while (buffer.Length - total >= frameBytes)
+            // BeginSeek bisa terjadi di antara pemeriksaan di atas dan lock ini. Reader lama tidak dibaca lagi: kalau
+            // bacaan itu kebetulan mencapai akhir file, lagu yang baru di-seek akan dianggap selesai.
+            if (_isSeeking)
             {
-                int read = ReadConverted(buffer[total..]);
-                if (read == 0)
-                {
-                    _hasEnded = justEnded = true;
-                    break;
-                }
-                total += read;
+                seeking = true;
             }
+            else
+            {
+                int frameBytes = WaveFormat.BlockAlign;
+                while (buffer.Length - total >= frameBytes)
+                {
+                    int read = ReadConverted(buffer[total..]);
+                    if (read == 0)
+                    {
+                        _hasEnded = justEnded = true;
+                        break;
+                    }
+                    total += read;
+                }
+            }
+        }
+
+        if (seeking)
+        {
+            buffer.Clear();
+            return buffer.Length;
         }
 
         if (_gain < 1f)

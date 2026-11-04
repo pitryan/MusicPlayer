@@ -146,13 +146,11 @@
                                                         </Border.Background>
                                                     </Border>
                                                     <!-- Lagu yang sedang diputar: cover digelapkan, dengan batang putih yang bergerak -->
-                                                    <Border
-                                                        x:Name="PlayingOverlay"
-                                                        x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                                                    <controls:PlayingSlot
+                                                        IsPlaying="{x:Bind IsPlaying, Mode=OneWay}"
+                                                        BarsForeground="White"
                                                         Background="#99000000"
-                                                        CornerRadius="4">
-                                                        <controls:PlayingBars Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
+                                                        CornerRadius="4" />
                                                 </Grid>
                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                                     <StackPanel Orientation="Horizontal" Spacing="4">

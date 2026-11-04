@@ -77,8 +77,9 @@ while (!finished.IsSet)
         switch (Console.ReadKey(intercept: true).Key)
         {
             case ConsoleKey.Spacebar: engine.TogglePause(); break;
-            case ConsoleKey.LeftArrow: engine.Seek(engine.Position - TimeSpan.FromSeconds(10)); break;
-            case ConsoleKey.RightArrow: engine.Seek(engine.Position + TimeSpan.FromSeconds(10)); break;
+            // Konsol tidak punya UI thread, jadi seek ditunggu di sini supaya engine hanya dipakai dari satu thread
+            case ConsoleKey.LeftArrow: engine.SeekAsync(engine.Position - TimeSpan.FromSeconds(10)).GetAwaiter().GetResult(); break;
+            case ConsoleKey.RightArrow: engine.SeekAsync(engine.Position + TimeSpan.FromSeconds(10)).GetAwaiter().GetResult(); break;
             case ConsoleKey.Q: finished.Set(); break;
         }
     }

@@ -9,7 +9,7 @@ namespace MusicPlayer.ViewModels;
 /// Satu lagu di antrean Playing Next. Sengaja berupa objek tersendiri (bukan Track langsung),
 /// supaya lagu yang sama bisa masuk antrean dua kali dan tetap bisa digeser atau dihapus satu per satu.
 /// </summary>
-public sealed class QueueEntry : ObservableObject
+public sealed class QueueEntry : ObservableObject, IQueueEntry
 {
     private const int CoverPixelWidth = 96;
 

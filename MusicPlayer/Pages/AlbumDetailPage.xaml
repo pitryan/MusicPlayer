@@ -172,8 +172,8 @@
                         HorizontalAlignment="Left"
                         VerticalAlignment="Center" />
                     <!--
-                        Nomor track, atau batang merah yang bergerak kalau lagu ini sedang diputar. x:Load: hanya baris
-                        yang sedang diputar yang membuat kontrol batangnya.
+                        Nomor track, atau batang merah yang bergerak kalau lagu ini sedang diputar. PlayingSlot: hanya
+                        baris yang sedang diputar yang membuat kontrol batangnya.
                     -->
                     <TextBlock
                         Text="{x:Bind NumberText}"
@@ -181,9 +181,8 @@
                         Style="{StaticResource CellStyle}"
                         Foreground="{StaticResource SecondaryTextBrush}"
                         HorizontalAlignment="Right" />
-                    <controls:PlayingBars
-                        x:Name="PlayingIndicator"
-                        x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                    <controls:PlayingSlot
+                        IsPlaying="{x:Bind IsPlaying, Mode=OneWay}"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Center" />
 

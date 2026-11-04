@@ -123,13 +123,11 @@
                                     <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
                                 </Border.Background>
                             </Border>
-                            <Grid
-                                x:Name="PlayingOverlay"
-                                x:Load="{x:Bind IsPlaying, Mode=OneWay}"
+                            <controls:PlayingSlot
+                                IsPlaying="{x:Bind IsPlaying, Mode=OneWay}"
+                                BarsForeground="White"
                                 CornerRadius="4"
-                                Background="#99000000">
-                                <controls:PlayingBars Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Grid>
+                                Background="#99000000" />
                         </Grid>
 
                         <TextBlock Grid.Column="3" Text="{x:Bind Title}" Style="{StaticResource CellStyle}" />

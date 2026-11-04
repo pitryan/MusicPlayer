@@ -36,6 +36,12 @@ public sealed class AudioEngine : IDisposable
     private PcmOutputProvider? _output;
     private WasapiPlayer? _player;
     private MMDevice? _device;
+    private string? _path;
+
+    // Seek yang sedang disiapkan (lihat SeekAsync): nomor permintaan terakhir, dan posisi tujuannya untuk Position.
+    // Close menaikkan nomornya, supaya reader yang selesai disiapkan setelah lagu ditutup atau diganti dibuang.
+    private int _seekRequest;
+    private TimeSpan? _pendingSeek;
 
     public event EventHandler<StoppedEventArgs>? PlaybackStopped;
 
@@ -63,7 +69,8 @@ public sealed class AudioEngine : IDisposable
     /// </summary>
     public bool IsOpen => _output is not null;
 
-    public TimeSpan Position => _output?.CurrentTime ?? TimeSpan.Zero;
+    /// <summary>Posisi lagu; selama seek disiapkan, posisi tujuannya (lihat <see cref="SeekAsync"/>).</summary>
+    public TimeSpan Position => _pendingSeek ?? _output?.CurrentTime ?? TimeSpan.Zero;
     public TimeSpan Duration => _output?.TotalTime ?? TimeSpan.Zero;
 
     public PlaybackState State
@@ -80,7 +87,8 @@ public sealed class AudioEngine : IDisposable
     public void Open(string path, MMDevice device, bool preferExclusive = true)
     {
         Close();
-        _reader = new MediaFoundationReader(path);
+        _reader = OpenReader(path, TimeSpan.Zero);
+        _path = path;
 
         try
         {
@@ -102,7 +110,8 @@ public sealed class AudioEngine : IDisposable
     public void OpenWithoutDevice(string path)
     {
         Close();
-        _reader = new MediaFoundationReader(path);
+        _reader = OpenReader(path, TimeSpan.Zero);
+        _path = path;
 
         // Provider sementara, hanya untuk membaca posisi dan durasi. ReopenDevice membuat provider baru dengan
         // format yang diterima perangkatnya.
@@ -257,6 +266,8 @@ public sealed class AudioEngine : IDisposable
         // Provider baru membaca dari reader yang sama, jadi posisi lagu tidak berubah. Provider lama baru
         // diganti setelah perangkat berhasil dibuka, supaya posisinya tetap terbaca kalau pembukaan gagal.
         var output = new PcmOutputProvider(_reader!, outputFormat);
+        if (_pendingSeek is not null)
+            output.BeginSeek(); // reader lama belum di posisi tujuan: hening sampai reader barunya terpasang
         var player = builder.Build();
         try
         {
@@ -305,12 +316,82 @@ public sealed class AudioEngine : IDisposable
         else Play();
     }
 
-    public void Seek(TimeSpan position)
+    /// <summary>
+    /// Lompat ke posisi tertentu. Media Foundation tidak bisa seek dengan tepat di tengah pemutaran untuk file seperti FLAC
+    /// tanpa SEEKTABLE: audionya bisa meleset belasan detik, dan timestamp-nya pun ikut salah, jadi tidak bisa dikoreksi.
+    /// Reader yang baru dibuka selalu tepat, tapi butuh waktu sebanding dengan posisinya (lebih dari 1 detik di akhir file
+    /// hi-res). Karena itu reader baru disiapkan di thread lain sementara output hening, lalu dipasang begitu siap. Selama
+    /// itu <see cref="Position"/> sudah menunjukkan posisi tujuan, dan seek berikutnya membatalkan yang belum selesai.
+    /// </summary>
+    /// <remarks>
+    /// Dipanggil dari thread yang sama dengan method lain (UI thread). Lanjutannya kembali ke thread itu lewat
+    /// SynchronizationContext, jadi reader dipasang tanpa bersaing dengan Open, Close, atau ReopenDevice. Tidak pernah gagal:
+    /// kalau file-nya tidak bisa dibuka lagi, seek dibatalkan dan lagu lanjut dari posisinya semula.
+    /// </remarks>
+    public async Task SeekAsync(TimeSpan position)
     {
-        if (_output is null) return;
+        if (_output is null || _path is null)
+            return;
         if (position < TimeSpan.Zero) position = TimeSpan.Zero;
         if (position > Duration) position = Duration;
-        _output.CurrentTime = position;
+
+        int request = ++_seekRequest;
+        _pendingSeek = position;
+        _output.BeginSeek();
+
+        string path = _path;
+        MediaFoundationReader? fresh;
+        try
+        {
+            fresh = await Task.Run(() => OpenReader(path, position));
+        }
+        catch (Exception)
+        {
+            fresh = null;
+        }
+
+        // Selama reader disiapkan, pengguna bisa seek lagi, atau lagunya ditutup atau diganti: hasil yang usang dibuang
+        if (request != _seekRequest || _output is null)
+        {
+            fresh?.Dispose();
+            return;
+        }
+
+        _pendingSeek = null;
+        if (fresh is null)
+        {
+            // File-nya tidak bisa dibuka lagi, misalnya baru saja dipindah. Reader lama tidak di-seek: objek Media Foundation-nya
+            // dibuat di thread audio, dan di reader yang belum pernah dibaca, seek justru membuka file-nya dari path lagi. Lagu
+            // tetap di posisinya.
+            _output.EndSeek();
+            return;
+        }
+
+        // _output bisa provider lain dari yang tadi (ReopenDevice selama menunggu), tapi selalu membaca dari _reader
+        var old = _reader;
+        _output.EndSeek(fresh);
+        _reader = fresh;
+        old?.Dispose();
+    }
+
+    /// <summary>
+    /// Reader baru yang sudah berada tepat di <paramref name="position"/>. Dengan RepositionInRead = false, pekerjaan seek
+    /// yang lama dikerjakan di setter CurrentTime (di thread pemanggil), jadi bacaan pertama di thread audio tetap cepat.
+    /// </summary>
+    internal static MediaFoundationReader OpenReader(string path, TimeSpan position)
+    {
+        var reader = new MediaFoundationReader(path, new MediaFoundationReader.MediaFoundationReaderSettings { RepositionInRead = false });
+        try
+        {
+            if (position > TimeSpan.Zero)
+                reader.CurrentTime = position;
+            return reader;
+        }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
     }
 
     public void Close()
@@ -324,6 +405,9 @@ public sealed class AudioEngine : IDisposable
         }
         _reader?.Dispose();
         _reader = null;
+        _path = null;
+        _seekRequest++; // seek yang belum selesai tidak dipasang lagi (lihat SeekAsync)
+        _pendingSeek = null;
         _device = null; // perangkatnya milik pemanggil, jadi tidak di-dispose di sini
     }
 

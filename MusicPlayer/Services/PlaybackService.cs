@@ -103,15 +103,9 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     // itu file-nya tidak dibuka, juga kalau pengguna kembali ke lagu itu (lihat Play).
     private readonly List<EditRelease> _releases = [];
 
-    // File lagu yang gagal dibuka (hilang, rusak). Tidak dipilih Autoplay, supaya antrean tidak terus melewatinya.
-    // Dikeluarkan lagi begitu file itu berhasil dibuka.
-    private readonly HashSet<string> _unplayable = new(StringComparer.OrdinalIgnoreCase);
-
-    // Lagu yang berhenti karena error di tengah file (rusak), berturut-turut tanpa satu pun lagu yang selesai dengan normal,
-    // dan batasnya: jumlah lagu di antrean saat error pertama. Supaya Repeat All atau Autoplay dengan file yang semuanya
-    // rusak tidak berputar terus.
-    private int _failedInARow;
-    private int _failedInARowLimit;
+    // Lagu sekarang, Previous, Playing Next, shuffle, repeat, dan Autoplay. Aturannya di Library supaya bisa diuji; di sini
+    // hanya membuka file dan mengurus tampilan.
+    private readonly TrackQueue<QueueEntry> _queue;
 
     // Nomor permintaan cover terakhir (lihat LoadCoverAsync)
     private int _coverRequest;
@@ -119,16 +113,9 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     // Untuk riwayat: berapa lama lagu sekarang benar-benar didengarkan (pause dan seek tidak dihitung)
     private double _listenedSeconds;
     private bool _playRecorded;
-    // Lagu-lagu yang sudah diputar sebelum lagu sekarang, untuk tombol Previous dan Repeat All
-    private readonly List<Track> _previous = [];
-
-    // Urutan Playing Next sebelum diacak, untuk dikembalikan saat shuffle dimatikan
-    private List<QueueEntry> _originalOrder = [];
-    private bool _isShuffle;
     private RepeatMode _repeatMode = RepeatMode.Off;
     private MMDevice? _device;
 
-    private Track? _currentTrack;
     private ImageSource? _currentCover;
     private string _titleText = IdleTitle;
     private string _subtitleText = IdleSubtitle;
@@ -150,6 +137,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         _database = database;
         _dispatcher = dispatcherQueue;
+        _queue = new TrackQueue<QueueEntry>(UpNext, (track, autoplay) => new QueueEntry(track) { IsAutoplay = autoplay });
         _engine.PlaybackStopped += OnPlaybackStopped;
 
         // Perbarui posisi lagu di tampilan 4 kali per detik
@@ -168,11 +156,8 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// <summary>Dipicu setiap kali sebuah lagu tercatat di riwayat putar.</summary>
     public event EventHandler? PlayRecorded;
 
-    public Track? CurrentTrack
-    {
-        get => _currentTrack;
-        private set => SetProperty(ref _currentTrack, value);
-    }
+    /// <summary>Lagu sekarang, dari antrean. PropertyChanged-nya dipicu ChangeQueue.</summary>
+    public Track? CurrentTrack => _queue.Current;
 
     public ImageSource? CurrentCover
     {
@@ -283,19 +268,13 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// </summary>
     public bool IsShuffle
     {
-        get => _isShuffle;
+        get => _queue.IsShuffle;
         set
         {
-            if (!SetProperty(ref _isShuffle, value))
+            if (value == _queue.IsShuffle)
                 return;
-
-            // Lagu Autoplay bukan bagian dari antrean sendiri: dibuang dulu, lalu disiapkan ulang sesudahnya
-            RemoveAutoplay();
-            if (value)
-                ShuffleUpNext();
-            else
-                ReplaceUpNext(QueueOrder.Restored(UpNext.ToList(), _originalOrder));
-            TopUpAutoplay();
+            _queue.SetShuffle(value);
+            OnPropertyChanged();
         }
     }
 
@@ -309,27 +288,22 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(IsRepeatOn));
                 OnPropertyChanged(nameof(IsRepeatOne));
                 OnPropertyChanged(nameof(RepeatSymbol));
-
-                // Repeat dan Autoplay tidak berjalan bersamaan: repeat mengulang antrean, jadi lagu Autoplay dibuang
-                if (value == RepeatMode.Off)
-                    TopUpAutoplay();
-                else
-                    RemoveAutoplay();
+                _queue.SetRepeat(value != RepeatMode.Off);
             }
         }
     }
 
     // ── Autoplay ─────────────────────────────────────────────
 
-    // Jumlah lagu Autoplay yang disiapkan di antrean setelah antrean sendiri habis
-    private const int AutoplayCount = 5;
-    private bool _autoplayEnabled;
-
     /// <summary>
     /// Sumber lagu Autoplay: (lagu terakhir, path yang dikecualikan, jumlah) → lagu. Disetel App
     /// (AutoplayPicker dengan library, riwayat putar, dan favorit); null berarti Autoplay tidak tersedia.
     /// </summary>
-    public Func<Track, ISet<string>, int, IReadOnlyList<Track>>? AutoplaySource { get; set; }
+    public Func<Track, ISet<string>, int, IReadOnlyList<Track>>? AutoplaySource
+    {
+        get => _queue.AutoplaySource;
+        set => _queue.AutoplaySource = value;
+    }
 
     /// <summary>
     /// Autoplay, seperti Apple Music: saat antrean habis, pemutaran berlanjut dengan lagu yang mirip dari library.
@@ -337,54 +311,14 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// </summary>
     public bool AutoplayEnabled
     {
-        get => _autoplayEnabled;
+        get => _queue.AutoplayEnabled;
         set
         {
-            if (!SetProperty(ref _autoplayEnabled, value))
+            if (value == _queue.AutoplayEnabled)
                 return;
-            if (value)
-                TopUpAutoplay();
-            else
-                RemoveAutoplay();
+            _queue.SetAutoplay(value);
+            OnPropertyChanged();
         }
-    }
-
-    /// <summary>
-    /// Menyiapkan lagu Autoplay di antrean kalau antrean sendiri sudah habis. Dipanggil setiap lagu baru mulai, dan
-    /// saat Autoplay atau Repeat berubah.
-    /// </summary>
-    /// <param name="skip">Path lagu yang tidak boleh dipilih, misalnya lagu yang baru saja dihapus dari antrean.</param>
-    private void TopUpAutoplay(IEnumerable<string>? skip = null)
-    {
-        if (!_autoplayEnabled || AutoplaySource is null || CurrentTrack is not { } current || RepeatMode != RepeatMode.Off)
-            return;
-        if (UpNext.Any(e => !e.IsAutoplay))
-            return; // antrean sendiri masih ada: Autoplay baru setelah itu
-        int missing = AutoplayCount - UpNext.Count;
-        if (missing <= 0)
-            return;
-
-        var exclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { current.FilePath };
-        foreach (var entry in UpNext)
-            exclude.Add(entry.Track.FilePath);
-        foreach (var track in _previous)
-            exclude.Add(track.FilePath);
-        exclude.UnionWith(_unplayable);
-        if (skip is not null)
-            exclude.UnionWith(skip);
-
-        foreach (var track in AutoplaySource(current, exclude, missing))
-            UpNext.Add(new QueueEntry(track) { IsAutoplay = true });
-    }
-
-    private void RemoveAutoplay()
-    {
-        for (int i = UpNext.Count - 1; i >= 0; i--)
-        {
-            if (UpNext[i].IsAutoplay)
-                UpNext.RemoveAt(i);
-        }
-        _originalOrder.RemoveAll(e => e.IsAutoplay);
     }
 
     /// <summary>Volume dari 0 sampai 100.</summary>
@@ -675,27 +609,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (startIndex < 0 || startIndex >= tracks.Count)
             return;
 
-        _previous.Clear();
-        UpNext.Clear();
-
-        if (IsShuffle)
-        {
-            // Shuffle aktif: lagu yang dipilih diputar dulu, lalu SEMUA lagu lain di daftar itu diacak,
-            // termasuk yang letaknya sebelum lagu yang dipilih (kalau tidak, lagu-lagu itu terlewat)
-            for (int i = 0; i < tracks.Count; i++)
-            {
-                if (i != startIndex)
-                    UpNext.Add(new QueueEntry(tracks[i]));
-            }
-            ShuffleUpNext();
-        }
-        else
-        {
-            _previous.AddRange(tracks.Take(startIndex));
-            foreach (var track in tracks.Skip(startIndex + 1))
-                UpNext.Add(new QueueEntry(track));
-        }
-
+        _queue.Start(tracks, startIndex);
         PlayChosen(tracks[startIndex], keepHistory: false);
     }
 
@@ -725,63 +639,28 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (CurrentTrack is null)
             PlayChosen(track, keepHistory: false);
         else
-            UpNext.Insert(0, new QueueEntry(track));
+            _queue.PlayNext(track);
     }
 
     /// <summary>Menaruh lagu di urutan paling bawah Playing Next. Kalau belum ada yang diputar, langsung diputar.</summary>
     public void AddToQueue(Track track)
     {
         if (CurrentTrack is null)
-        {
             PlayChosen(track, keepHistory: false);
-            return;
-        }
-
-        // Antrean sendiri selalu di atas lagu Autoplay
-        int autoplayStart = -1;
-        for (int i = 0; i < UpNext.Count; i++)
-        {
-            if (UpNext[i].IsAutoplay)
-            {
-                autoplayStart = i;
-                break;
-            }
-        }
-        if (autoplayStart < 0)
-            UpNext.Add(new QueueEntry(track));
         else
-            UpNext.Insert(autoplayStart, new QueueEntry(track));
+            _queue.Add(track); // antrean sendiri selalu di atas lagu Autoplay
     }
 
     /// <summary>Langsung memutar sebuah lagu dari Playing Next. Lagu-lagu di atasnya dilewati.</summary>
     public void PlayFromQueue(QueueEntry entry)
     {
-        int index = UpNext.IndexOf(entry);
-        if (index < 0)
-            return;
-
-        for (int i = 0; i <= index; i++)
-            UpNext.RemoveAt(0);
-
-        PlayChosen(entry.Track, keepHistory: true);
+        if (_queue.SkipTo(entry))
+            PlayChosen(entry.Track, keepHistory: true);
     }
 
-    public void RemoveFromQueue(QueueEntry entry)
-    {
-        UpNext.Remove(entry);
-        _originalOrder.Remove(entry); // supaya tidak kembali saat shuffle dimatikan
+    public void RemoveFromQueue(QueueEntry entry) => _queue.Remove(entry);
 
-        // Sama seperti ClearQueue: kalau antrean sendiri sudah habis, lagu Autoplay langsung disiapkan (atau dilengkapi lagi
-        // kalau yang dihapus lagu Autoplay). Lagu yang baru dihapus tidak dipilih lagi sebagai penggantinya.
-        TopUpAutoplay(skip: [entry.Track.FilePath]);
-    }
-
-    public void ClearQueue()
-    {
-        UpNext.Clear();
-        _originalOrder.Clear();
-        TopUpAutoplay(); // dengan Autoplay menyala, pemutaran tetap berlanjut setelah lagu ini
-    }
+    public void ClearQueue() => _queue.Clear();
 
     public void TogglePlayPause()
     {
@@ -1011,7 +890,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// <summary>Tombol Next. Dalam mode Repeat One pun, tombol ini tetap pindah ke lagu berikutnya.</summary>
     public void Next()
     {
-        _failedInARow = 0;
+        _queue.ResetFailures();
         Advance();
     }
 
@@ -1025,52 +904,17 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// <param name="problem">Pesan yang ditampilkan lebih dulu, misalnya lagu sebelumnya yang berhenti karena error.</param>
     private void Advance(string? problem = null)
     {
-        var skippedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        Track? firstSkipped = null;
-        string firstReason = "";
-        bool keepHistory = true, toppedUp = false, restarted = false;
+        var result = _queue.Advance(Play);
+        string? skipped = DescribeSkipped(result.Skipped, result.FirstSkipped, result.FirstSkippedReason);
 
-        while (true)
+        if (!result.Played)
         {
-            // Antrean habis tanpa sempat disiapkan lagu Autoplay (misalnya lagu terakhir dihapus dengan "Remove from Queue"),
-            // atau semua lagu Autoplay-nya gagal dibuka: disiapkan sekali lagi, tanpa lagu yang gagal dibuka
-            if (UpNext.Count == 0 && RepeatMode == RepeatMode.Off && !toppedUp)
-            {
-                toppedUp = true;
-                TopUpAutoplay();
-            }
-
-            if (UpNext.Count == 0)
-            {
-                if (RepeatMode == RepeatMode.Off || CurrentTrack is null || restarted)
-                {
-                    StopAll(); // mengosongkan StatusText, jadi pesannya diisi sesudahnya
-                    StatusText = JoinMessages(problem, DescribeSkipped(skippedPaths.Count, firstSkipped, firstReason));
-                    return;
-                }
-
-                restarted = true;
-                RestartQueue();
-                keepHistory = false; // lagu sekarang sudah ikut masuk antrean putaran ulang
-                continue;
-            }
-
-            var next = UpNext[0];
-            UpNext.RemoveAt(0);
-            if (Play(next.Track, keepHistory, out string error))
-            {
-                if (problem is not null || firstSkipped is not null)
-                    StatusText = JoinMessages(problem, DescribeSkipped(skippedPaths.Count, firstSkipped, firstReason), StatusText);
-                return;
-            }
-
-            // File-nya tidak bisa dibuka: dilewati, lagu sekarang dan riwayatnya tidak berubah
-            skippedPaths.Add(next.Track.FilePath);
-            if (firstSkipped is null)
-            {
-                firstSkipped = next.Track;
-                firstReason = error;
-            }
+            StopAll(); // mengosongkan StatusText, jadi pesannya diisi sesudahnya
+            StatusText = JoinMessages(problem, skipped);
+        }
+        else if (problem is not null || skipped is not null)
+        {
+            StatusText = JoinMessages(problem, skipped, StatusText);
         }
     }
 
@@ -1082,37 +926,6 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private static string JoinMessages(params string?[] messages) =>
         string.Join(" ", messages.Where(m => !string.IsNullOrEmpty(m)));
 
-    /// <summary>
-    /// Repeat: antrean sudah habis, jadi semua lagu yang tadi diputar (ditambah lagu sekarang) masuk Playing Next lagi
-    /// dari awal; Advance lalu memutar yang paling atas. Kalau shuffle aktif, urutannya diacak ulang.
-    /// </summary>
-    private void RestartQueue()
-    {
-        var entries = _previous.Append(CurrentTrack!).Select(t => new QueueEntry(t)).ToList();
-        _previous.Clear();
-
-        if (IsShuffle)
-        {
-            _originalOrder = entries.ToList();
-            entries = QueueOrder.Shuffled(entries);
-        }
-
-        ReplaceUpNext(entries);
-    }
-
-    private void ShuffleUpNext()
-    {
-        _originalOrder = UpNext.ToList();
-        ReplaceUpNext(QueueOrder.Shuffled(_originalOrder));
-    }
-
-    private void ReplaceUpNext(List<QueueEntry> entries)
-    {
-        UpNext.Clear();
-        foreach (var entry in entries)
-            UpNext.Add(entry);
-    }
-
     public void Previous()
     {
         if (CurrentTrack is not { } current)
@@ -1120,7 +933,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
         // Seperti pemutar musik pada umumnya: kalau lagu sudah berjalan lebih dari
         // 3 detik, tombol ini mengulang lagu dari awal, bukan pindah ke lagu sebelumnya
-        if (Position > TimeSpan.FromSeconds(3) || _previous.Count == 0)
+        if (Position > TimeSpan.FromSeconds(3) || !_queue.HasPrevious)
         {
             if (_engine.IsOpen || _editRelease is not null)
                 SeekTo(TimeSpan.Zero);
@@ -1130,10 +943,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         }
 
         // Lagu sekarang dikembalikan ke paling atas Playing Next
-        var previous = _previous[^1];
-        _previous.RemoveAt(_previous.Count - 1);
-        UpNext.Insert(0, new QueueEntry(current));
-        PlayChosen(previous, keepHistory: false);
+        PlayChosen(_queue.StepBack()!, keepHistory: false);
     }
 
     /// <summary>
@@ -1160,7 +970,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (_editRelease is { } release)
             release.Position = target; // file-nya sedang ditulis: posisi ini dipakai saat lagu dimuat lagi
         else
-            _engine.Seek(target);
+            _ = _engine.SeekAsync(target); // posisi tujuan langsung tampil; suaranya menyusul (tidak pernah gagal)
         RefreshPosition();
     }
 
@@ -1384,7 +1194,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             return Unplayable(track, ex, out error);
         }
 
-        _unplayable.Remove(track.FilePath);
+        _queue.Unplayable.Remove(track.FilePath);
         ShowTrack(track, keepHistory);
         StatusText = "";
         UpdateQualityInfo(track, device);
@@ -1395,7 +1205,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// <summary>File lagu tidak bisa dibuka: dicatat supaya Autoplay tidak memilihnya, dan alasannya untuk pesan.</summary>
     private bool Unplayable(Track track, Exception ex, out string error)
     {
-        _unplayable.Add(track.FilePath);
+        _queue.Unplayable.Add(track.FilePath);
         error = DescribeFileError(ex);
         RefreshPosition();
         return false;
@@ -1408,7 +1218,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// </summary>
     private void PlayChosen(Track track, bool keepHistory)
     {
-        _failedInARow = 0;
+        _queue.ResetFailures();
         if (Play(track, keepHistory, out string error))
             return;
 
@@ -1564,7 +1374,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 _device?.Dispose();
                 _device = device;
                 AttachVolume(device);
-                _engine.Seek(position);
+                _ = _engine.SeekAsync(position); // hening sampai posisinya siap, lalu langsung berbunyi
                 _engine.Play();
                 if (_interruptedByDevice && _engine.State == PlaybackState.Playing)
                 {
@@ -1579,7 +1389,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             {
                 // Sedang di-pause: file dimuat tanpa perangkat, jadi DAC tetap bebas; Play membukanya lagi seperti biasa
                 _engine.OpenWithoutDevice(track.FilePath);
-                _engine.Seek(position);
+                _ = _engine.SeekAsync(position);
             }
         }
         catch (Exception ex) when (ex is OutputDeviceUnavailableException || AudioErrors.IsDeviceError(ex))
@@ -1591,7 +1401,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             try
             {
                 _engine.OpenWithoutDevice(track.FilePath);
-                _engine.Seek(position);
+                _ = _engine.SeekAsync(position);
                 if (ex is OutputDeviceUnavailableException missing)
                 {
                     ShowWaitingForDevice(track,
@@ -1637,20 +1447,10 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         foreach (var t in tracks)
             byPath[t.FilePath] = t;
 
-        for (int i = 0; i < _previous.Count; i++)
+        bool currentReplaced = false;
+        ChangeQueue(() => currentReplaced = _queue.ReplaceTracks(t => byPath.GetValueOrDefault(t.FilePath)));
+        if (currentReplaced && CurrentTrack is { } now)
         {
-            if (byPath.TryGetValue(_previous[i].FilePath, out var updated))
-                _previous[i] = updated;
-        }
-        foreach (var entry in UpNext.Concat(_originalOrder))
-        {
-            if (byPath.TryGetValue(entry.Track.FilePath, out var updated))
-                entry.UpdateTrack(updated);
-        }
-
-        if (CurrentTrack is { } current && byPath.TryGetValue(current.FilePath, out var now))
-        {
-            CurrentTrack = now;
             TitleText = now.DisplayTitle;
             SubtitleText = $"{now.DisplayArtist} — {now.DisplayAlbum}";
             _ = LoadCoverAsync(now);
@@ -1672,22 +1472,19 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             }
             : null;
 
-        for (int i = 0; i < _previous.Count; i++)
-        {
-            if (Moved(_previous[i]) is { } moved)
-                _previous[i] = moved;
-        }
+        ChangeQueue(() => _queue.ReplaceTracks(Moved));
+    }
 
-        // Entri yang sama bisa ada di UpNext dan _originalOrder. Dipindah sekali saja: lokasi baru bisa berada di dalam
-        // folder lama, dan entri yang dipindah dua kali akan menunjuk ke folder yang salah.
-        foreach (var entry in UpNext.Concat(_originalOrder).Distinct())
-        {
-            if (Moved(entry.Track) is { } moved)
-                entry.UpdateTrack(moved);
-        }
-
-        if (CurrentTrack is { } current && Moved(current) is { } now)
-            CurrentTrack = now;
+    /// <summary>
+    /// Menjalankan perubahan antrean yang bisa mengganti lagu sekarang, lalu memberi tahu tampilan kalau memang berganti.
+    /// Antrean tidak mengganti objek lagu yang isinya sama, jadi membandingkan objeknya sama dengan SetProperty.
+    /// </summary>
+    private void ChangeQueue(Action change)
+    {
+        var before = CurrentTrack;
+        change();
+        if (!ReferenceEquals(before, CurrentTrack))
+            OnPropertyChanged(nameof(CurrentTrack));
     }
 
     /// <summary>Lagu ini menjadi lagu sekarang di tampilan.</summary>
@@ -1697,16 +1494,13 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// </param>
     private void ShowTrack(Track track, bool keepHistory)
     {
-        if (keepHistory && CurrentTrack is { } old)
-            _previous.Add(old);
-
-        CurrentTrack = track;
+        ChangeQueue(() => _queue.MoveTo(track, keepHistory));
         _listenedSeconds = 0;
         _playRecorded = false;
         TitleText = track.DisplayTitle;
         SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
         _ = LoadCoverAsync(track);
-        TopUpAutoplay();
+        _queue.TopUpAutoplay();
     }
 
     /// <summary>
@@ -1728,7 +1522,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             return Unplayable(track, ex, out error);
         }
 
-        _unplayable.Remove(track.FilePath);
+        _queue.Unplayable.Remove(track.FilePath);
         ShowTrack(track, keepHistory);
         ShowWaitingForDevice(track, message, deviceError);
         RefreshPosition();
@@ -1766,8 +1560,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _interruptedByDevice = false;
         _editRelease = null; // lagu yang sedang dilepas untuk edit tag tidak dimuat lagi setelah penyimpanan
         _engine.Close();
-        _previous.Clear();
-        CurrentTrack = null;
+        ChangeQueue(_queue.Stop);
         _coverRequest++; // cover yang masih dimuat tidak ditampilkan lagi
         CurrentCover = null;
         TitleText = IdleTitle;
@@ -1864,9 +1657,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             // aturan yang sama seperti Next, juga dalam mode Repeat One (lagu yang rusak akan berhenti di tempat yang sama
             // lagi). Kalau semua lagu di antrean rusak, pemutaran berhenti setelah semuanya dicoba sekali.
             string problem = $"Couldn't continue \"{CurrentTrack?.DisplayTitle}\": {DescribeFileError(readError)}";
-            if (_failedInARow++ == 0)
-                _failedInARowLimit = UpNext.Count + _previous.Count + 1;
-            if (_failedInARow >= _failedInARowLimit)
+            if (_queue.FailedMidSong())
             {
                 // Semua lagu di antrean sudah dicoba sekali: berhenti di lagu ini dengan pesannya, seperti PlayChosen yang
                 // gagal. Antrean tetap, tidak ada yang dimuat, dan tidak ada yang berjalan sendiri lagi (juga kalau Autoplay
@@ -1887,7 +1678,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         }
 
         // Lagu selesai dengan normal: ulangi kalau Repeat One, selain itu lanjut ke lagu berikutnya
-        _failedInARow = 0;
+        _queue.ResetFailures();
         if (RepeatMode == RepeatMode.One && CurrentTrack is { } track)
             PlayChosen(track, keepHistory: false);
         else
