@@ -71,6 +71,12 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private static readonly TimeSpan KeepDeviceAfterPause = TimeSpan.Zero;
     private readonly DispatcherQueueTimer _releaseTimer;
 
+    // Pemberitahuan Windows saat perangkat output dicolok, dicabut, atau dinyalakan ulang (lihat OutputDevicesChanged).
+    // Null kalau layanan audio Windows tidak bisa memberikannya.
+    private readonly MMDeviceEnumerator? _deviceEnumerator;
+    private readonly MMDeviceNotificationClient? _deviceNotifications;
+    private readonly DispatcherQueueTimer _devicesChangedTimer;
+
     // HRESULT dari Windows kalau tidak ada perangkat output sama sekali (ERROR_NOT_FOUND)
     private const int NoDeviceFound = unchecked((int)0x80070490);
 
@@ -151,6 +157,37 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _releaseTimer.Interval = AudioEngine.DrainTime + KeepDeviceAfterPause;
         _releaseTimer.IsRepeating = false;
         _releaseTimer.Tick += (_, _) => ReleaseDeviceIfPaused();
+
+        // Satu kejadian (misalnya DAC yang restart sendiri) memicu beberapa notifikasi beruntun: dikabarkan sekali saja
+        _devicesChangedTimer = dispatcherQueue.CreateTimer();
+        _devicesChangedTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _devicesChangedTimer.IsRepeating = false;
+        _devicesChangedTimer.Tick += (_, _) => OutputDevicesChanged?.Invoke(this, EventArgs.Empty);
+
+        try
+        {
+            // Dibuat di UI thread, jadi NAudio mengirim event-nya ke UI thread juga
+            _deviceEnumerator = new MMDeviceEnumerator();
+            _deviceNotifications = _deviceEnumerator.CreateNotificationClient(useSynchronizationContext: true);
+            _deviceNotifications.DeviceAdded += (_, _) => OnDevicesChanged();
+            _deviceNotifications.DeviceRemoved += (_, _) => OnDevicesChanged();
+            _deviceNotifications.DeviceStateChanged += (_, _) => OnDevicesChanged();
+            _deviceNotifications.DefaultDeviceChanged += (_, _) => OnDevicesChanged();
+        }
+        catch (COMException)
+        {
+            // Layanan audio Windows bermasalah: daftar output hanya diperbarui saat Settings dibuka
+            _deviceNotifications?.Dispose();
+            _deviceEnumerator?.Dispose();
+            _deviceNotifications = null;
+            _deviceEnumerator = null;
+        }
+    }
+
+    private void OnDevicesChanged()
+    {
+        _devicesChangedTimer.Stop();
+        _devicesChangedTimer.Start();
     }
 
     /// <summary>Dipicu setiap kali sebuah lagu tercatat di riwayat putar.</summary>
@@ -498,6 +535,13 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// <summary>Pilihan di daftar output popup kualitas. Diisi ulang oleh <see cref="RefreshOutputDevices"/>.</summary>
     public ObservableCollection<OutputDeviceItem> OutputDevices { get; } = [];
 
+    /// <summary>
+    /// Perangkat output dicolok, dicabut, dinyalakan ulang, atau perangkat default Windows berganti, misalnya DAC yang
+    /// restart sendiri. Dipicu di UI thread, sekali untuk beberapa perubahan beruntun. Daftar output yang sedang tampil
+    /// mengisi ulang dirinya dengan <see cref="RefreshOutputDevices"/>.
+    /// </summary>
+    public event EventHandler? OutputDevicesChanged;
+
     /// <summary>ID perangkat output pilihan, atau null untuk perangkat default Windows.</summary>
     public string? OutputDeviceId => _outputDeviceId;
 
@@ -542,9 +586,9 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Mengisi ulang daftar output, lalu mengembalikan pilihan yang sedang aktif. Dipanggil setiap kali popup
-    /// kualitas dibuka, supaya DAC yang baru dicolok langsung muncul. Perangkat pilihan yang sedang tidak
-    /// tersambung tetap tampil dengan keterangan, supaya jelas apa yang sedang dipilih.
+    /// Mengisi ulang daftar output, lalu mengembalikan pilihan yang sedang aktif. Dipanggil saat daftarnya tampil dan
+    /// setiap kali <see cref="OutputDevicesChanged"/> dipicu, supaya DAC yang baru dicolok langsung muncul. Perangkat
+    /// pilihan yang sedang tidak tersambung tetap tampil dengan keterangan, supaya jelas apa yang sedang dipilih.
     /// </summary>
     public OutputDeviceItem RefreshOutputDevices()
     {
@@ -978,6 +1022,9 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         _timer.Stop();
         _releaseTimer.Stop();
+        _devicesChangedTimer.Stop();
+        _deviceNotifications?.Dispose();
+        _deviceEnumerator?.Dispose();
         DetachDeviceVolume();
         _engine.Dispose();
         _device?.Dispose();
