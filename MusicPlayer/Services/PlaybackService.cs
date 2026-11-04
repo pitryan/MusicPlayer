@@ -1495,12 +1495,50 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private void ShowTrack(Track track, bool keepHistory)
     {
         ChangeQueue(() => _queue.MoveTo(track, keepHistory));
+        ShowTrackInfo(track);
+        _queue.TopUpAutoplay();
+    }
+
+    /// <summary>Judul dan cover lagu yang baru menjadi lagu sekarang; hitungan waktu dengarnya mulai dari nol.</summary>
+    private void ShowTrackInfo(Track track)
+    {
         _listenedSeconds = 0;
         _playRecorded = false;
         TitleText = track.DisplayTitle;
         SubtitleText = $"{track.DisplayArtist} — {track.DisplayAlbum}";
         _ = LoadCoverAsync(track);
-        _queue.TopUpAutoplay();
+    }
+
+    /// <summary>Antrean dan posisi sekarang untuk disimpan (lihat SessionService). Null kalau tidak ada lagu.</summary>
+    public PlaybackSession? CaptureSession() => _queue.Snapshot(Position);
+
+    /// <summary>
+    /// Sesi terakhir kembali saat aplikasi dibuka: antrean dan lagu terakhir, di-pause di posisinya. Perangkat audio tidak
+    /// dibuka, jadi DAC tetap bebas sampai Play ditekan (Resume membukanya seperti setelah pause). <paramref name="find"/>
+    /// mencari lagu di library; lagu yang sudah tidak ada dilewati. False kalau lagu terakhirnya sendiri sudah tidak ada.
+    /// </summary>
+    public bool RestoreSession(PlaybackSession session, Func<string, Track?> find)
+    {
+        bool restored = false;
+        ChangeQueue(() => restored = _queue.Restore(session, find));
+        if (!restored || CurrentTrack is not { } track)
+            return false;
+
+        ShowTrackInfo(track);
+        try
+        {
+            _engine.OpenWithoutDevice(track.FilePath);
+            if (session.Position > TimeSpan.Zero)
+                _ = _engine.SeekAsync(session.Position);
+        }
+        catch (Exception ex)
+        {
+            // Misalnya drive-nya belum tersambung: lagunya tetap tampil dengan pesannya, dan Play mencobanya lagi
+            _queue.Unplayable.Add(track.FilePath);
+            StatusText = $"Couldn't open \"{track.DisplayTitle}\": {DescribeFileError(ex)}";
+        }
+        RefreshPosition();
+        return true;
     }
 
     /// <summary>

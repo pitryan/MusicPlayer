@@ -245,6 +245,74 @@ public sealed class TrackQueueTests
         Assert.Same(before, _queue.Current);
     }
 
+    [Fact]
+    public void SnapshotAndRestore_BringBackTheQueue_IncludingTheUnshuffledOrder()
+    {
+        UseAutoplay();
+        PlayQueue([A, B, C, D, E], 1);
+        _queue.SetShuffle(true);
+        var shuffled = UpNextTracks.ToList();
+        Assert.NotEqual([C, D, E], shuffled); // kalau acakannya kebetulan sama, tes ini tidak membuktikan apa-apa
+
+        var session = _queue.Snapshot(TimeSpan.FromSeconds(42))!;
+        var (restored, upNext) = NewQueue(shuffle: true);
+        Assert.True(restored.Restore(session, Library(A, B, C, D, E)));
+
+        Assert.Equal(B, restored.Current);
+        Assert.Equal([A], restored.Previous);
+        Assert.Equal(shuffled, upNext.Select(e => e.Track));
+        Assert.Equal(TimeSpan.FromSeconds(42), session.Position);
+
+        // Shuffle dimatikan setelah aplikasi dibuka lagi: urutan aslinya tetap kembali
+        restored.SetShuffle(false);
+        Assert.Equal([C, D, E], upNext.Select(e => e.Track));
+    }
+
+    [Fact]
+    public void SnapshotAndRestore_KeepAutoplaySongsBelowTheOwnQueue()
+    {
+        UseAutoplay();
+        PlayQueue([A], 0);
+        _queue.Add(B);
+
+        var (restored, upNext) = NewQueue();
+        restored.Restore(_queue.Snapshot(TimeSpan.Zero)!, path => Library(A, B)(path) ?? Song(Path.GetFileNameWithoutExtension(path)));
+
+        Assert.False(upNext[0].IsAutoplay);
+        Assert.Equal(B, upNext[0].Track);
+        Assert.Equal(TrackQueue<Entry>.AutoplayCount, upNext.Count(e => e.IsAutoplay));
+    }
+
+    [Fact]
+    public void Restore_SkipsSongsNoLongerInTheLibrary()
+    {
+        PlayQueue([A, B, C, D], 2);
+        var session = _queue.Snapshot(TimeSpan.Zero)!;
+
+        var (restored, upNext) = NewQueue();
+        Assert.True(restored.Restore(session, Library(B, C)));
+
+        Assert.Equal(C, restored.Current);
+        Assert.Equal([B], restored.Previous);
+        Assert.Empty(upNext);
+    }
+
+    [Fact]
+    public void Restore_CurrentSongNoLongerInTheLibrary_ChangesNothing()
+    {
+        PlayQueue([A, B], 0);
+        var session = _queue.Snapshot(TimeSpan.Zero)!;
+
+        var (restored, upNext) = NewQueue();
+        Assert.False(restored.Restore(session, Library(B)));
+
+        Assert.Null(restored.Current);
+        Assert.Empty(upNext);
+    }
+
+    [Fact]
+    public void Snapshot_NothingPlaying_IsNull() => Assert.Null(_queue.Snapshot(TimeSpan.Zero));
+
     // ── Meniru PlaybackService ───────────────────────────────
 
     // Play: file yang tidak bisa dibuka dicatat, yang lain menjadi lagu sekarang (ShowTrack)
@@ -307,6 +375,22 @@ public sealed class TrackQueueTests
     }
 
     private static Track Song(string name) => new() { FilePath = $@"C:\Music\{name}.flac", FolderPath = @"C:\Music", Title = name };
+
+    /// <summary>Antrean baru, seperti saat aplikasi dibuka lagi; shuffle sudah dipulihkan dari pengaturan.</summary>
+    private static (TrackQueue<Entry> Queue, List<Entry> UpNext) NewQueue(bool shuffle = false)
+    {
+        var upNext = new List<Entry>();
+        var queue = new TrackQueue<Entry>(upNext, (track, autoplay) => new Entry(track, autoplay), new Random(2));
+        queue.SetShuffle(shuffle);
+        return (queue, upNext);
+    }
+
+    /// <summary>Library yang hanya berisi lagu-lagu ini, seperti LibraryDatabase.GetTracksByPath.</summary>
+    private static Func<string, Track?> Library(params Track[] tracks)
+    {
+        var byPath = tracks.ToDictionary(t => t.FilePath, StringComparer.OrdinalIgnoreCase);
+        return path => byPath.GetValueOrDefault(path);
+    }
 
     private sealed class Entry(Track initial, bool autoplay) : IQueueEntry
     {
