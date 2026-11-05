@@ -70,6 +70,32 @@ public sealed class AudioFilesTests : IDisposable
     public void IsAudioFile_KnowsTheSupportedFormats(string name, bool expected) =>
         Assert.Equal(expected, AudioFiles.IsAudioFile(Path.Combine(_root, name)));
 
+    [Fact]
+    public void MayAffectLibrary_AudioFilesAndFolders_ButNotOtherFiles()
+    {
+        // Nama folder bertitik, seperti album "SEKAI ALBUM vol.3": tetap dikenali sebagai folder
+        string album = Path.Combine(_root, "SEKAI ALBUM vol.3");
+        Directory.CreateDirectory(album);
+        string song = Path.Combine(album, "01 song.flac");
+        string cover = Path.Combine(album, "cover.jpg");
+        string lyrics = Path.Combine(album, "01 song.lrc");
+
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Created, song));
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Created, album)); // folder yang dipindah ke sini
+        Assert.False(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Created, cover));
+
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Changed, song)); // tag diubah aplikasi lain
+        Assert.False(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Changed, lyrics)); // disimpan editor lirik
+        Assert.False(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Changed, album));
+
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Deleted, cover)); // bisa saja itu folder
+
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Renamed, album, Path.Combine(_root, "old vol.2")));
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Renamed, song, Path.Combine(album, "download.tmp")));
+        Assert.True(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Renamed, Path.Combine(album, "x.tmp"), song));
+        Assert.False(AudioFiles.MayAffectLibrary(WatcherChangeTypes.Renamed, cover, Path.Combine(album, "folder.jpg")));
+    }
+
     private string Copy(string fixture, string relativePath)
     {
         string path = Path.Combine(_root, relativePath);

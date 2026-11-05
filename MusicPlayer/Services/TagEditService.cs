@@ -101,11 +101,18 @@ public sealed class TagEditService
             _reloadLyrics();
 
         if (saved.Count > 0)
-        {
-            Version++;
-            LibraryChanged?.Invoke(this, EventArgs.Empty);
-        }
+            MarkLibraryChanged();
         return new TagSaveResult(saved, failed);
+    }
+
+    /// <summary>
+    /// Isi library berubah, dari editor ini atau dari luar (misalnya scan menemukan lagu baru): halaman yang di-cache
+    /// memuat ulang isinya saat dibuka lagi.
+    /// </summary>
+    public void MarkLibraryChanged()
+    {
+        Version++;
+        LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

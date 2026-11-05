@@ -114,6 +114,7 @@ public sealed partial class MainWindow : Window
             _isClosing = true;
             _replacement?.Close();
             App.Session.SaveNow(); // posisi terakhir, selagi lagunya masih terbuka
+            App.LibraryWatcher.Dispose();
             Playback.Dispose();
         };
     }
