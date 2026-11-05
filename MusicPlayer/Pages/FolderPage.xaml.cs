@@ -101,6 +101,11 @@ public sealed partial class FolderPage : Page
             Frame.Navigate(typeof(FolderPage), subfolder.Summary.Path, Animations.DrillIn);
     }
 
+    // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
+    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
+
+    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
+
     private void Play_Click(object sender, RoutedEventArgs e)
     {
         // Putar semua lagu di folder ini, termasuk yang ada di subfolder, urut path

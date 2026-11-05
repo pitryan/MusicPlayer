@@ -64,6 +64,9 @@ public sealed partial class MainWindow : Window
         // Tombol back hanya muncul kalau ada halaman untuk kembali, misalnya dari detail album ke Albums
         ContentFrame.Navigated += (_, _) => UpdateBackButton();
 
+        // Kotak yang diklik tidak tetap membesar dan tersorot saat halamannya dibuka lagi dengan Back
+        ContentFrame.Navigating += (_, _) => Animations.ResetHover();
+
         // Saat jendela terbuka, fokus jatuh ke kotak pencarian (elemen pertama yang bisa difokus) sehingga garis merahnya
         // langsung menyala. Fokus dipindah ke menu yang terpilih, tanpa tanda fokus keyboard.
         NavView.Loaded += (_, _) => DispatcherQueue.TryEnqueue(() =>

@@ -112,7 +112,7 @@ public sealed partial class AlbumsPage : Page
     private void AlbumGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is AlbumItem album)
-            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, Animations.DrillIn);
+            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, AlbumCoverAnimation.Open(AlbumGrid, album));
     }
 
     // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
@@ -123,5 +123,11 @@ public sealed partial class AlbumsPage : Page
     // Ukuran kotak mengikuti lebar grid (Apple Music: sekitar 240 px, 6 per baris di jendela 1920 px)
     private void AlbumGrid_SizeChanged(object sender, SizeChangedEventArgs e) => TileGrid.Fit(AlbumGrid);
 
-    private void AlbumGrid_Loaded(object sender, RoutedEventArgs e) => TileGrid.Fit(AlbumGrid);
+    private void AlbumGrid_Loaded(object sender, RoutedEventArgs e)
+    {
+        TileGrid.Fit(AlbumGrid);
+
+        // Kembali dari halaman album (halaman ini di-cache, jadi Loaded terpicu lagi): cover-nya terbang ke kotaknya
+        AlbumCoverAnimation.Return(AlbumGrid);
+    }
 }

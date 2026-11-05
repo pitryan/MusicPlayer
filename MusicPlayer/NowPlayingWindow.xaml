@@ -18,16 +18,35 @@
             <KeyboardAccelerator Key="Escape" Invoked="Escape_Invoked" />
         </Grid.KeyboardAccelerators>
 
-        <!-- Latar: cover diperbesar sedikit supaya tepinya tidak terlihat, lalu diburamkan dan digelapkan acrylic.
-             Kalau efek transparansi Windows dimatikan, acrylic memakai warna gelap polos (FallbackColor). -->
-        <Border x:Name="BackdropLayer" RenderTransformOrigin="0.5,0.5">
-            <Border.RenderTransform>
-                <ScaleTransform ScaleX="1.15" ScaleY="1.15" />
-            </Border.RenderTransform>
-            <Border.Background>
-                <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill" />
-            </Border.Background>
-        </Border>
+        <!-- Latar: cover yang diburamkan dan digelapkan acrylic, dan bergerak pelan seperti di Apple Music. Tiga lapis cover
+             yang sama (dua dicerminkan, setengah transparan) berputar pelan dengan arah dan kecepatan berbeda, jadi warnanya
+             seperti mengalir. Setiap lapis lebih besar dari layar di sudut putar mana pun, jadi tepinya tidak pernah terlihat
+             (lihat LayOutBackdrop). Kalau efek transparansi Windows dimatikan, acrylic memakai warna gelap polos (FallbackColor). -->
+        <Canvas x:Name="BackdropLayer" SizeChanged="BackdropLayer_SizeChanged">
+            <Border x:Name="BackdropSwirl1">
+                <Border.Background>
+                    <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill" />
+                </Border.Background>
+            </Border>
+            <Border x:Name="BackdropSwirl2" Opacity="0.6">
+                <Border.Background>
+                    <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill">
+                        <ImageBrush.RelativeTransform>
+                            <ScaleTransform ScaleX="-1" CenterX="0.5" />
+                        </ImageBrush.RelativeTransform>
+                    </ImageBrush>
+                </Border.Background>
+            </Border>
+            <Border x:Name="BackdropSwirl3" Opacity="0.4">
+                <Border.Background>
+                    <ImageBrush ImageSource="{x:Bind Playback.CurrentCover, Mode=OneWay}" Stretch="UniformToFill">
+                        <ImageBrush.RelativeTransform>
+                            <ScaleTransform ScaleY="-1" CenterY="0.5" />
+                        </ImageBrush.RelativeTransform>
+                    </ImageBrush>
+                </Border.Background>
+            </Border>
+        </Canvas>
         <Border>
             <Border.Background>
                 <AcrylicBrush TintColor="#FF141414" TintOpacity="0.5" FallbackColor="#FF1C1C1C" />

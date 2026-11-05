@@ -81,8 +81,13 @@ public sealed partial class SearchPage : Page
     private void AlbumResults_ItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is AlbumItem album)
-            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, Animations.DrillIn);
+            Frame.Navigate(typeof(AlbumDetailPage), album.Summary, AlbumCoverAnimation.Open(AlbumResults, album));
     }
+
+    // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
+    private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
+
+    private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 
     private void SongResults_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {

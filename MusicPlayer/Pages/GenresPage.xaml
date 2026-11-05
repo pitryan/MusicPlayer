@@ -23,6 +23,11 @@
             IsItemClickEnabled="True"
             ItemClick="GenreGrid_ItemClick"
             ContainerContentChanging="GenreGrid_ContainerContentChanging">
+            <GridView.Resources>
+                <!-- Hover seperti Apple Music: hanya cover yang membesar (Animations.Hover), tanpa kotak abu-abu bawaan GridViewItem -->
+                <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="Transparent" />
+                <SolidColorBrush x:Key="GridViewItemBackgroundPressed" Color="Transparent" />
+            </GridView.Resources>
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="vm:GenreItem">
                     <!-- Kotak genre: cover sebagai latar, digelapkan di bagian bawah supaya teksnya terbaca -->

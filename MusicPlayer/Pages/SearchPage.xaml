@@ -33,10 +33,15 @@
                     SelectionMode="None"
                     IsItemClickEnabled="True"
                     ItemClick="ArtistResults_ItemClick">
+                    <GridView.Resources>
+                        <!-- Hover seperti Apple Music: hanya cover yang membesar (Animations.Hover), tanpa kotak abu-abu bawaan GridViewItem -->
+                        <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="GridViewItemBackgroundPressed" Color="Transparent" />
+                    </GridView.Resources>
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="vm:ArtistItem">
                             <StackPanel Width="120" Spacing="8" Margin="0,0,0,8">
-                                <Grid Width="120" Height="120">
+                                <Grid Width="120" Height="120" PointerEntered="Tile_PointerEntered" PointerExited="Tile_PointerExited">
                                     <Ellipse Fill="{StaticResource CoverPlaceholderBrush}" />
                                     <Ellipse>
                                         <Ellipse.Fill>
@@ -64,10 +69,18 @@
                     SelectionMode="None"
                     IsItemClickEnabled="True"
                     ItemClick="AlbumResults_ItemClick">
+                    <GridView.Resources>
+                        <!-- Hover seperti Apple Music: hanya cover yang membesar (Animations.Hover), tanpa kotak abu-abu bawaan GridViewItem -->
+                        <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="GridViewItemBackgroundPressed" Color="Transparent" />
+                    </GridView.Resources>
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="vm:AlbumItem">
                             <StackPanel Width="160" Margin="0,0,0,8">
                                 <Grid
+                                    x:Name="CoverTile"
+                                    PointerEntered="Tile_PointerEntered"
+                                    PointerExited="Tile_PointerExited"
                                     Width="160"
                                     Height="160"
                                     CornerRadius="6"

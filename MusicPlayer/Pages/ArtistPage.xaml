@@ -70,6 +70,7 @@
                         <Button Style="{StaticResource TileButtonStyle}" ToolTipService.ToolTip="Open album" Click="Latest_Click">
                             <StackPanel Orientation="Horizontal" Spacing="18">
                                 <Border
+                                    x:Name="LatestCover"
                                     Width="165"
                                     Height="165"
                                     CornerRadius="6"

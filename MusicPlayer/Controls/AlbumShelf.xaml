@@ -30,7 +30,9 @@
                             -->
                             <Button Style="{StaticResource TileButtonStyle}" Width="180" Tag="{x:Bind}" Click="Tile_Click">
                                 <StackPanel Spacing="2">
+                                    <!-- CoverTile: yang terbang ke halaman album (lihat AlbumCoverAnimation) -->
                                     <Border
+                                        x:Name="CoverTile"
                                         Width="180"
                                         Height="180"
                                         CornerRadius="6"

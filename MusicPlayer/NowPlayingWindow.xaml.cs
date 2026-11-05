@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Numerics;
 using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -9,6 +10,7 @@ using Microsoft.UI.Xaml.Input;
 using MusicPlayer.Helpers;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
+using Windows.Foundation;
 
 namespace MusicPlayer;
 
@@ -86,6 +88,42 @@ public sealed partial class NowPlayingWindow : Window
                 Animations.FadeIn(BackdropLayer, 450);
                 Animations.FadeIn(CoverFrame);
             }
+        }
+    }
+
+    /// <summary>
+    /// Satu lapis latar: ukuran sisinya dan geseran titik putarnya dari tengah (keduanya kali diagonal layar), sudut awal,
+    /// arah, dan lama satu putaran. Supaya lapis yang berputar selalu menutupi layar, sisinya minimal diagonal ditambah empat
+    /// kali geseran titik putarnya: tengah lapis mengitari titik putar, sedangkan tengah layar juga sejauh geseran itu darinya.
+    /// </summary>
+    private sealed record Swirl(float Size, Vector2 PivotOffset, float StartDegrees, bool Clockwise, TimeSpan Period);
+
+    private static readonly Swirl[] Swirls =
+    [
+        new(1.05f, Vector2.Zero, 0, Clockwise: true, TimeSpan.FromSeconds(70)),
+        new(1.6f, new Vector2(0.12f, -0.08f), 120, Clockwise: false, TimeSpan.FromSeconds(50)),
+        new(1.35f, new Vector2(-0.06f, 0.05f), 240, Clockwise: true, TimeSpan.FromSeconds(90)),
+    ];
+
+    private void BackdropLayer_SizeChanged(object sender, SizeChangedEventArgs e) => LayOutBackdrop(e.NewSize);
+
+    /// <summary>Lapis-lapis latar mengikuti ukuran layar, lalu berputar (lihat <see cref="Swirls"/>).</summary>
+    private void LayOutBackdrop(Size screen)
+    {
+        float diagonal = (float)Math.Sqrt(screen.Width * screen.Width + screen.Height * screen.Height);
+        var center = new Vector2((float)screen.Width, (float)screen.Height) / 2;
+        Border[] layers = [BackdropSwirl1, BackdropSwirl2, BackdropSwirl3];
+
+        for (int i = 0; i < layers.Length; i++)
+        {
+            var swirl = Swirls[i];
+            float size = swirl.Size * diagonal;
+            layers[i].Width = size;
+            layers[i].Height = size;
+            Canvas.SetLeft(layers[i], center.X - size / 2);
+            Canvas.SetTop(layers[i], center.Y - size / 2);
+            var pivot = new Vector2(size / 2) + swirl.PivotOffset * diagonal;
+            Animations.Spin(layers[i], pivot, swirl.StartDegrees, swirl.Clockwise, swirl.Period);
         }
     }
 
