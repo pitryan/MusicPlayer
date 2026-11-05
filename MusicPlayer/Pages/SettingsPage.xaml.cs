@@ -156,6 +156,7 @@ public sealed partial class SettingsPage : Page
 
         RefreshFolders();
         App.MainWindow.RefreshFolderItems();
+        App.LibraryWatcher.SyncFolders();
         await LibraryScanState.ScanAsync(App.Database);
     }
 
@@ -167,6 +168,7 @@ public sealed partial class SettingsPage : Page
             StatusText.Text = $"Removed from library ({removed} songs). Your files were not deleted.";
             RefreshFolders();
             App.MainWindow.RefreshFolderItems();
+            App.LibraryWatcher.SyncFolders();
         }
     }
 
@@ -223,6 +225,7 @@ public sealed partial class SettingsPage : Page
         App.Playlists.NotifyChanged();
         RefreshFolders();
         App.MainWindow.RefreshFolderItems();
+        App.LibraryWatcher.SyncFolders();
 
         // Lagu yang tidak ada di lokasi baru dibuang, dan lagu baru di sana ditambahkan
         await LibraryScanState.ScanAsync(App.Database);

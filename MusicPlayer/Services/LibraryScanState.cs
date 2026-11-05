@@ -48,6 +48,10 @@ public static class LibraryScanState
             var scanner = new LibraryScanner(database);
             var result = await Task.Run(() => scanner.Scan(progress));
 
+            // Halaman yang di-cache (misalnya Albums lewat tombol Back) ikut menampilkan lagu yang baru ditemukan
+            if (result.Added + result.Updated + result.Removed > 0)
+                App.TagEdits.MarkLibraryChanged();
+
             message =
                 $"Done in {result.Elapsed.TotalSeconds:0.0} s: {result.Added} added, {result.Updated} updated, " +
                 $"{result.Removed} removed, {result.Unchanged} unchanged.";

@@ -49,6 +49,9 @@ public partial class App : Application
     /// <summary>Antrean dan lagu terakhir, disimpan supaya bisa dilanjutkan saat aplikasi dibuka lagi.</summary>
     public static SessionService Session { get; private set; } = null!;
 
+    /// <summary>Scan otomatis saat isi folder library berubah.</summary>
+    public static LibraryWatcher LibraryWatcher { get; private set; } = null!;
+
     /// <summary>Klien MusicBrainz untuk editor tag (Look up on MusicBrainz). Satu instance, supaya batas 1 permintaan per detik berlaku di seluruh aplikasi.</summary>
     public static MusicBrainzClient MusicBrainz { get; } = new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
 
@@ -113,6 +116,9 @@ public partial class App : Application
         MainWindow.Activate();
         if (openedFiles.Count > 0)
             _ = FileOpener.OpenAsync(openedFiles);
+
+        LibraryWatcher = new LibraryWatcher(Database, DispatcherQueue.GetForCurrentThread());
+        LibraryWatcher.Start();
     }
 
     /// <summary>

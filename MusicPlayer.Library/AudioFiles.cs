@@ -15,6 +15,21 @@ public static class AudioFiles
         // "._lagu.flac" adalah file sampah buatan macOS, bukan audio
         && !Path.GetFileName(path).StartsWith("._", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Apakah perubahan di folder library ini bisa mengubah isi library, untuk scan otomatis (LibraryWatcher): file audio
+    /// yang ditambah, diubah, dihapus, atau diganti namanya, dan folder yang dibuat atau diganti namanya (folder bisa
+    /// bernama "vol.3", jadi dicek di disk, bukan dari ekstensinya). Yang dihapus selalu dihitung, karena tidak bisa
+    /// dicek lagi apakah itu folder. Perubahan file lain, misalnya cover atau .lrc, tidak.
+    /// </summary>
+    /// <param name="oldPath">Path sebelumnya, untuk <see cref="WatcherChangeTypes.Renamed"/>.</param>
+    public static bool MayAffectLibrary(WatcherChangeTypes change, string path, string? oldPath = null) => change switch
+    {
+        WatcherChangeTypes.Deleted => true,
+        WatcherChangeTypes.Changed => IsAudioFile(path),
+        WatcherChangeTypes.Renamed => IsAudioFile(path) || (oldPath is not null && IsAudioFile(oldPath)) || Directory.Exists(path),
+        _ => IsAudioFile(path) || Directory.Exists(path),
+    };
+
     /// <summary>File audio di dalam folder, termasuk semua subfolder-nya. File tersembunyi dan file sistem dilewati.</summary>
     public static IEnumerable<string> InFolder(string folder)
     {
