@@ -9,6 +9,7 @@ namespace MusicPlayer.Audio;
 /// 2. Membuat seek aman dipanggil dari thread lain selama audio diputar.
 /// 3. Mengirim hening saat pause, selama seek disiapkan, dan setelah lagu habis (alasannya ada di <see cref="IsPaused"/>,
 ///    <see cref="BeginSeek"/>, dan <see cref="EndOfStream"/>).
+/// 4. Menyambung lagu berikutnya tanpa jeda (gapless, lihat <see cref="ReplaceNext"/>).
 /// </summary>
 public sealed class PcmOutputProvider : IWaveProvider
 {
@@ -16,6 +17,7 @@ public sealed class PcmOutputProvider : IWaveProvider
     private readonly int _inBytes;
     private readonly int _outBytes;
     private WaveStream _source;
+    private WaveStream? _next;
     private byte[] _sourceBuffer = [];
     private volatile bool _isPaused;
     private volatile bool _isSeeking;
@@ -42,8 +44,55 @@ public sealed class PcmOutputProvider : IWaveProvider
     /// </summary>
     public event EventHandler? EndOfStream;
 
+    /// <summary>
+    /// Dipicu sekali, dari thread audio, saat lagu berikutnya (lihat <see cref="ReplaceNext"/>) mulai dibaca. Sejak itu
+    /// <see cref="Source"/>, posisi, dan durasi milik lagu itu; lagu sebelumnya tidak dibaca lagi.
+    /// </summary>
+    public event EventHandler? NextStarted;
+
     /// <summary>True setelah data lagu habis. Di-reset kalau ada seek.</summary>
     public bool HasEnded => _hasEnded;
+
+    /// <summary>Lagu yang sedang dibaca. Berganti saat lagu berikutnya mulai, dan saat seek dipasang (lihat <see cref="EndSeek"/>).</summary>
+    public WaveStream Source
+    {
+        get
+        {
+            lock (_gate) return _source;
+        }
+    }
+
+    /// <summary>
+    /// Lagu berikutnya untuk gapless: begitu data lagu sekarang habis, bacaan langsung lanjut dari <paramref name="next"/> di
+    /// buffer yang sama, jadi tidak ada jeda dan perangkat tidak dibuka ulang. Sampelnya tidak diubah, jadi formatnya harus
+    /// sama persis dengan lagu sekarang. Null membatalkannya.
+    /// </summary>
+    /// <param name="expected">
+    /// Lagu berikutnya yang terpasang menurut pemanggil (null kalau belum ada). Lagu itu bisa saja sudah mulai dibaca di thread
+    /// audio: tidak ada yang diubah, dan hasilnya false.
+    /// </param>
+    /// <returns>False kalau <paramref name="expected"/> sudah tidak terpasang, biasanya karena sudah mulai diputar.</returns>
+    public bool ReplaceNext(WaveStream? expected, WaveStream? next)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_next, expected))
+                return false;
+            if (next is not null && !HasSameFormat(next.WaveFormat, _source.WaveFormat))
+                throw new ArgumentException("The next song must have exactly the same format as the current one.", nameof(next));
+
+            _next = next;
+            return true;
+        }
+    }
+
+    /// <summary>Sampel lagu <paramref name="next"/> bisa langsung menyusul <paramref name="current"/> tanpa diubah.</summary>
+    public static bool HasSameFormat(WaveFormat current, WaveFormat next) =>
+        next.Encoding == current.Encoding
+        && next.SampleRate == current.SampleRate
+        && next.Channels == current.Channels
+        && next.BitsPerSample == current.BitsPerSample
+        && next.BlockAlign == current.BlockAlign;
 
     /// <summary>
     /// Dalam exclusive mode, perangkat memutar ulang isi buffer lama kalau kita berhenti
@@ -130,7 +179,7 @@ public sealed class PcmOutputProvider : IWaveProvider
         }
 
         int total = 0;
-        bool justEnded = false, seeking = false;
+        bool justEnded = false, seeking = false, nextStarted = false;
 
         lock (_gate)
         {
@@ -146,6 +195,14 @@ public sealed class PcmOutputProvider : IWaveProvider
                 while (buffer.Length - total >= frameBytes)
                 {
                     int read = ReadConverted(buffer[total..]);
+                    if (read == 0 && _next is not null)
+                    {
+                        // Gapless: sisa buffer langsung diisi awal lagu berikutnya
+                        _source = _next;
+                        _next = null;
+                        nextStarted = true;
+                        continue;
+                    }
                     if (read == 0)
                     {
                         _hasEnded = justEnded = true;
@@ -164,6 +221,10 @@ public sealed class PcmOutputProvider : IWaveProvider
 
         if (_gain < 1f)
             ApplyGain(buffer[..total]);
+
+        // Sebelum EndOfStream: lagu berikutnya yang sangat pendek bisa ikut habis di bacaan yang sama
+        if (nextStarted)
+            NextStarted?.Invoke(this, EventArgs.Empty);
 
         if (!justEnded)
             return total;

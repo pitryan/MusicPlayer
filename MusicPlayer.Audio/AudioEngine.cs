@@ -43,7 +43,30 @@ public sealed class AudioEngine : IDisposable
     private int _seekRequest;
     private TimeSpan? _pendingSeek;
 
+    // Lagu berikutnya untuk gapless (lihat PrepareNextAsync): path yang sudah diputuskan, reader-nya kalau bisa menyambung
+    // tanpa jeda, dan nomor permintaan terakhir (Close dan CancelNext menaikkannya, seperti _seekRequest). Setelah lagu itu
+    // mulai di thread audio, path-nya menunggu di _unannounced sampai NextStarted dipicu di thread pemanggil.
+    private string? _nextPath;
+    private MediaFoundationReader? _next;
+    private int _nextRequest;
+    private string? _unannounced;
+
+    // Thread yang membuat engine ini (UI thread), untuk NextStarted. Null di luar aplikasi UI (tes): thread pool.
+    private readonly SynchronizationContext? _context = SynchronizationContext.Current;
+
     public event EventHandler<StoppedEventArgs>? PlaybackStopped;
+
+    /// <summary>
+    /// Lagu berikutnya yang disiapkan (<see cref="PrepareNextAsync"/>) sudah menyambung tanpa jeda, dengan path-nya. Sejak itu
+    /// lagu itulah lagu yang terbuka. Dipicu di thread yang membuat engine ini, sama seperti <see cref="PlaybackStopped"/>.
+    /// </summary>
+    public event EventHandler<string>? NextStarted;
+
+    /// <summary>
+    /// Lagu berikutnya yang sudah diputuskan lewat <see cref="PrepareNextAsync"/>, entah bisa menyambung tanpa jeda atau tidak
+    /// (format berbeda, atau file-nya tidak bisa dibuka). Null kalau belum ada, atau setelah dibatalkan atau mulai diputar.
+    /// </summary>
+    public string? NextPath => _nextPath;
 
     public WaveFormat? SourceFormat => _reader?.WaveFormat;
     public string OutputDescription { get; private set; } = "";
@@ -87,7 +110,7 @@ public sealed class AudioEngine : IDisposable
     public void Open(string path, MMDevice device, bool preferExclusive = true)
     {
         Close();
-        _reader = OpenReader(path, TimeSpan.Zero);
+        _reader = CreateReader(path);
         _path = path;
 
         try
@@ -110,13 +133,17 @@ public sealed class AudioEngine : IDisposable
     public void OpenWithoutDevice(string path)
     {
         Close();
-        _reader = OpenReader(path, TimeSpan.Zero);
+        _reader = CreateReader(path);
         _path = path;
 
         // Provider sementara, hanya untuk membaca posisi dan durasi. ReopenDevice membuat provider baru dengan
         // format yang diterima perangkatnya.
         _output = new PcmOutputProvider(_reader, _reader.WaveFormat) { IsPaused = true };
+        _output.NextStarted += OnNextStarted;
     }
+
+    /// <summary>Provider lagu sekarang, untuk tes yang membacanya seperti thread audio.</summary>
+    internal PcmOutputProvider? Output => _output;
 
     /// <summary>
     /// Melepas perangkat audio tanpa menutup lagu: file dan posisinya tetap disimpan. Selama itu aplikasi
@@ -149,6 +176,7 @@ public sealed class AudioEngine : IDisposable
             throw new InvalidOperationException("No song is open.");
 
         ReleaseDevice();
+        ApplyNextIfStarted(); // provider baru harus membaca lagu yang benar-benar sedang terbuka
         var previousDevice = _device;
 
         try
@@ -279,12 +307,20 @@ public sealed class AudioEngine : IDisposable
             throw;
         }
 
+        // Lagu berikutnya yang sudah disiapkan ikut pindah ke provider baru (perangkat dibuka lagi setelah pause, atau output diganti)
+        if (_next is not null)
+            output.ReplaceNext(null, _next);
+
         output.EndOfStream += OnEndOfStream;
+        output.NextStarted += OnNextStarted;
         player.PlaybackStopped += OnPlaybackStopped;
         lock (_playerLock)
         {
             if (_output is not null)
+            {
                 _output.EndOfStream -= OnEndOfStream;
+                _output.NextStarted -= OnNextStarted;
+            }
             _output = output;
             _player = player;
         }
@@ -330,6 +366,7 @@ public sealed class AudioEngine : IDisposable
     /// </remarks>
     public async Task SeekAsync(TimeSpan position)
     {
+        ApplyNextIfStarted(); // seek berlaku untuk lagu yang sedang berbunyi
         if (_output is null || _path is null)
             return;
         if (position < TimeSpan.Zero) position = TimeSpan.Zero;
@@ -375,16 +412,24 @@ public sealed class AudioEngine : IDisposable
     }
 
     /// <summary>
-    /// Reader baru yang sudah berada tepat di <paramref name="position"/>. Dengan RepositionInRead = false, pekerjaan seek
-    /// yang lama dikerjakan di setter CurrentTime (di thread pemanggil), jadi bacaan pertama di thread audio tetap cepat.
+    /// Reader untuk lagu yang dibuka dari UI thread. Objek Media Foundation-nya baru dibuat di bacaan pertama, di thread audio,
+    /// supaya objek yang dibuat di UI thread (STA) tidak dipakai dari thread lain.
+    /// </summary>
+    private static MediaFoundationReader CreateReader(string path) =>
+        new(path, new MediaFoundationReader.MediaFoundationReaderSettings { RepositionInRead = false });
+
+    /// <summary>
+    /// Reader baru yang sudah berada tepat di <paramref name="position"/>, untuk disiapkan di thread pool (seek, lagu
+    /// berikutnya). Setter CurrentTime sekaligus membuat objek Media Foundation-nya di thread ini, dan dengan
+    /// RepositionInRead = false pekerjaan seek yang lama juga dikerjakan di sini, jadi bacaan pertama di thread audio langsung
+    /// jalan. Tanpa itu, bacaan pertama untuk FLAC butuh 4 sampai 20 ms (diukur di NVMe), dan lebih lama di disk yang lambat.
     /// </summary>
     internal static MediaFoundationReader OpenReader(string path, TimeSpan position)
     {
-        var reader = new MediaFoundationReader(path, new MediaFoundationReader.MediaFoundationReaderSettings { RepositionInRead = false });
+        var reader = CreateReader(path);
         try
         {
-            if (position > TimeSpan.Zero)
-                reader.CurrentTime = position;
+            reader.CurrentTime = position;
             return reader;
         }
         catch
@@ -394,13 +439,119 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
+    /// <summary>
+    /// Menyiapkan lagu berikutnya supaya menyambung tanpa jeda (gapless) begitu lagu sekarang habis: file-nya dibuka di thread
+    /// lain, lalu dipasang di provider. Hanya kalau formatnya sama persis dengan lagu sekarang, jadi perangkat tidak perlu dibuka
+    /// ulang dan sampelnya tetap tidak diubah (bit-perfect). Lagu dengan sample rate atau bit depth lain tetap diputar seperti
+    /// biasa setelah lagu ini berhenti, dengan perangkat yang dibuka ulang untuk formatnya.
+    /// </summary>
+    /// <remarks>
+    /// Dipanggil dari thread yang sama dengan method lain. Lagu berikutnya yang lama dibatalkan lebih dulu. Lagu itu menjadi
+    /// <see cref="NextPath"/>, juga kalau ternyata tidak bisa menyambung, supaya pemanggil tidak terus mencobanya lagi.
+    /// </remarks>
+    /// <returns>True kalau lagu itu akan menyambung tanpa jeda.</returns>
+    public async Task<bool> PrepareNextAsync(string path)
+    {
+        CancelNext();
+
+        // Lagu berikutnya yang lama baru saja mulai, tapi pemanggil belum tahu (NextStarted belum dipicu): path ini dipilih untuk
+        // lagu sebelumnya. Pemanggil memilih lagi setelah NextStarted.
+        if (_output is null || _reader is null || _unannounced is not null)
+            return false;
+
+        int request = ++_nextRequest;
+        _nextPath = path;
+
+        MediaFoundationReader? next;
+        try
+        {
+            next = await Task.Run(() => OpenReader(path, TimeSpan.Zero));
+        }
+        catch (Exception)
+        {
+            return false; // diputar seperti biasa nanti, dan error-nya ditampilkan di situ
+        }
+
+        // Sementara itu lagu lain dibuka, lagu berikutnya diganti, atau lagu ini ditutup
+        if (request != _nextRequest || _output is null || _reader is null
+            || !PcmOutputProvider.HasSameFormat(_reader.WaveFormat, next.WaveFormat)
+            || !_output.ReplaceNext(null, next))
+        {
+            next.Dispose();
+            return false;
+        }
+
+        _next = next;
+        return true;
+    }
+
+    /// <summary>
+    /// Membatalkan lagu berikutnya (antrean berubah, atau file-nya akan ditulis). Lagu yang sudah mulai menyambung tidak bisa
+    /// dibatalkan lagi: lagu itu sudah berbunyi, dan <see cref="NextStarted"/> tetap dipicu.
+    /// </summary>
+    public void CancelNext()
+    {
+        _nextRequest++; // persiapan yang masih berjalan dibuang (lihat PrepareNextAsync)
+        if (_next is not null && _output is not null && !_output.ReplaceNext(_next, null))
+        {
+            // Sudah mulai berbunyi di thread audio: menjadi lagu yang terbuka, dan menunggu diumumkan
+            ApplyNextIfStarted();
+            return;
+        }
+
+        _next?.Dispose(); // file-nya langsung dilepas
+        _next = null;
+        _nextPath = null;
+    }
+
+    /// <summary>
+    /// Lagu berikutnya sudah mulai dibaca di thread audio: sejak itu lagu itulah lagu yang terbuka (reader, path, seek), dan
+    /// reader lagu sebelumnya tidak dipakai lagi. NextStarted dipicu belakangan, lewat <see cref="AnnounceNext"/>.
+    /// </summary>
+    private void ApplyNextIfStarted()
+    {
+        if (_next is null || _output is null || !ReferenceEquals(_output.Source, _next))
+            return;
+
+        var finished = _reader;
+        _reader = _next;
+        _path = _nextPath;
+        _unannounced = _nextPath;
+        _next = null;
+        _nextPath = null;
+        finished?.Dispose();
+    }
+
+    // Dari thread audio: diteruskan ke thread pemanggil, tempat semua keadaan engine diubah
+    private void OnNextStarted(object? sender, EventArgs e)
+    {
+        if (_context is { } context)
+            context.Post(_ => AnnounceNext(), null);
+        else
+            ThreadPool.QueueUserWorkItem(_ => AnnounceNext());
+    }
+
+    private void AnnounceNext()
+    {
+        ApplyNextIfStarted();
+
+        // Kosong kalau sementara itu lagu sudah ditutup atau lagu lain dibuka
+        if (_unannounced is not { } path)
+            return;
+        _unannounced = null;
+        NextStarted?.Invoke(this, path);
+    }
+
     public void Close()
     {
         lock (_playerLock)
         {
             DisposePlayer();
             if (_output is not null)
+            {
                 _output.EndOfStream -= OnEndOfStream;
+                _output.NextStarted -= OnNextStarted;
+            }
             _output = null;
         }
         _reader?.Dispose();
@@ -408,6 +559,13 @@ public sealed class AudioEngine : IDisposable
         _path = null;
         _seekRequest++; // seek yang belum selesai tidak dipasang lagi (lihat SeekAsync)
         _pendingSeek = null;
+
+        // Lagu berikutnya ikut ditutup, juga kalau sudah mulai berbunyi tapi belum diumumkan (lagu lain dibuka tepat saat itu)
+        _nextRequest++;
+        _next?.Dispose();
+        _next = null;
+        _nextPath = null;
+        _unannounced = null;
         _device = null; // perangkatnya milik pemanggil, jadi tidak di-dispose di sini
     }
 
