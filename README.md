@@ -9,8 +9,8 @@ terjemahannya.
 - **Library**: scan folder musik (FLAC, MP3, WAV, AAC, M4A), lalu jelajahi Albums, Artists, Songs, Genres, dan Folders,
   ditambah Recently Added, Recently Played, Most Played, dan pencarian. Folder yang dipindah bisa diarahkan ke lokasi
   barunya (Settings → Change location) tanpa kehilangan riwayat putar, favorit, dan playlist.
-- **Pemutaran**: WASAPI exclusive mode yang bit-perfect, dan otomatis pindah ke shared mode kalau perangkatnya tidak bisa
-  dipakai. Tersedia juga pilihan perangkat output, volume aplikasi yang terpisah dari volume DAC, shuffle, repeat, Autoplay,
+- **Pemutaran**: WASAPI exclusive mode yang bit-perfect, gapless (lagu berikutnya menyambung tanpa jeda), dan otomatis
+  pindah ke shared mode kalau perangkatnya tidak bisa dipakai. Tersedia juga pilihan perangkat output, volume aplikasi yang terpisah dari volume DAC, shuffle, repeat, Autoplay,
   antrean Playing Next dan History, MiniPlayer, layar penuh, serta tombol media Windows.
 - **Lirik**: dari tag, file `.lrc`, atau [LRCLIB](https://lrclib.net). Ada editor lirik, dan lapisan cara baca
   (romaji, pinyin) serta terjemahan yang bisa dinyalakan atau dimatikan.
@@ -49,7 +49,7 @@ dotnet test MusicPlayer.Audio.Tests
 | Proyek | Isi |
 |---|---|
 | `MusicPlayer` | Aplikasi WinUI 3: halaman, kontrol, service (pemutaran, lirik, kontrol media Windows), dan view model. |
-| `MusicPlayer.Audio` | Engine audio: decode lewat Media Foundation, output lewat WASAPI (NAudio), negosiasi format exclusive mode, dan seek. |
+| `MusicPlayer.Audio` | Engine audio: decode lewat Media Foundation, output lewat WASAPI (NAudio), negosiasi format exclusive mode, seek, dan gapless. |
 | `MusicPlayer.Library` | Library SQLite, scanner, tag (TagLib#), lirik (LRC, LRCLIB), MusicBrainz, Quality Check, dan aturan antrean (`TrackQueue`). |
 | `MusicPlayer.AudioLab`, `MusicPlayer.LibraryLab` | Program konsol untuk mencoba engine dan library tanpa UI. |
 | `*.Tests` | Tes xUnit untuk Audio dan Library. |
@@ -71,5 +71,9 @@ Lokasi database dan crash log juga ditampilkan di Settings → About.
 - **Seek di file FLAC.** Media Foundation tidak bisa seek dengan tepat di tengah pemutaran untuk FLAC tanpa SEEKTABLE.
   Karena itu setiap seek membuka reader baru di posisi tujuan, sehingga ada jeda hening singkat sebelum suaranya menyusul.
   Jedanya paling lama sekitar 1,5 detik, di dekat akhir file hi-res.
+- **Gapless.** Sekitar 10 detik sebelum lagu habis, lagu berikutnya dibuka lebih dulu, lalu menyambung di buffer yang sama
+  tanpa perangkat dibuka ulang. Ini hanya berlaku kalau formatnya (sample rate, bit depth, jumlah channel) sama persis
+  dengan lagu sekarang, supaya sampelnya tidak diubah. Lagu dengan format lain diputar seperti biasa: perangkat dibuka
+  ulang untuk formatnya, jadi ada jeda singkat. Repeat One juga menyambung tanpa jeda.
 - **Layanan online** (LRCLIB, MusicBrainz, Cover Art Archive, Wikidata, Wikipedia) hanya dihubungi saat fiturnya dipakai.
   Tanpa internet, pemutaran tetap berjalan normal.

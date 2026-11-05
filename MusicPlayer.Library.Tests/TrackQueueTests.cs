@@ -53,6 +53,32 @@ public sealed class TrackQueueTests
     }
 
     [Fact]
+    public void PeekNext_IsTheSongNextPlays_WithoutChangingTheQueue()
+    {
+        // Lagu yang disiapkan untuk gapless harus sama dengan lagu yang dipilih Advance saat lagu sekarang selesai
+        PlayQueue([A, B, C], 0);
+        _queue.PlayNext(D);
+
+        Assert.Equal(D, _queue.PeekNext());
+        Assert.Equal([D, B, C], UpNextTracks);
+        Assert.Equal(A, _queue.Current);
+
+        Next();
+        Assert.Equal(D, _queue.Current);
+        Assert.Equal(B, _queue.PeekNext());
+    }
+
+    [Fact]
+    public void PeekNext_QueueFinished_IsUnknown_EvenWithRepeat()
+    {
+        // Repeat mengulang antrean (yang bisa diacak ulang), jadi lagu berikutnya belum bisa ditebak
+        PlayQueue([A, B], 1);
+        _queue.SetRepeat(true);
+
+        Assert.Null(_queue.PeekNext());
+    }
+
+    [Fact]
     public void Next_AtTheEndWithoutRepeat_Stops()
     {
         PlayQueue([A, B], 1);

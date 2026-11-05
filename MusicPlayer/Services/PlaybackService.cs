@@ -71,6 +71,14 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     private static readonly TimeSpan KeepDeviceAfterPause = TimeSpan.Zero;
     private readonly DispatcherQueueTimer _releaseTimer;
 
+    // Gapless: lagu berikutnya disiapkan sekian lama sebelum lagu sekarang habis (lihat PrepareNextIfDue). Cukup lama untuk
+    // disk yang lambat, tapi file-nya tidak dipegang sepanjang lagu, supaya tag-nya tetap bisa diedit.
+    private static readonly TimeSpan PrepareNextAhead = TimeSpan.FromSeconds(10);
+    private bool _nextCheckQueued;
+
+    // File yang sedang ditulis tag-nya (lihat WithFilesReleasedAsync): tidak disiapkan sebagai lagu berikutnya
+    private readonly List<IReadOnlyCollection<string>> _writing = [];
+
     // Pemberitahuan Windows saat perangkat output dicolok, dicabut, atau dinyalakan ulang (lihat OutputDevicesChanged).
     // Null kalau layanan audio Windows tidak bisa memberikannya.
     private readonly MMDeviceEnumerator? _deviceEnumerator;
@@ -145,6 +153,8 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _dispatcher = dispatcherQueue;
         _queue = new TrackQueue<QueueEntry>(UpNext, (track, autoplay) => new QueueEntry(track) { IsAutoplay = autoplay });
         _engine.PlaybackStopped += OnPlaybackStopped;
+        _engine.NextStarted += OnNextStarted;
+        UpNext.CollectionChanged += (_, _) => QueueNextCheck(); // lagu berikutnya bisa berubah (lihat PrepareNextIfDue)
 
         // Perbarui posisi lagu di tampilan 4 kali per detik
         _timer = dispatcherQueue.CreateTimer();
@@ -326,6 +336,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(IsRepeatOne));
                 OnPropertyChanged(nameof(RepeatSymbol));
                 _queue.SetRepeat(value != RepeatMode.Off);
+                QueueNextCheck(); // Repeat One menyambung lagu ini sendiri
             }
         }
     }
@@ -946,9 +957,10 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// yang sama: lagunya tampil dan menunggu tombol Play (lihat WaitForDevice).
     /// </summary>
     /// <param name="problem">Pesan yang ditampilkan lebih dulu, misalnya lagu sebelumnya yang berhenti karena error.</param>
-    private void Advance(string? problem = null)
+    /// <param name="tryPlay">Cara memutar setiap lagu yang dicoba; bawaannya <see cref="Play"/>.</param>
+    private void Advance(string? problem = null, TryPlayTrack? tryPlay = null)
     {
-        var result = _queue.Advance(Play);
+        var result = _queue.Advance(tryPlay ?? Play);
         string? skipped = DescribeSkipped(result.Skipped, result.FirstSkipped, result.FirstSkippedReason);
 
         if (!result.Played)
@@ -1016,6 +1028,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         else
             _ = _engine.SeekAsync(target); // posisi tujuan langsung tampil; suaranya menyusul (tidak pernah gagal)
         RefreshPosition();
+        QueueNextCheck(); // misalnya seek ke detik-detik terakhir
     }
 
     public void Dispose()
@@ -1323,6 +1336,22 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// file yang sama yang mulai sebelum yang pertama selesai ikut memakai keadaan yang sama.
     /// </remarks>
     public async Task WithFilesReleasedAsync(IReadOnlyCollection<string> paths, Func<Task> write)
+    {
+        // Lagu berikutnya yang sudah disiapkan (gapless) memegang file-nya: kalau ikut ditulis, dilepas sekarang, dan tidak
+        // disiapkan lagi sampai penulisannya selesai. Kalau lagu sekarang habis sementara itu, lagu itu diputar seperti biasa.
+        _writing.Add(paths);
+        PrepareNextIfDue();
+        try
+        {
+            await WriteWithFilesReleasedAsync(paths, write);
+        }
+        finally
+        {
+            _writing.Remove(paths);
+        }
+    }
+
+    private async Task WriteWithFilesReleasedAsync(IReadOnlyCollection<string> paths, Func<Task> write)
     {
         bool Writes(string path) => paths.Contains(path, StringComparer.OrdinalIgnoreCase);
 
@@ -1770,6 +1799,91 @@ public sealed class PlaybackService : ObservableObject, IDisposable
             Advance();
     }
 
+    // ── Gapless ──────────────────────────────────────────────
+
+    // Dikumpulkan dulu: beberapa perubahan antrean sekaligus (misalnya shuffle) cukup dicek sekali, setelah semuanya selesai
+    private void QueueNextCheck()
+    {
+        if (_nextCheckQueued)
+            return;
+        _nextCheckQueued = true;
+        _dispatcher.TryEnqueue(() =>
+        {
+            _nextCheckQueued = false;
+            PrepareNextIfDue();
+        });
+    }
+
+    /// <summary>
+    /// Gapless: menjelang akhir lagu (<see cref="PrepareNextAhead"/>), lagu berikutnya disiapkan di engine supaya langsung
+    /// menyambung tanpa jeda. Dicek 4 kali per detik, dan setiap kali antrean, Repeat, atau posisi berubah: lagu yang disiapkan
+    /// diganti kalau lagu berikutnya berubah, dan dibatalkan kalau pengguna seek mundur, supaya file-nya tidak dipegang lebih
+    /// lama dari perlu. Lagu yang formatnya berbeda tidak menyambung; lagu itu diputar seperti biasa (lihat
+    /// AudioEngine.PrepareNextAsync).
+    /// </summary>
+    private void PrepareNextIfDue()
+    {
+        string? next = _engine.IsOpen && _engine.Duration - _engine.Position <= PrepareNextAhead ? NextGaplessPath() : null;
+        if (next is null)
+        {
+            if (_engine.NextPath is not null)
+                _engine.CancelNext();
+        }
+        else if (_engine.NextPath is not { } prepared || !IsSameFile(prepared, next))
+        {
+            _ = _engine.PrepareNextAsync(next);
+        }
+    }
+
+    /// <summary>
+    /// Lagu yang akan diputar setelah lagu sekarang selesai dengan normal (lihat OnPlaybackStopped): lagu ini sendiri untuk
+    /// Repeat One, selain itu lagu paling atas di Playing Next. Null kalau belum bisa ditebak, atau kalau file-nya sedang ditulis.
+    /// </summary>
+    private string? NextGaplessPath()
+    {
+        if (CurrentTrack is not { } current)
+            return null;
+
+        var next = RepeatMode == RepeatMode.One ? current : _queue.PeekNext();
+        if (next is null || FindRelease(next.FilePath) is not null
+            || _writing.Exists(paths => paths.Contains(next.FilePath, StringComparer.OrdinalIgnoreCase)))
+            return null;
+        return next.FilePath;
+    }
+
+    /// <summary>
+    /// Lagu berikutnya yang disiapkan sudah menyambung tanpa jeda di engine: antrean maju seperti lagu yang selesai dengan
+    /// normal (lihat OnPlaybackStopped), tanpa membuka file dan perangkat lagi.
+    /// </summary>
+    private void OnNextStarted(object? sender, string path)
+    {
+        _queue.ResetFailures();
+        if (RepeatMode == RepeatMode.One && CurrentTrack is { } current && IsSameFile(current.FilePath, path))
+        {
+            ShowGaplessTrack(current, keepHistory: false, out _);
+            return;
+        }
+
+        // Antrean bisa berubah tepat saat lagu berganti. Kalau lagu paling atas ternyata bukan lagu yang sudah berbunyi, lagu
+        // itu dibuka seperti biasa (dengan jeda), dan lagu yang tadi menyambung ditutup.
+        Advance(tryPlay: (Track track, bool keepHistory, out string error) => IsSameFile(track.FilePath, path)
+            ? ShowGaplessTrack(track, keepHistory, out error)
+            : Play(track, keepHistory, out error));
+    }
+
+    /// <summary>Lagu yang sudah berbunyi di engine menjadi lagu sekarang, seperti Play yang berhasil, tanpa membuka apa pun.</summary>
+    private bool ShowGaplessTrack(Track track, bool keepHistory, out string error)
+    {
+        error = "";
+        _queue.Unplayable.Remove(track.FilePath);
+        ShowTrack(track, keepHistory);
+        StatusText = "";
+        if (_device is { } device)
+            UpdateQualityInfo(track, device);
+        RefreshPosition();
+        return true;
+    }
+
     private async Task LoadCoverAsync(Track track)
     {
         // Setiap permintaan diberi nomor, dan hanya yang terbaru yang boleh mengisi cover. Membandingkan CurrentTrack
@@ -1788,6 +1902,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     {
         TrackListening();
         RefreshPosition();
+        PrepareNextIfDue();
     }
 
     /// <summary>

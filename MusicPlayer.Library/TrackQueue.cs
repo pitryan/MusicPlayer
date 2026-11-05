@@ -311,6 +311,13 @@ public sealed class TrackQueue<TEntry> where TEntry : class, IQueueEntry
     }
 
     /// <summary>
+    /// Lagu yang akan dicoba lebih dulu oleh <see cref="Advance"/>, tanpa mengubah antrean, untuk disiapkan sebelum lagu
+    /// sekarang habis (gapless). Null kalau Playing Next kosong: Advance lalu berhenti, menyiapkan lagu Autoplay, atau mengulang
+    /// antrean (yang urutannya bisa diacak), jadi lagunya belum bisa ditebak.
+    /// </summary>
+    public Track? PeekNext() => UpNext.Count > 0 ? UpNext[0].Track : null;
+
+    /// <summary>
     /// Tombol Previous: lagu terakhir di daftar Previous dikeluarkan untuk diputar (tanpa keepHistory), dan lagu sekarang
     /// kembali ke paling atas Playing Next. Null kalau tidak ada lagu sekarang atau lagu sebelumnya.
     /// </summary>
