@@ -40,6 +40,28 @@ public static class CoverCache
         }
     }
 
+    /// <summary>
+    /// Cover lagu ini yang sudah dimuat, ukuran apa pun (yang terbesar), tanpa membaca file. Misalnya cover kotak album yang
+    /// baru diklik, untuk langsung tampil di halaman album selagi ukuran besarnya dimuat.
+    /// </summary>
+    public static ImageSource? TryGetAny(string trackPath)
+    {
+        ImageSource? best = null;
+        int bestWidth = 0;
+        foreach (var (key, image) in Cache)
+        {
+            int separator = key.IndexOf('|');
+            if (image is null || !string.Equals(key[(separator + 1)..], trackPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (int.TryParse(key[..separator], out int width) && width > bestWidth)
+            {
+                best = image;
+                bestWidth = width;
+            }
+        }
+        return best;
+    }
+
     /// <summary>Melupakan cover lagu-lagu ini (semua ukuran), misalnya setelah cover-nya diganti di editor tag.</summary>
     public static void Invalidate(IEnumerable<string> trackPaths)
     {

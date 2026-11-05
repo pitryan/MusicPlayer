@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Controls;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
@@ -176,7 +177,7 @@ public sealed partial class ArtistPage : Page
     private void Latest_Click(object sender, RoutedEventArgs e)
     {
         if (_overview?.LatestRelease is { } latest)
-            Frame.Navigate(typeof(AlbumDetailPage), latest, Animations.DrillIn);
+            Frame.Navigate(typeof(AlbumDetailPage), latest, AlbumCoverAnimation.Open(LatestCover));
     }
 
     // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
@@ -184,8 +185,8 @@ public sealed partial class ArtistPage : Page
 
     private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 
-    private void Release_ItemInvoked(object? sender, AlbumItem item) =>
-        Frame.Navigate(typeof(AlbumDetailPage), item.Summary, Animations.DrillIn);
+    private void Release_ItemInvoked(object? sender, AlbumInvokedEventArgs e) =>
+        Frame.Navigate(typeof(AlbumDetailPage), e.Item.Summary, AlbumCoverAnimation.Open(e.Cover));
 
     /// <summary>Menu artis: semua lagu rilisnya sendiri (Play Next, Add to Queue, playlist, info).</summary>
     private void ArtistMore_Click(object sender, RoutedEventArgs e)

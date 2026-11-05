@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using MusicPlayer.Controls;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
@@ -22,6 +23,7 @@ public sealed partial class AlbumDetailPage : Page
     private List<Track> _tracks = [];
     private List<TrackRow> _rows = [];
     private string _artist = "";
+    private AlbumSummary? _album;
 
     public AlbumDetailPage()
     {
@@ -33,6 +35,7 @@ public sealed partial class AlbumDetailPage : Page
         base.OnNavigatedTo(e);
         if (e.Parameter is not AlbumSummary album)
             return;
+        _album = album;
 
         _tracks = App.Database.GetAlbumTracks(album.Artist, album.Title).ToList();
         _rows = _tracks.Select((track, index) => new TrackRow(track, index, album.DisplayArtist)).ToList();
@@ -86,7 +89,21 @@ public sealed partial class AlbumDetailPage : Page
         App.Favourites.Changed += Favourites_Changed;
         MarkNowPlaying();
 
+        // Dibuka dari kotak album: cover kotak itu (sudah dimuat) langsung tampil, supaya cover yang terbang mendarat di
+        // gambar yang sama, lalu diganti ukuran besarnya begitu siap
+        CoverBrush.ImageSource = CoverCache.TryGetAny(album.CoverTrackPath);
+        AlbumCoverAnimation.Land(CoverFrame, TrackList);
+
         CoverBrush.ImageSource = await CoverCache.GetAsync(album.CoverTrackPath, CoverPixelWidth);
+    }
+
+    protected override void OnNavigatingFrom(NavigatingCancelEventArgs e)
+    {
+        base.OnNavigatingFrom(e);
+
+        // Back ke grid Albums: cover-nya terbang kembali ke kotak album ini
+        if (e.NavigationMode == NavigationMode.Back && e.SourcePageType == typeof(AlbumsPage) && _album is not null)
+            AlbumCoverAnimation.PrepareBack(CoverFrame, _album);
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -127,8 +144,8 @@ public sealed partial class AlbumDetailPage : Page
         MoreByShelf.Items = others;
     }
 
-    private void MoreBy_ItemInvoked(object? sender, AlbumItem item) =>
-        Frame.Navigate(typeof(AlbumDetailPage), item.Summary, Animations.DrillIn);
+    private void MoreBy_ItemInvoked(object? sender, AlbumInvokedEventArgs e) =>
+        Frame.Navigate(typeof(AlbumDetailPage), e.Item.Summary, AlbumCoverAnimation.Open(e.Cover));
 
     private void AlbumMore_Click(object sender, RoutedEventArgs e) =>
         TrackMenu.ShowForAlbum(AlbumMoreButton, new Point(0, AlbumMoreButton.ActualHeight), _tracks);

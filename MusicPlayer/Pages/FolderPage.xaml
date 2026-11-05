@@ -51,10 +51,17 @@
                     SelectionMode="None"
                     IsItemClickEnabled="True"
                     ItemClick="SubfolderGrid_ItemClick">
+                    <GridView.Resources>
+                        <!-- Hover seperti Apple Music: hanya cover yang membesar (Animations.Hover), tanpa kotak abu-abu bawaan GridViewItem -->
+                        <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="Transparent" />
+                        <SolidColorBrush x:Key="GridViewItemBackgroundPressed" Color="Transparent" />
+                    </GridView.Resources>
                     <GridView.ItemTemplate>
                         <DataTemplate x:DataType="vm:FolderItem">
                             <StackPanel Width="150" Margin="0,0,0,8">
                                 <Grid
+                                    PointerEntered="Tile_PointerEntered"
+                                    PointerExited="Tile_PointerExited"
                                     Width="150"
                                     Height="150"
                                     CornerRadius="6"

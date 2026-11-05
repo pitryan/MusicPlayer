@@ -20,7 +20,7 @@ public sealed partial class AlbumShelf : UserControl
     }
 
     /// <summary>Kotak diklik: halaman pemakai rak yang membuka albumnya.</summary>
-    public event EventHandler<AlbumItem>? ItemInvoked;
+    public event EventHandler<AlbumInvokedEventArgs>? ItemInvoked;
 
     public string Title
     {
@@ -45,12 +45,20 @@ public sealed partial class AlbumShelf : UserControl
 
     private void Tile_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is AlbumItem item)
-            ItemInvoked?.Invoke(this, item);
+        if (sender is FrameworkElement { Tag: AlbumItem item } tile)
+            ItemInvoked?.Invoke(this, new AlbumInvokedEventArgs(item, tile.FindName(AlbumCoverAnimation.CoverElementName) as UIElement ?? tile));
     }
 
     // Cover membesar sedikit saat kursor di atasnya, seperti di grid album
     private void Cover_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
 
     private void Cover_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
+}
+
+/// <summary>Kotak album yang diklik di rak, dengan cover-nya untuk terbang ke halaman album (lihat AlbumCoverAnimation).</summary>
+public sealed class AlbumInvokedEventArgs(AlbumItem item, UIElement cover) : EventArgs
+{
+    public AlbumItem Item { get; } = item;
+
+    public UIElement Cover { get; } = cover;
 }

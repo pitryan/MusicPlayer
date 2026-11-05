@@ -30,7 +30,8 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Grid CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                <!-- Tempat mendarat cover yang terbang dari kotak album (lihat AlbumCoverAnimation) -->
+                <Grid x:Name="CoverFrame" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
                     <FontIcon Glyph="&#xE93C;" FontSize="64" Foreground="{StaticResource SecondaryTextBrush}" />
                     <Border CornerRadius="8">
                         <Border.Background>

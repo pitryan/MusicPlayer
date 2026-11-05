@@ -35,6 +35,11 @@
             SizeChanged="PlaylistGrid_SizeChanged"
             Loaded="PlaylistGrid_Loaded"
             ContainerContentChanging="PlaylistGrid_ContainerContentChanging">
+            <GridView.Resources>
+                <!-- Hover seperti Apple Music: hanya cover yang membesar (Animations.Hover), tanpa kotak abu-abu bawaan GridViewItem -->
+                <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="Transparent" />
+                <SolidColorBrush x:Key="GridViewItemBackgroundPressed" Color="Transparent" />
+            </GridView.Resources>
             <GridView.ItemContainerStyle>
                 <Style TargetType="GridViewItem" BasedOn="{StaticResource DefaultGridViewItemStyle}">
                     <Setter Property="Margin" Value="0" />

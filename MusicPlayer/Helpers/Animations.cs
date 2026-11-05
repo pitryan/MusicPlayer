@@ -2,8 +2,12 @@ using System;
 using System.Numerics;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Windows.UI.ViewManagement;
 
 namespace MusicPlayer.Helpers;
 
@@ -15,6 +19,14 @@ namespace MusicPlayer.Helpers;
 /// </summary>
 public static class Animations
 {
+    private static readonly UISettings Settings = new();
+
+    /// <summary>
+    /// Pengaturan Windows "Animation effects" (Accessibility → Visual effects). Kalau dimatikan, animasi yang besar atau
+    /// terus bergerak (cover yang terbang, latar layar penuh) tidak dijalankan.
+    /// </summary>
+    public static bool Enabled => Settings.AnimationsEnabled;
+
     /// <summary>Transisi halaman "masuk ke dalam": membuka album, artis, playlist, subfolder, editor.</summary>
     public static NavigationTransitionInfo DrillIn => new DrillInNavigationTransitionInfo();
 
@@ -52,6 +64,11 @@ public static class Animations
     /// </summary>
     public static void Hover(UIElement element, bool hovering)
     {
+        if (hovering)
+            _hovered = element;
+        else if (ReferenceEquals(_hovered, element))
+            _hovered = null;
+
         var visual = VisualOf(element);
         var compositor = visual.Compositor;
         visual.CenterPoint = new Vector3(element.ActualSize / 2, 0);
@@ -60,6 +77,34 @@ public static class Animations
         scale.InsertKeyFrame(1f, hovering ? new Vector3(1.03f, 1.03f, 1f) : Vector3.One, Ease(compositor));
         scale.Duration = TimeSpan.FromMilliseconds(180);
         visual.StartAnimation("Scale", scale);
+    }
+
+    // Kotak yang sedang membesar karena kursor di atasnya (lihat Hover dan ResetHover)
+    private static UIElement? _hovered;
+
+    /// <summary>
+    /// Halaman ditinggalkan selagi kursor di atas sebuah kotak (biasanya kotak yang baru diklik): kotak itu tidak pernah
+    /// mendapat PointerExited, jadi tetap membesar dan tersorot saat halamannya dibuka lagi dari cache (Back). Ukurannya dan
+    /// sorotan GridViewItem atau tombolnya dikembalikan sekarang. Dipanggil setiap kali halaman berganti.
+    /// </summary>
+    public static void ResetHover()
+    {
+        if (_hovered is not { } element)
+            return;
+        _hovered = null;
+
+        var visual = VisualOf(element);
+        visual.StopAnimation("Scale");
+        visual.Scale = Vector3.One;
+
+        for (var parent = VisualTreeHelper.GetParent(element); parent is not null; parent = VisualTreeHelper.GetParent(parent))
+        {
+            if (parent is SelectorItem or ButtonBase)
+            {
+                VisualStateManager.GoToState((Control)parent, "Normal", false);
+                break;
+            }
+        }
     }
 
     /// <summary>Denyut singkat: mengecil lalu kembali sedikit melewati ukuran asli. Untuk tombol Play/Pause.</summary>
@@ -75,6 +120,31 @@ public static class Animations
         scale.InsertKeyFrame(1f, Vector3.One, Ease(compositor));
         scale.Duration = TimeSpan.FromMilliseconds(260);
         visual.StartAnimation("Scale", scale);
+    }
+
+    /// <summary>
+    /// Berputar terus dengan kecepatan tetap, satu putaran setiap <paramref name="period"/>, mengelilingi
+    /// <paramref name="pivot"/> (piksel, dari kiri atas elemen). Untuk latar layar penuh. Kalau animasi Windows dimatikan,
+    /// elemen hanya diputar ke sudut awalnya. Dipanggil lagi dengan pivot baru saat ukurannya berubah.
+    /// </summary>
+    public static void Spin(UIElement element, Vector2 pivot, float startDegrees, bool clockwise, TimeSpan period)
+    {
+        var visual = VisualOf(element);
+        visual.CenterPoint = new Vector3(pivot, 0);
+        if (!Enabled)
+        {
+            visual.StopAnimation("RotationAngleInDegrees");
+            visual.RotationAngleInDegrees = startDegrees;
+            return;
+        }
+
+        var compositor = visual.Compositor;
+        var spin = compositor.CreateScalarKeyFrameAnimation();
+        spin.InsertKeyFrame(0f, startDegrees);
+        spin.InsertKeyFrame(1f, startDegrees + (clockwise ? 360f : -360f), compositor.CreateLinearEasingFunction());
+        spin.Duration = period;
+        spin.IterationBehavior = AnimationIterationBehavior.Forever;
+        visual.StartAnimation("RotationAngleInDegrees", spin);
     }
 
     private static ScalarKeyFrameAnimation Fade(Compositor compositor, double milliseconds)
