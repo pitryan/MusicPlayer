@@ -366,6 +366,53 @@ public sealed class TrackQueue<TEntry> where TEntry : class, IQueueEntry
         return true;
     }
 
+    /// <summary>Isi antrean untuk disimpan saat aplikasi ditutup. Null kalau tidak ada lagu sekarang.</summary>
+    public PlaybackSession? Snapshot(TimeSpan position)
+    {
+        if (Current is not { } current)
+            return null;
+
+        var original = new Dictionary<TEntry, int>(ReferenceEqualityComparer.Instance);
+        for (int i = 0; i < _originalOrder.Count; i++)
+            original.TryAdd(_originalOrder[i], i);
+
+        return new PlaybackSession(
+            current.FilePath,
+            position,
+            _previous.Select(t => t.FilePath).ToList(),
+            UpNext.Select(e => new SessionEntry(e.Track.FilePath, e.IsAutoplay, original.TryGetValue(e, out int i) ? i : -1)).ToList());
+    }
+
+    /// <summary>
+    /// Antrean dari sesi yang disimpan (lihat <see cref="Snapshot"/>), dengan lagu dari library. <paramref name="find"/>
+    /// mengembalikan null untuk lagu yang sudah tidak ada di library; lagu itu dilewati. False kalau lagu sekarangnya
+    /// sendiri sudah tidak ada: antrean tidak diubah. Shuffle, repeat, dan Autoplay tidak diubah.
+    /// </summary>
+    public bool Restore(PlaybackSession session, Func<string, Track?> find)
+    {
+        if (find(session.Current) is not { } current)
+            return false;
+
+        _previous.Clear();
+        foreach (string path in session.Previous)
+        {
+            if (find(path) is { } track)
+                _previous.Add(track);
+        }
+
+        var entries = new List<(TEntry Entry, int OriginalIndex)>();
+        foreach (var item in session.UpNext)
+        {
+            if (find(item.Path) is { } track)
+                entries.Add((_createEntry(track, item.IsAutoplay), item.OriginalIndex));
+        }
+        ReplaceUpNext(entries.Select(e => e.Entry).ToList());
+        _originalOrder = entries.Where(e => e.OriginalIndex >= 0).OrderBy(e => e.OriginalIndex).Select(e => e.Entry).ToList();
+
+        ChangeCurrent(current);
+        return true;
+    }
+
     // Seperti SetProperty: lagu yang isinya sama (Track adalah record) tidak menggantikan objek lamanya. PlaybackService
     // membandingkan objeknya untuk tahu apakah lagu sekarang berubah.
     private void ChangeCurrent(Track? track)

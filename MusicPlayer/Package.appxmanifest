@@ -43,6 +43,22 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+      <Extensions>
+        <!-- "Open with" di Explorer. Daftarnya sama dengan AudioFiles.Extensions; aplikasi menerima file-nya di App.OnLaunched,
+             atau di App.OnActivatedAgain kalau aplikasi sudah berjalan (lihat Program). -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="audio">
+            <uap:DisplayName>Audio file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.flac</uap:FileType>
+              <uap:FileType>.mp3</uap:FileType>
+              <uap:FileType>.wav</uap:FileType>
+              <uap:FileType>.aac</uap:FileType>
+              <uap:FileType>.m4a</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

@@ -719,6 +719,32 @@ public sealed class LibraryDatabase
         return ReadTracks(command);
     }
 
+    /// <summary>
+    /// Lagu-lagu dengan path ini yang masih ada di library, misalnya untuk antrean yang disimpan (PlaybackSession). Path yang
+    /// tidak ditemukan tidak ada di hasilnya.
+    /// </summary>
+    public Dictionary<string, Track> GetTracksByPath(IEnumerable<string> paths)
+    {
+        var found = new Dictionary<string, Track>(StringComparer.OrdinalIgnoreCase);
+        using var connection = Open();
+
+        // Beberapa ratus path per query, jauh di bawah batas jumlah parameter SQLite
+        foreach (string[] chunk in paths.Distinct(StringComparer.OrdinalIgnoreCase).Chunk(500))
+        {
+            using var command = connection.CreateCommand();
+            var names = new string[chunk.Length];
+            for (int i = 0; i < chunk.Length; i++)
+            {
+                names[i] = $"$p{i}";
+                command.Parameters.AddWithValue(names[i], chunk[i]);
+            }
+            command.CommandText = $"SELECT {TrackColumns} FROM tracks WHERE path IN ({string.Join(", ", names)})";
+            foreach (var track in ReadTracks(command))
+                found.TryAdd(track.FilePath, track);
+        }
+        return found;
+    }
+
     public int CountTracks(string? folder = null)
     {
         using var connection = Open();

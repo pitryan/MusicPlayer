@@ -1,3 +1,4 @@
+using System;
 using Microsoft.UI.Xaml.Controls;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
@@ -14,16 +15,27 @@ public sealed partial class AudioSettingsPanel : UserControl
     {
         InitializeComponent();
 
-        // Daftar diisi ulang setiap kali panel ini tampil (setiap Settings dibuka), supaya DAC yang baru dicolok muncul
+        // Daftar diisi saat panel ini tampil, lalu setiap kali perangkat dicolok, dicabut, atau dinyalakan ulang (misalnya DAC
+        // yang restart sendiri) selama panel ini masih tampil. OutputDevicesChanged dilepas lagi saat panel ditutup, supaya
+        // panelnya tidak tertahan di memori.
         Loaded += (_, _) =>
         {
-            _fillingOutputList = true;
-            OutputDeviceCombo.SelectedItem = Playback.RefreshOutputDevices();
-            _fillingOutputList = false;
+            FillOutputList();
+            Playback.OutputDevicesChanged += OnOutputDevicesChanged;
         };
+        Unloaded += (_, _) => Playback.OutputDevicesChanged -= OnOutputDevicesChanged;
     }
 
     public PlaybackService Playback { get; } = App.Playback;
+
+    private void OnOutputDevicesChanged(object? sender, EventArgs e) => FillOutputList();
+
+    private void FillOutputList()
+    {
+        _fillingOutputList = true;
+        OutputDeviceCombo.SelectedItem = Playback.RefreshOutputDevices();
+        _fillingOutputList = false;
+    }
 
     private void OutputDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

@@ -3,8 +3,19 @@ using System.Diagnostics;
 
 namespace MusicPlayer.Library;
 
+public enum ScanStage { FindingFiles, ReadingTags, Saving }
+
 /// <summary>Laporan kemajuan scan. Total 0 berarti jumlah totalnya belum diketahui.</summary>
-public sealed record ScanProgress(string Stage, int Done, int Total);
+public sealed record ScanProgress(ScanStage Stage, int Done, int Total)
+{
+    /// <summary>Nama tahapnya untuk ditampilkan, dalam bahasa Inggris seperti tampilan aplikasi lainnya.</summary>
+    public string StageText => Stage switch
+    {
+        ScanStage.FindingFiles => "Finding files",
+        ScanStage.ReadingTags => "Reading tags",
+        _ => "Saving",
+    };
+}
 
 public sealed record ScanResult(
     int Added, int Updated, int Removed, int Unchanged,
@@ -16,9 +27,6 @@ public sealed record ScanResult(
 /// </summary>
 public sealed class LibraryScanner(LibraryDatabase database)
 {
-    private static readonly HashSet<string> SupportedExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".flac", ".wav", ".aac", ".m4a" };
-
     public ScanResult Scan(IProgress<ScanProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -48,7 +56,7 @@ public sealed class LibraryScanner(LibraryDatabase database)
             }
             availableFolders.Add(folder);
 
-            foreach (string file in EnumerateAudioFiles(folder))
+            foreach (string file in AudioFiles.InFolder(folder))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -71,7 +79,7 @@ public sealed class LibraryScanner(LibraryDatabase database)
                     unchanged++;
 
                 if (found.Count % 200 == 0)
-                    progress?.Report(new ScanProgress("Mencari file", found.Count, 0));
+                    progress?.Report(new ScanProgress(ScanStage.FindingFiles, found.Count, 0));
             }
         }
 
@@ -103,12 +111,12 @@ public sealed class LibraryScanner(LibraryDatabase database)
 
                 int count = Interlocked.Increment(ref done);
                 if (count % 20 == 0 || count == toRead.Count)
-                    progress?.Report(new ScanProgress("Membaca tag", count, toRead.Count));
+                    progress?.Report(new ScanProgress(ScanStage.ReadingTags, count, toRead.Count));
             });
 
         // 3. Simpan ke database, lalu hapus lagu yang filenya sudah tidak ada. Lagu yang tag-nya disimpan editor selama
         // scan berjalan dilewati, supaya tidak tertimpa tag lama yang dibaca scan sebelumnya.
-        progress?.Report(new ScanProgress("Menyimpan", 0, 0));
+        progress?.Report(new ScanProgress(ScanStage.Saving, 0, 0));
         var written = database.UpsertScannedTracks(tracks);
 
         var removed = known.Keys
@@ -128,20 +136,5 @@ public sealed class LibraryScanner(LibraryDatabase database)
             Errors: errors.ToList(),
             UnavailableFolders: unavailableFolders,
             Elapsed: stopwatch.Elapsed);
-    }
-
-    private static IEnumerable<string> EnumerateAudioFiles(string folder)
-    {
-        var options = new EnumerationOptions
-        {
-            RecurseSubdirectories = true,
-            IgnoreInaccessible = true,
-            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
-        };
-
-        return Directory.EnumerateFiles(folder, "*", options)
-            .Where(f => SupportedExtensions.Contains(Path.GetExtension(f))
-                        // "._lagu.flac" adalah file sampah buatan macOS, bukan audio
-                        && !Path.GetFileName(f).StartsWith("._", StringComparison.Ordinal));
     }
 }

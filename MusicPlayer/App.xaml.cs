@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.Windows.AppLifecycle;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
+using Windows.ApplicationModel.Activation;
 using Windows.Storage;
 
 namespace MusicPlayer;
@@ -41,6 +45,9 @@ public partial class App : Application
 
     /// <summary>Pemeriksa kualitas sumber (popup badge kualitas): hi-res asli, upsampled, atau dari sumber lossy.</summary>
     public static QualityCheckService QualityChecks { get; private set; } = null!;
+
+    /// <summary>Antrean dan lagu terakhir, disimpan supaya bisa dilanjutkan saat aplikasi dibuka lagi.</summary>
+    public static SessionService Session { get; private set; } = null!;
 
     /// <summary>Klien MusicBrainz untuk editor tag (Look up on MusicBrainz). Satu instance, supaya batas 1 permintaan per detik berlaku di seluruh aplikasi.</summary>
     public static MusicBrainzClient MusicBrainz { get; } = new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) });
@@ -94,19 +101,45 @@ public partial class App : Application
         MediaControls = CreateMediaControls();
         QualityChecks = new QualityCheckService(Database, QualityCheckService.AnalyzeFile);
 
+        // Sesi terakhir dipulihkan sebelum jendela dibuat, supaya lagunya langsung tampil. Setelah lirik dan kontrol media
+        // Windows siap, supaya keduanya ikut menampilkan lagu itu. Kalau aplikasi dibuka dengan file ("Open with"), file
+        // itulah yang diputar, jadi sesinya tidak dipulihkan.
+        var openedFiles = FilesOf(AppInstance.GetCurrent().GetActivatedEventArgs());
+        string sessionPath = Path.Combine(ApplicationData.Current.LocalFolder.Path, "session.json");
+        Session = new SessionService(Playback, sessionPath, DispatcherQueue.GetForCurrentThread());
+        Session.Start(Database, restore: openedFiles.Count == 0);
+
         MainWindow = new MainWindow();
         MainWindow.Activate();
+        if (openedFiles.Count > 0)
+            _ = FileOpener.OpenAsync(openedFiles);
     }
 
     /// <summary>
-    /// Aplikasi dibuka lagi selagi sudah berjalan (lihat Program): jendelanya dimunculkan. Dipanggil dari thread lain.
+    /// Aplikasi dibuka lagi selagi sudah berjalan (lihat Program): jendelanya dimunculkan, dan file yang dibuka dengan
+    /// "Open with" atau klik dua kali di Explorer langsung diputar. Dipanggil dari thread lain.
     /// </summary>
-    public static void BringToFront()
+    public static void OnActivatedAgain(AppActivationArguments args)
     {
+        var files = FilesOf(args);
+
         // Bisa terjadi sebelum jendela utama selesai dibuat; jendela itu tetap akan muncul sendiri
         if (MainWindow is { } window)
-            window.DispatcherQueue.TryEnqueue(window.BringToFront);
+        {
+            window.DispatcherQueue.TryEnqueue(() =>
+            {
+                window.BringToFront();
+                if (files.Count > 0)
+                    _ = FileOpener.OpenAsync(files);
+            });
+        }
     }
+
+    /// <summary>Path file yang dibuka lewat aktivasi ini; kosong untuk peluncuran biasa.</summary>
+    private static IReadOnlyList<string> FilesOf(AppActivationArguments args) =>
+        args.Kind == ExtendedActivationKind.File && args.Data is IFileActivatedEventArgs file
+            ? file.Files.Select(f => f.Path).Where(p => !string.IsNullOrEmpty(p)).ToList()
+            : [];
 
     private static MediaControlsSync? CreateMediaControls()
     {

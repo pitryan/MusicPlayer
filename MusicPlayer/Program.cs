@@ -38,8 +38,8 @@ public static class Program
         AppInstance main = AppInstance.FindOrRegisterForKey("main");
         if (main.IsCurrent)
         {
-            // Dipicu di thread lain setiap kali aplikasi dibuka lagi
-            main.Activated += (_, _) => App.BringToFront();
+            // Dipicu di thread lain setiap kali aplikasi dibuka lagi, termasuk dengan file dari Explorer
+            main.Activated += (_, args) => App.OnActivatedAgain(args);
             return false;
         }
 

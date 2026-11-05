@@ -40,7 +40,7 @@ public static class LibraryScanState
 
         // Progress<T> yang dibuat di UI thread otomatis melapor kembali ke UI thread
         var progress = new Progress<ScanProgress>(p =>
-            SetStatus(p.Total > 0 ? $"{p.Stage}... {p.Done}/{p.Total}" : $"{p.Stage}..."));
+            SetStatus(p.Total > 0 ? $"{p.StageText}... {p.Done}/{p.Total}" : $"{p.StageText}..."));
 
         string message;
         try

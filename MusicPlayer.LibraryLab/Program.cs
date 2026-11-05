@@ -83,7 +83,7 @@ void RunScan()
         lock (consoleLock)
         {
             string count = p.Total > 0 ? $"{p.Done}/{p.Total}" : p.Done > 0 ? $"{p.Done}" : "";
-            Console.Write($"\r{$"{p.Stage}... {count}",-50}");
+            Console.Write($"\r{$"{p.StageText}... {count}",-50}");
         }
     });
 

@@ -19,7 +19,10 @@
         IsPaneToggleButtonVisible="False"
         IsSettingsVisible="False"
         IsTitleBarAutoPaddingEnabled="False"
-        ItemInvoked="NavView_ItemInvoked">
+        ItemInvoked="NavView_ItemInvoked"
+        AllowDrop="True"
+        DragOver="Window_DragOver"
+        Drop="Window_Drop">
 
         <!-- Warna NavigationView diganti langsung di kontrolnya (lightweight styling) -->
         <NavigationView.Resources>
