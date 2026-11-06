@@ -16,12 +16,21 @@
         <Grid Margin="-24,-20,0,12">
             <controls:PageHeader x:Name="Header" Title="All Playlists" />
             <!-- Di kiri kepala halaman; jumlah playlist di kanan -->
-            <Button HorizontalAlignment="Left" VerticalAlignment="Center" Margin="24,0,0,0" Click="NewPlaylist_Click">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE710;" FontSize="14" />
-                    <TextBlock Text="New Playlist" />
-                </StackPanel>
-            </Button>
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="24,0,0,0">
+                <Button Click="NewPlaylist_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE710;" FontSize="14" />
+                        <TextBlock Text="New Playlist" />
+                    </StackPanel>
+                </Button>
+                <!-- Isinya mengikuti aturan (lihat SmartPlaylistDialog) -->
+                <Button Click="NewSmartPlaylist_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE945;" FontSize="14" />
+                        <TextBlock Text="New Smart Playlist" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <!-- Kotak sebesar Apple Music, sama seperti grid album (lihat TileGrid) -->

@@ -536,6 +536,7 @@ public sealed partial class MainWindow : Window
     private const string FolderTagPrefix = "folder:";
     private const string PlaylistTagPrefix = "playlist:";
     private const string NewPlaylistTag = "newplaylist";
+    private const string NewSmartPlaylistTag = "newsmartplaylist";
 
     /// <summary>Tag sidebar untuk All Playlists, misalnya untuk kembali ke sana setelah playlist dihapus.</summary>
     public const string AllPlaylistsTag = "playlists";
@@ -556,7 +557,7 @@ public sealed partial class MainWindow : Window
             {
                 Content = playlist.Name,
                 Tag = PlaylistTagPrefix + playlist.Id,
-                Icon = new FontIcon { Glyph = "\uE8D6" },
+                Icon = new FontIcon { Glyph = playlist.IsSmart ? SmartPlaylistGlyph : "\uE8D6" },
             });
         }
 
@@ -566,6 +567,13 @@ public sealed partial class MainWindow : Window
             Content = "New Playlist",
             Tag = NewPlaylistTag,
             Icon = new FontIcon { Glyph = "\uE710" },
+            SelectsOnInvoked = false,
+        });
+        _playlistMenuItems.Add(new NavigationViewItem
+        {
+            Content = "New Smart Playlist",
+            Tag = NewSmartPlaylistTag,
+            Icon = new FontIcon { Glyph = SmartPlaylistGlyph },
             SelectsOnInvoked = false,
         });
 
@@ -590,6 +598,9 @@ public sealed partial class MainWindow : Window
     }
 
     public void ShowPlaylist(long id) => ShowSection(PlaylistTagPrefix + id);
+
+    /// <summary>Ikon smart playlist (petir: isinya berubah sendiri), di sidebar dan halaman playlist.</summary>
+    public const string SmartPlaylistGlyph = "";
 
     private async System.Threading.Tasks.Task CreatePlaylistAsync()
     {
@@ -656,6 +667,12 @@ public sealed partial class MainWindow : Window
         {
             // Ditanya sebelum dialog nama, karena playlist baru langsung dibuka setelah dibuat
             await CreatePlaylistAsync();
+            return;
+        }
+
+        if (tag == NewSmartPlaylistTag)
+        {
+            await SmartPlaylistDialog.CreateAsync();
             return;
         }
 
