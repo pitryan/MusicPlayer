@@ -57,6 +57,28 @@ public static class TextFiles
         return Encoding.GetEncoding(Windows1252).GetString(bytes);
     }
 
+    /// <summary>
+    /// Semua cara membaca bytes ini yang sah, urut dari yang paling mungkin seperti <see cref="Decode"/>, tapi tanpa
+    /// menebak dari isinya: untuk teks yang isinya bisa dicek pemanggil sendiri, misalnya path di playlist M3U yang bisa
+    /// dicocokkan dengan library. Dengan BOM hanya ada satu; Windows-1252 selalu ada di akhir sebagai cadangan.
+    /// </summary>
+    public static IReadOnlyList<string> DecodeCandidates(byte[] bytes)
+    {
+        if (bytes is [0xEF, 0xBB, 0xBF, ..] or [0xFF, 0xFE, ..] or [0xFE, 0xFF, ..])
+            return [Decode(bytes)];
+
+        var candidates = new List<string>();
+        foreach (var encoding in new[] { new UTF8Encoding(false, throwOnInvalidBytes: true), Strict(ShiftJis), Strict(Gb18030) })
+        {
+            if (TryDecode(encoding, bytes) is { } text && !candidates.Contains(text))
+                candidates.Add(text);
+        }
+        string western = Encoding.GetEncoding(Windows1252).GetString(bytes);
+        if (!candidates.Contains(western))
+            candidates.Add(western);
+        return candidates;
+    }
+
     private static Encoding Strict(int codePage) =>
         Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
 

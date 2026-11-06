@@ -65,6 +65,8 @@ public sealed partial class AllPlaylistsPage : Page
 
     private async void NewSmartPlaylist_Click(object sender, RoutedEventArgs e) => await SmartPlaylistDialog.CreateAsync();
 
+    private async void ImportPlaylist_Click(object sender, RoutedEventArgs e) => await PlaylistFiles.ImportAsync();
+
     // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
     private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);
 

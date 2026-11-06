@@ -273,6 +273,11 @@ public sealed partial class PlaylistPage : Page
         menu.Items.Add(playNext);
         menu.Items.Add(addToQueue);
 
+        // File M3U8 untuk aplikasi lain; smart playlist diekspor dengan isinya saat ini
+        var export = TrackMenu.CreateItem("Export Playlist…", "", () => _ = PlaylistFiles.ExportAsync(_name, tracks));
+        export.IsEnabled = tracks.Count > 0;
+        menu.Items.Add(export);
+
         if (_playlistId is long id)
         {
             menu.Items.Add(new MenuFlyoutSeparator());

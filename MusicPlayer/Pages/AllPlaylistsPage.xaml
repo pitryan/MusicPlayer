@@ -30,6 +30,13 @@
                         <TextBlock Text="New Smart Playlist" />
                     </StackPanel>
                 </Button>
+                <!-- File .m3u/.m3u8 dari aplikasi lain (lihat PlaylistFiles) -->
+                <Button Click="ImportPlaylist_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE8B5;" FontSize="14" />
+                        <TextBlock Text="Import Playlist…" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
 
