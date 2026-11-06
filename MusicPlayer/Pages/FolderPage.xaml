@@ -44,6 +44,10 @@
                             <TextBlock Text="Shuffle" />
                         </StackPanel>
                     </Button>
+                    <!-- Playlist dari folder ini: smart (mengikuti isi folder) atau salinan isinya -->
+                    <Button x:Name="FolderMoreButton" Padding="10,6" Click="FolderMore_Click" ToolTipService.ToolTip="More">
+                        <FontIcon Glyph="&#xE712;" FontSize="16" />
+                    </Button>
                 </StackPanel>
 
                 <GridView

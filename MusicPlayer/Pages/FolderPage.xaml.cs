@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.ViewModels;
+using Windows.Foundation;
 
 namespace MusicPlayer.Pages;
 
@@ -117,6 +118,34 @@ public sealed partial class FolderPage : Page
     private void Shuffle_Click(object sender, RoutedEventArgs e)
     {
         App.Playback.PlayShuffled(App.Database.GetFolderTracks(_folder, includeSubfolders: true));
+    }
+
+    /// <summary>
+    /// Playlist dari folder ini (termasuk subfolder-nya): smart playlist yang selalu mengikuti isi folder, atau playlist biasa
+    /// berisi salinan isinya sekarang, yang urutan dan isinya bisa diubah sendiri.
+    /// </summary>
+    private void FolderMore_Click(object sender, RoutedEventArgs e)
+    {
+        string name = LibraryPaths.DisplayName(_folder);
+        var menu = new MenuFlyout();
+
+        var smart = TrackMenu.CreateItem("New Smart Playlist from Folder…", MainWindow.SmartPlaylistGlyph, () =>
+            _ = SmartPlaylistDialog.CreateAsync(name, new SmartPlaylistRules(MatchAll: true, [new SmartRule(SmartField.Folder, SmartOperator.Is, _folder)])));
+        ToolTipService.SetToolTip(smart, "Follows this folder: songs added to it later appear automatically.");
+        menu.Items.Add(smart);
+
+        var copy = TrackMenu.CreateItem("New Playlist from Folder…", "", () => _ = CopyToPlaylistAsync(name));
+        ToolTipService.SetToolTip(copy, "A copy of the songs in this folder now, which you can reorder and edit.");
+        menu.Items.Add(copy);
+
+        menu.ShowAt(FolderMoreButton, new Point(0, FolderMoreButton.ActualHeight));
+    }
+
+    private async System.Threading.Tasks.Task CopyToPlaylistAsync(string name)
+    {
+        var tracks = App.Database.GetFolderTracks(_folder, includeSubfolders: true);
+        if (await Dialogs.AskNameAsync("New Playlist from Folder", "Create", name) is { } chosen)
+            App.MainWindow.ShowPlaylist(App.Playlists.CreateWith(chosen, tracks));
     }
 
     private void TrackList_RightTapped(object sender, RightTappedRoutedEventArgs e)

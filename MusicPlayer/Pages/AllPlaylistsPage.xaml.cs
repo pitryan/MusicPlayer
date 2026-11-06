@@ -23,6 +23,7 @@ public sealed partial class AllPlaylistsPage : Page
         Load();
         App.Playlists.Changed += Library_Changed;
         App.Favourites.Changed += Library_Changed;
+        App.TagEdits.LibraryChanged += Library_Changed; // isi smart playlist ikut berubah
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -30,6 +31,7 @@ public sealed partial class AllPlaylistsPage : Page
         base.OnNavigatedFrom(e);
         App.Playlists.Changed -= Library_Changed;
         App.Favourites.Changed -= Library_Changed;
+        App.TagEdits.LibraryChanged -= Library_Changed;
     }
 
     private void Library_Changed(object? sender, EventArgs e) => Load();
@@ -60,6 +62,10 @@ public sealed partial class AllPlaylistsPage : Page
         if (await Dialogs.AskNameAsync("New Playlist", "Create") is { } name)
             App.MainWindow.ShowPlaylist(App.Playlists.Create(name));
     }
+
+    private async void NewSmartPlaylist_Click(object sender, RoutedEventArgs e) => await SmartPlaylistDialog.CreateAsync();
+
+    private async void ImportPlaylist_Click(object sender, RoutedEventArgs e) => await PlaylistFiles.ImportAsync();
 
     // Kotak membesar sedikit saat kursor di atasnya, seperti Apple Music
     private void Tile_PointerEntered(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, true);

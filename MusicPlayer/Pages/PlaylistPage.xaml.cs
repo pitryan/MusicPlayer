@@ -44,22 +44,28 @@ public sealed partial class PlaylistPage : Page
 
     private bool IsFavourites => _playlistId is null;
 
+    // Smart playlist: isinya mengikuti aturan, jadi tidak bisa diurutkan, ditambah, atau dikurangi sendiri
+    private bool _isSmart;
+
     private List<Track> Tracks => _rows.Select(r => r.Track).ToList();
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
         _playlistId = e.Parameter is long id ? id : null;
+        _isSmart = _playlistId is long playlist && App.Playlists.GetRules(playlist) is not null;
 
         // Lagu playlist buatan sendiri bisa diurutkan ulang dengan diseret, seperti Apple Music
-        TrackList.CanDragItems = !IsFavourites;
-        TrackList.CanReorderItems = !IsFavourites;
-        TrackList.AllowDrop = !IsFavourites;
+        bool reorderable = !IsFavourites && !_isSmart;
+        TrackList.CanDragItems = reorderable;
+        TrackList.CanReorderItems = reorderable;
+        TrackList.AllowDrop = reorderable;
         Load();
 
         App.Playback.PropertyChanged += Playback_PropertyChanged;
         App.Favourites.Changed += Favourites_Changed;
         App.Playlists.Changed += Playlists_Changed;
+        App.TagEdits.LibraryChanged += Library_Changed;
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -68,6 +74,15 @@ public sealed partial class PlaylistPage : Page
         App.Playback.PropertyChanged -= Playback_PropertyChanged;
         App.Favourites.Changed -= Favourites_Changed;
         App.Playlists.Changed -= Playlists_Changed;
+        App.TagEdits.LibraryChanged -= Library_Changed;
+    }
+
+    // Lagu di library berubah (scan, edit tag): isi smart playlist dihitung ulang. Riwayat putar sengaja tidak memuat
+    // ulang selagi halaman ini terbuka, supaya daftar "Most Played" tidak berpindah-pindah saat lagunya sedang diputar.
+    private void Library_Changed(object? sender, EventArgs e)
+    {
+        if (_isSmart)
+            Load();
     }
 
     private void Load()
@@ -97,15 +112,18 @@ public sealed partial class PlaylistPage : Page
     {
         var total = TimeSpan.FromTicks(_rows.Sum(r => r.Track.Duration.Ticks));
         bool empty = _rows.Count == 0;
-        MetaText.Text = empty ? "" : $"{Formatters.Count(_rows.Count, "song")} · {Formatters.LongDuration(total)}";
+        string kind = _isSmart ? "Smart Playlist · " : "";
+        MetaText.Text = empty ? kind.TrimEnd(' ', '·') : $"{kind}{Formatters.Count(_rows.Count, "song")} · {Formatters.LongDuration(total)}";
         EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ColumnHeaders.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
         PlayButton.IsEnabled = !empty;
         ShuffleButton.IsEnabled = !empty;
-        EmptyTitle.Text = IsFavourites ? "No favourite songs yet" : "This playlist is empty";
+        EmptyTitle.Text = IsFavourites ? "No favourite songs yet" : _isSmart ? "No songs match the rules" : "This playlist is empty";
         EmptyDetail.Text = IsFavourites
             ? "Click the star in the player at the top, or choose Favourite from a song's menu."
-            : "Add songs with Add to Playlist in a song's or an album's menu.";
+            : _isSmart
+                ? "Songs appear here as soon as they match. To change the rules, choose Edit Smart Playlist from the ··· menu."
+                : "Add songs with Add to Playlist in a song's or an album's menu.";
         _ = LoadCoverAsync();
     }
 
@@ -232,7 +250,7 @@ public sealed partial class PlaylistPage : Page
     {
         int index = _rows.IndexOf(row);
         TrackMenu.Show(target, position, Tracks, index,
-            removeFromPlaylist: IsFavourites ? null : () => RemoveRow(row));
+            removeFromPlaylist: IsFavourites || _isSmart ? null : () => RemoveRow(row));
     }
 
     private void PlaylistMore_Click(object sender, RoutedEventArgs e)
@@ -255,10 +273,18 @@ public sealed partial class PlaylistPage : Page
         menu.Items.Add(playNext);
         menu.Items.Add(addToQueue);
 
+        // File M3U8 untuk aplikasi lain; smart playlist diekspor dengan isinya saat ini
+        var export = TrackMenu.CreateItem("Export Playlist…", "", () => _ = PlaylistFiles.ExportAsync(_name, tracks));
+        export.IsEnabled = tracks.Count > 0;
+        menu.Items.Add(export);
+
         if (_playlistId is long id)
         {
             menu.Items.Add(new MenuFlyoutSeparator());
-            menu.Items.Add(TrackMenu.CreateItem("Rename…", "\uE8AC", () => _ = RenameAsync(id)));
+            if (_isSmart)
+                menu.Items.Add(TrackMenu.CreateItem("Edit Smart Playlist…", MainWindow.SmartPlaylistGlyph, () => _ = SmartPlaylistDialog.EditAsync(id, _name)));
+            else
+                menu.Items.Add(TrackMenu.CreateItem("Rename…", "\uE8AC", () => _ = RenameAsync(id)));
             menu.Items.Add(TrackMenu.CreateItem("Delete Playlist…", "\uE74D", () => _ = DeleteAsync(id)));
         }
         menu.ShowAt(PlaylistMoreButton, new Point(0, PlaylistMoreButton.ActualHeight));

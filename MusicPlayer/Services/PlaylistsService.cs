@@ -31,6 +31,35 @@ public sealed class PlaylistsService
         return id;
     }
 
+    /// <summary>Smart playlist: isinya lagu yang cocok dengan aturannya, selalu dihitung ulang dari library.</summary>
+    public long CreateSmart(string name, SmartPlaylistRules rules)
+    {
+        long id = _database.CreateSmartPlaylist(name.Trim(), rules, DateTime.UtcNow);
+        Raise();
+        return id;
+    }
+
+    public void UpdateSmart(long id, string name, SmartPlaylistRules rules)
+    {
+        _database.UpdateSmartPlaylist(id, name.Trim(), rules, DateTime.UtcNow);
+        Raise();
+    }
+
+    /// <summary>Aturan smart playlist ini; null untuk playlist biasa.</summary>
+    public SmartPlaylistRules? GetRules(long id) => _database.GetSmartPlaylistRules(id);
+
+    /// <summary>Lagu yang cocok dengan aturan ini sekarang, misalnya untuk jumlah lagu di editor aturan.</summary>
+    public IReadOnlyList<Track> Preview(SmartPlaylistRules rules) => _database.GetSmartPlaylistTracks(rules);
+
+    /// <summary>Playlist biasa baru berisi lagu-lagu ini, misalnya salinan isi sebuah folder.</summary>
+    public long CreateWith(string name, IReadOnlyList<Track> tracks)
+    {
+        long id = _database.CreatePlaylist(name.Trim(), DateTime.UtcNow);
+        _database.AddToPlaylist(id, tracks.Select(t => t.FilePath).ToList(), DateTime.UtcNow);
+        Raise();
+        return id;
+    }
+
     public void Rename(long id, string name)
     {
         _database.RenamePlaylist(id, name.Trim(), DateTime.UtcNow);

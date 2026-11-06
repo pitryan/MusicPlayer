@@ -33,6 +33,24 @@ public static class Dialogs
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
+    /// <summary>Pesan dengan satu tombol OK, misalnya ringkasan impor playlist. Teksnya bisa dipilih dan disalin.</summary>
+    public static async Task ShowMessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new ScrollViewer
+            {
+                Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+                MaxHeight = 360,
+            },
+            CloseButtonText = "OK",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = App.MainWindow.Content?.XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
     /// <summary>
     /// Sebagian lagu sudah ada di playlist: true = tetap tambahkan semuanya, false = lewati yang sudah ada (seperti
     /// Apple Music yang juga menanyakan ini).

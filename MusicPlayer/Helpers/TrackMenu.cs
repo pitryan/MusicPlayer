@@ -94,7 +94,8 @@ public static class TrackMenu
         var submenu = new MenuFlyoutSubItem { Text = "Add to Playlist", Icon = new FontIcon { Glyph = "\uE8D6" } };
         submenu.Items.Add(CreateItem("New Playlist…", "\uE710", () => _ = AddToNewPlaylistAsync(tracks, suggestedName)));
 
-        var playlists = App.Playlists.GetAll();
+        // Smart playlist tidak ikut: isinya ditentukan aturannya
+        var playlists = App.Playlists.GetAll().Where(p => !p.IsSmart).ToList();
         if (playlists.Count > 0)
             submenu.Items.Add(new MenuFlyoutSeparator());
         foreach (var playlist in playlists)

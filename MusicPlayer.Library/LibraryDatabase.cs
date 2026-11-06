@@ -27,7 +27,7 @@ public sealed class LibraryDatabase
     private const string TrackColumns =
         "id, path, folder, file_size, modified_utc, title, artist, album, album_artist, genre, year, " +
         "track_number, track_count, disc_number, disc_count, duration_ms, codec, sample_rate, " +
-        "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, release_date, copyright, release_type";
+        "bits_per_sample, channels, bitrate_kbps, has_cover, has_lyrics, release_date, copyright, release_type, added_utc";
 
     // Disc kosong dianggap disc 1, dan lagu tanpa nomor track ditaruh di akhir albumnya
     // Kolom yang sama dengan TrackColumns, tapi diawali "t." untuk query yang menggabungkan dua tabel
@@ -1103,18 +1103,22 @@ public sealed class LibraryDatabase
 
     /// <summary>
     /// Semua playlist, urut nama. Jumlah lagu, durasi, dan cover hanya menghitung lagu yang ada di library; isi yang
-    /// filenya sedang tidak ada tetap tersimpan dan kembali kalau filenya kembali.
+    /// filenya sedang tidak ada tetap tersimpan dan kembali kalau filenya kembali. Isi smart playlist dihitung dari
+    /// aturannya saat ini.
     /// </summary>
     public IReadOnlyList<PlaylistSummary> GetPlaylists()
     {
         using var connection = Open();
-        var playlists = new List<(long Id, string Name, DateTime Modified)>();
+        var playlists = new List<(long Id, string Name, DateTime Modified, SmartPlaylistRules? Rules)>();
         using (var command = connection.CreateCommand())
         {
-            command.CommandText = "SELECT id, name, modified_utc FROM playlists ORDER BY name COLLATE NOCASE, id";
+            command.CommandText = "SELECT id, name, modified_utc, rules FROM playlists ORDER BY name COLLATE NOCASE, id";
             using var r = command.ExecuteReader();
             while (r.Read())
-                playlists.Add((r.GetInt64(0), r.GetString(1), new DateTime(r.GetInt64(2), DateTimeKind.Utc)));
+            {
+                playlists.Add((r.GetInt64(0), r.GetString(1), new DateTime(r.GetInt64(2), DateTimeKind.Utc),
+                    r.IsDBNull(3) ? null : ParseSmartRules(r.GetString(3))));
+            }
         }
 
         var contents = playlists.ToDictionary(p => p.Id, _ => (Count: 0, DurationMs: 0L, Albums: new List<string>(), Covers: new List<string>()));
@@ -1143,9 +1147,101 @@ public sealed class LibraryDatabase
             }
         }
 
+        // Isi smart playlist dihitung dari aturannya, dengan cover dari album-album pertamanya seperti playlist biasa
+        if (playlists.Any(p => p.Rules is not null))
+        {
+            var tracks = GetTracks();
+            var context = GetSmartPlaylistContext();
+            foreach (var p in playlists.Where(p => p.Rules is not null))
+            {
+                var c = contents[p.Id];
+                foreach (var track in SmartPlaylists.Evaluate(p.Rules!, tracks, context))
+                {
+                    c.Count++;
+                    c.DurationMs += (long)track.Duration.TotalMilliseconds;
+                    string album = $"{track.AlbumArtist ?? track.Artist ?? ""}|{track.Album ?? ""}";
+                    if (c.Covers.Count < 4 && !c.Albums.Contains(album, StringComparer.OrdinalIgnoreCase))
+                    {
+                        c.Albums.Add(album);
+                        c.Covers.Add(track.FilePath);
+                    }
+                }
+                contents[p.Id] = c;
+            }
+        }
+
         return playlists.Select(p => new PlaylistSummary(
             p.Id, p.Name, contents[p.Id].Count, TimeSpan.FromMilliseconds(contents[p.Id].DurationMs),
-            contents[p.Id].Covers, p.Modified)).ToList();
+            contents[p.Id].Covers, p.Modified) { IsSmart = p.Rules is not null }).ToList();
+    }
+
+    /// <summary>Membuat smart playlist dengan aturan ini.</summary>
+    public long CreateSmartPlaylist(string name, SmartPlaylistRules rules, DateTime nowUtc)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO playlists (name, created_utc, modified_utc, rules) VALUES ($name, $time, $time, $rules) RETURNING id";
+        command.Parameters.AddWithValue("$name", name);
+        command.Parameters.AddWithValue("$time", nowUtc.Ticks);
+        command.Parameters.AddWithValue("$rules", SmartPlaylists.ToJson(rules));
+        return (long)command.ExecuteScalar()!;
+    }
+
+    /// <summary>Mengganti nama dan aturan smart playlist. Playlist biasa tidak diubah.</summary>
+    public void UpdateSmartPlaylist(long id, string name, SmartPlaylistRules rules, DateTime nowUtc)
+    {
+        using var connection = Open();
+        Execute(connection, "UPDATE playlists SET name = $name, rules = $rules, modified_utc = $time WHERE id = $id AND rules IS NOT NULL",
+            ("$name", name), ("$rules", SmartPlaylists.ToJson(rules)), ("$time", nowUtc.Ticks), ("$id", id));
+    }
+
+    /// <summary>Aturan smart playlist ini; null untuk playlist biasa dan playlist yang tidak ada.</summary>
+    public SmartPlaylistRules? GetSmartPlaylistRules(long id)
+    {
+        using var connection = Open();
+        return ReadSmartRules(connection, id);
+    }
+
+    private static SmartPlaylistRules? ReadSmartRules(SqliteConnection connection, long id)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT rules FROM playlists WHERE id = $id AND rules IS NOT NULL";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() is string json ? ParseSmartRules(json) : null;
+    }
+
+    // Aturan tersimpan yang rusak menjadi smart playlist yang kosong, bukan seluruh library (aturan kosong cocok dengan semua lagu)
+    private static readonly SmartPlaylistRules NoSongs = new(MatchAll: false, [new SmartRule(SmartField.Folder, SmartOperator.Is, "")]);
+
+    private static SmartPlaylistRules ParseSmartRules(string json) => SmartPlaylists.FromJson(json) ?? NoSongs;
+
+    /// <summary>Lagu library yang cocok dengan aturan smart playlist ini saat ini, sudah diurutkan dan dibatasi.</summary>
+    public IReadOnlyList<Track> GetSmartPlaylistTracks(SmartPlaylistRules rules) =>
+        SmartPlaylists.Evaluate(rules, GetTracks(), GetSmartPlaylistContext());
+
+    /// <summary>Riwayat putar dan favorit saat ini, untuk aturan smart playlist.</summary>
+    public SmartPlaylistContext GetSmartPlaylistContext() =>
+        new(GetPlayStats(), new HashSet<string>(GetFavouritePaths(), StringComparer.OrdinalIgnoreCase), DateTime.UtcNow, Random.Shared);
+
+    /// <summary>Jumlah putar dan waktu terakhir diputar, per path, untuk setiap lagu yang pernah diputar.</summary>
+    public IReadOnlyDictionary<string, PlayStats> GetPlayStats()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT path, count(*), max(played_utc) FROM plays GROUP BY path";
+        using var r = command.ExecuteReader();
+
+        // NOCASE di SQLite hanya menyamakan huruf ASCII; path yang hanya berbeda huruf besar-kecil non-ASCII digabung di sini
+        var stats = new Dictionary<string, PlayStats>(StringComparer.OrdinalIgnoreCase);
+        while (r.Read())
+        {
+            string path = r.GetString(0);
+            var played = new PlayStats(r.GetInt32(1), new DateTime(r.GetInt64(2), DateTimeKind.Utc));
+            stats[path] = stats.TryGetValue(path, out var other)
+                ? new PlayStats(other.Count + played.Count, other.LastPlayedUtc > played.LastPlayedUtc ? other.LastPlayedUtc : played.LastPlayedUtc)
+                : played;
+        }
+        return stats;
     }
 
     public long CreatePlaylist(string name, DateTime nowUtc)
@@ -1175,10 +1271,16 @@ public sealed class LibraryDatabase
         transaction.Commit();
     }
 
-    /// <summary>Isi playlist yang ada di library, sesuai urutannya.</summary>
+    /// <summary>
+    /// Isi playlist yang ada di library, sesuai urutannya. Untuk smart playlist: lagu yang cocok dengan aturannya saat ini,
+    /// dengan id lagu sebagai ItemId (isinya tidak bisa dihapus atau dipindah satu per satu).
+    /// </summary>
     public IReadOnlyList<PlaylistEntry> GetPlaylistEntries(long id)
     {
         using var connection = Open();
+        if (ReadSmartRules(connection, id) is { } rules)
+            return GetSmartPlaylistTracks(rules).Select(track => new PlaylistEntry(track.Id, track)).ToList();
+
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT {TrackColumnsT}, i.id
@@ -1449,6 +1551,14 @@ public sealed class LibraryDatabase
                 Execute(connection, "ALTER TABLE tracks ADD COLUMN release_type TEXT;");
             Execute(connection, "UPDATE tracks SET modified_utc = 0; PRAGMA user_version = 3;");
         }
+
+        if (version < 4)
+        {
+            // Versi 4: smart playlist. Aturannya disimpan sebagai JSON (lihat SmartPlaylists); playlist biasa tetap NULL.
+            if (!TableColumns(connection, "playlists").Contains("rules"))
+                Execute(connection, "ALTER TABLE playlists ADD COLUMN rules TEXT;");
+            Execute(connection, "PRAGMA user_version = 4;");
+        }
     }
 
     private static HashSet<string> TableColumns(SqliteConnection connection, string table)
@@ -1477,7 +1587,7 @@ public sealed class LibraryDatabase
     private static string EscapeLike(string text) =>
         text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
 
-    private const int TrackColumnCount = 26; // jumlah kolom di TrackColumns; naikkan setiap kali kolom ditambah
+    private const int TrackColumnCount = 27; // jumlah kolom di TrackColumns; naikkan setiap kali kolom ditambah
 
     private static List<Track> ReadTracks(SqliteCommand command)
     {
@@ -1517,6 +1627,7 @@ public sealed class LibraryDatabase
                 BitrateKbps = r.GetInt32(20),
                 HasCover = r.GetBoolean(21),
                 HasLyrics = r.GetBoolean(22),
+                AddedUtcTicks = r.GetInt64(26),
             };
 
     private static string? Text(SqliteDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
