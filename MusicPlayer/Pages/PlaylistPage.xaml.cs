@@ -12,6 +12,7 @@ using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
+using MusicPlayer.Controls;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 
@@ -31,6 +32,7 @@ public sealed partial class PlaylistPage : Page
     private long? _playlistId;               // null = Favourite Songs
     private string _name = "";
     private ObservableCollection<TrackRow> _rows = [];
+    private List<TrackRow> _allRows = [];
     private int _coverVersion;
 
     // Perubahan dari halaman ini sendiri (seret, hapus baris) sudah diterapkan langsung ke daftar; memuat ulang hanya
@@ -40,6 +42,7 @@ public sealed partial class PlaylistPage : Page
     public PlaylistPage()
     {
         InitializeComponent();
+        ViewMenu.Changed += (_, _) => ApplyView();
     }
 
     private bool IsFavourites => _playlistId is null;
@@ -55,11 +58,9 @@ public sealed partial class PlaylistPage : Page
         _playlistId = e.Parameter is long id ? id : null;
         _isSmart = _playlistId is long playlist && App.Playlists.GetRules(playlist) is not null;
 
-        // Lagu playlist buatan sendiri bisa diurutkan ulang dengan diseret, seperti Apple Music
-        bool reorderable = !IsFavourites && !_isSmart;
-        TrackList.CanDragItems = reorderable;
-        TrackList.CanReorderItems = reorderable;
-        TrackList.AllowDrop = reorderable;
+        ViewMenu.Configure(IsFavourites ? "Favourites" : $"Playlist.{_playlistId}",
+            LibraryViewMenu.TrackSorts(IsFavourites ? "Date Favourited" : _isSmart ? "Smart Playlist Order" : "Playlist Order"),
+            showFilter: !IsFavourites);
         Load();
 
         App.Playback.PropertyChanged += Playback_PropertyChanged;
@@ -100,9 +101,25 @@ public sealed partial class PlaylistPage : Page
             rows = App.Database.GetFavouriteTracks().Select((track, index) => new TrackRow(track, index));
         }
 
-        _rows = new ObservableCollection<TrackRow>(rows);
-        TrackList.ItemsSource = _rows;
+        _allRows = rows.ToList();
         TitleText.Text = _name;
+        ApplyView();
+        _ = LoadCoverAsync();
+        var artists = LibraryBrowse.FeaturedArtists(_allRows.Select(r => r.Track)).Select(a => new ArtistItem(a)).ToList();
+        FeaturedArtistsList.ItemsSource = artists;
+        FeaturedArtistsSection.Visibility = artists.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ApplyView()
+    {
+        _rows = new ObservableCollection<TrackRow>(LibraryBrowse.Tracks(_allRows, r => r.Track,
+            ViewMenu.Options, App.Favourites.IsFavourite));
+        TrackRow.RefreshFavourites(_rows);
+        Restripe();
+        TrackList.ItemsSource = _rows;
+        bool reorderable = !IsFavourites && !_isSmart && ViewMenu.Options.Sort == BrowseSort.Default
+            && !ViewMenu.Options.OnlyFavourites;
+        TrackList.CanDragItems = TrackList.CanReorderItems = TrackList.AllowDrop = reorderable;
         UpdateHeader();
         MarkNowPlaying();
     }
@@ -124,7 +141,11 @@ public sealed partial class PlaylistPage : Page
             : _isSmart
                 ? "Songs appear here as soon as they match. To change the rules, choose Edit Smart Playlist from the ··· menu."
                 : "Add songs with Add to Playlist in a song's or an album's menu.";
-        _ = LoadCoverAsync();
+        if (empty && ViewMenu.Options.OnlyFavourites && _allRows.Count > 0)
+        {
+            EmptyTitle.Text = "No favourite songs in this playlist";
+            EmptyDetail.Text = "Choose All Items to see the whole playlist.";
+        }
     }
 
     private async Task LoadCoverAsync()
@@ -135,7 +156,7 @@ public sealed partial class PlaylistPage : Page
         // Cover dari album yang berbeda, dalam urutan playlist: 4 atau lebih jadi mozaik, kurang dari itu satu cover
         var paths = new List<string>();
         var albums = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var track in _rows.Select(r => r.Track))
+        foreach (var track in _allRows.Select(r => r.Track))
         {
             if (paths.Count == 4)
                 break;
@@ -173,6 +194,8 @@ public sealed partial class PlaylistPage : Page
         // Playlist lain: cukup bintang di barisnya.
         if (IsFavourites)
             Load();
+        else if (ViewMenu.Options.OnlyFavourites)
+            ApplyView();
         else
             TrackRow.RefreshFavourites(_rows);
     }
@@ -204,7 +227,7 @@ public sealed partial class PlaylistPage : Page
 
     private void TrackList_DragItemsCompleted(ListViewBase sender, DragItemsCompletedEventArgs args)
     {
-        if (_playlistId is not long id || args.DropResult != DataPackageOperation.Move)
+        if (_playlistId is not long id || args.DropResult != DataPackageOperation.Move || !TrackList.CanReorderItems)
             return;
 
         var order = _rows.Select(r => r.PlaylistItemId!.Value).ToList();
@@ -212,8 +235,10 @@ public sealed partial class PlaylistPage : Page
         try
         {
             App.Playlists.Reorder(id, order);
+            _allRows = _rows.ToList();
             Restripe();
             UpdateHeader(); // urutan album berubah, jadi cover mozaik bisa ikut berubah
+            _ = LoadCoverAsync();
         }
         catch (ArgumentException)
         {
@@ -241,9 +266,18 @@ public sealed partial class PlaylistPage : Page
             _ignoreChanges = false;
         }
 
-        _rows.Remove(row);
-        Restripe();
-        UpdateHeader();
+        Load();
+    }
+
+    private void FeaturedArtists_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ArtistItem artist)
+            Frame.Navigate(typeof(ArtistPage), artist.Summary.Name, Animations.DrillIn);
+    }
+
+    private void FeaturedArtists_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (!args.InRecycleQueue && args.Item is ArtistItem artist) artist.EnsureCover();
     }
 
     private void ShowRowMenu(UIElement target, Point position, TrackRow row)

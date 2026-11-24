@@ -136,6 +136,12 @@
                     <FontIcon Glyph="&#xE9D9;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <!-- File di folder musik yang tidak diperlukan lagi: padding FLAC, cover dobel, .lrc yang salah nama, backup -->
+            <NavigationViewItem Content="Library Health" Tag="health">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE95E;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <!-- Playlists, seperti Apple Music. Playlist buatan sendiri dan "New Playlist" ditambahkan dari kode
                  (RefreshPlaylistItems) tepat di bawah Favourite Songs. -->
             <NavigationViewItemHeader Content="Playlists" />

@@ -37,6 +37,11 @@ public static class ImageInfo
         return null;
     }
 
+    /// <summary>"PNG" atau "JPEG" dari tanda tangan file; kosong untuk format lain.</summary>
+    public static string Format(byte[] data) =>
+        data.Length >= 4 && data[0] == 0x89 && data[1] == 0x50 ? "PNG"
+        : data.Length >= 2 && data[0] == 0xFF && data[1] == 0xD8 ? "JPEG" : "";
+
     /// <summary>Persegi kalau sisi panjang paling banyak 1% lebih panjang dari sisi pendek.</summary>
     public static bool IsSquare(int width, int height) =>
         width > 0 && height > 0 && Math.Max(width, height) <= Math.Min(width, height) * 1.01;

@@ -65,6 +65,12 @@
                     <TextBlock
                         Text="{x:Bind Playback.QualityDetailText, Mode=OneWay}"
                         HorizontalAlignment="Center" />
+                    <TextBlock
+                        x:Name="FileBitrateText"
+                        FontSize="12"
+                        Foreground="{StaticResource SecondaryTextBrush}"
+                        HorizontalAlignment="Center"
+                        Visibility="Collapsed" />
 
                     <Rectangle Height="1" Fill="#33FFFFFF" Margin="0,8" />
 

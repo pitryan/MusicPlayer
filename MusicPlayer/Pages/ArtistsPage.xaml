@@ -27,7 +27,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <controls:PageHeader Grid.ColumnSpan="2" Title="Artists" />
+        <controls:PageHeader x:Name="Header" Grid.ColumnSpan="2" Title="Artists" />
         <ListView
             x:Name="ArtistList"
             Grid.Row="1"
@@ -115,7 +115,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- Cover bisa diklik untuk membuka halaman albumnya; jumlah lagu dan durasi di bawahnya -->
+                                <!-- Cover (dan judul di kanannya) bisa diklik untuk membuka halaman albumnya; jumlah lagu dan durasi di bawahnya -->
                                 <StackPanel VerticalAlignment="Top" Spacing="8">
                                 <Grid
                                     Width="200"
@@ -139,7 +139,33 @@
                                 <StackPanel Grid.Column="1">
                                     <Grid Margin="0,0,0,12">
                                         <StackPanel Margin="0,0,48,0">
-                                            <TextBlock Text="{x:Bind Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <!--
+                                                Judul album membuka halaman albumnya, sama seperti cover di kirinya. Grid, bukan
+                                                StackPanel mendatar seperti tombol nama artis: judul yang panjang tetap pindah baris.
+                                            -->
+                                            <Button
+                                                Padding="0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                HorizontalAlignment="Left"
+                                                HorizontalContentAlignment="Left"
+                                                ToolTipService.ToolTip="Go to Album"
+                                                Tag="{x:Bind}"
+                                                Click="AlbumTitle_Click">
+                                                <Grid ColumnSpacing="6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{x:Bind Title}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <FontIcon
+                                                        Grid.Column="1"
+                                                        Glyph="&#xE76C;"
+                                                        FontSize="12"
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{StaticResource SecondaryTextBrush}" />
+                                                </Grid>
+                                            </Button>
                                             <TextBlock
                                                 Text="{x:Bind Meta}"
                                                 FontSize="12"
@@ -227,13 +253,15 @@
 
         <StackPanel
             x:Name="EmptyState"
+            Grid.Row="1"
             Grid.ColumnSpan="2"
             Visibility="Collapsed"
             Spacing="8"
             Margin="0,48,0,0"
             HorizontalAlignment="Center">
-            <TextBlock Text="No artists yet" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock x:Name="EmptyTitle" Text="No artists yet" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
             <TextBlock
+                x:Name="EmptyDetail"
                 Text="Add a music folder in Settings (the gear icon at the bottom left)."
                 Foreground="{StaticResource SecondaryTextBrush}" />
         </StackPanel>

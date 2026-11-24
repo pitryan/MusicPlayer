@@ -15,9 +15,18 @@
         </Style>
     </Page.Resources>
 
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Padding="24,0" BorderBrush="#1FFFFFFF" BorderThickness="0,0,0,1">
+            <controls:LibraryViewMenu x:Name="ViewMenu" HorizontalAlignment="Right" VerticalAlignment="Center" />
+        </Grid>
     <!-- Kepala halaman (jalur, subfolder) ikut ter-scroll bersama daftar lagu -->
     <ListView
         x:Name="TrackList"
+        Grid.Row="1"
         Padding="32,0,32,0"
         SelectionMode="Single"
         DoubleTapped="TrackList_DoubleTapped"
@@ -30,6 +39,8 @@
 
                 <TextBlock x:Name="FolderNameText" FontSize="28" FontWeight="SemiBold" Margin="0,8,0,0" />
                 <TextBlock x:Name="FolderCountText" Foreground="{StaticResource SecondaryTextBrush}" />
+                <TextBlock x:Name="FilterEmptyText" Text="No favourite songs here. Choose All Items to see this folder."
+                           TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" Visibility="Collapsed" />
 
                 <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,12,0,16">
                     <Button Style="{StaticResource AccentButtonStyle}" Padding="20,6" Click="Play_Click">
@@ -158,4 +169,5 @@
             </DataTemplate>
         </ListView.ItemTemplate>
     </ListView>
+    </Grid>
 </Page>

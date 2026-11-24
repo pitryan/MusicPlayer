@@ -25,9 +25,18 @@
         </Style>
     </Page.Resources>
 
-    <!-- Kepala halaman ikut ter-scroll bersama daftar lagu, sama seperti halaman album -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Padding="24,0" BorderBrush="#1FFFFFFF" BorderThickness="0,0,0,1">
+            <controls:LibraryViewMenu x:Name="ViewMenu" HorizontalAlignment="Right" VerticalAlignment="Center" />
+        </Grid>
+    <!-- Kepala playlist ikut ter-scroll; menu tampilan tetap di kanan atas. -->
     <ListView
         x:Name="TrackList"
+        Grid.Row="1"
         Padding="32,0,32,0"
         SelectionMode="Single"
         DoubleTapped="TrackList_DoubleTapped"
@@ -253,10 +262,40 @@
         </ListView.ItemTemplate>
 
         <ListView.Footer>
+            <StackPanel>
             <StackPanel x:Name="EmptyState" Margin="12,24,0,40" Spacing="6" Visibility="Collapsed">
                 <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" />
                 <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" />
             </StackPanel>
+            <StackPanel x:Name="FeaturedArtistsSection" Margin="0,32,0,40" Spacing="12" Visibility="Collapsed">
+                <TextBlock Text="Featured Artists" FontSize="18" FontWeight="SemiBold" />
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
+                    <ListView x:Name="FeaturedArtistsList" SelectionMode="None" IsItemClickEnabled="True"
+                              ItemClick="FeaturedArtists_ItemClick" ContainerContentChanging="FeaturedArtists_ContainerContentChanging"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate><ItemsStackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ArtistItem">
+                                <StackPanel Width="136" Spacing="8" Margin="0,0,8,8">
+                                    <Grid Width="120" Height="120">
+                                        <Ellipse Fill="{StaticResource CoverPlaceholderBrush}" />
+                                        <Ellipse><Ellipse.Fill>
+                                            <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                        </Ellipse.Fill></Ellipse>
+                                    </Grid>
+                                    <TextBlock Text="{x:Bind Name}" TextAlignment="Center" TextTrimming="CharacterEllipsis"
+                                               MaxLines="2" TextWrapping="Wrap" ToolTipService.ToolTip="{x:Bind Name}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </ScrollViewer>
+            </StackPanel>
+            </StackPanel>
         </ListView.Footer>
     </ListView>
+    </Grid>
 </Page>

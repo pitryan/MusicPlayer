@@ -16,8 +16,19 @@ terjemahannya.
   (romaji, pinyin) serta terjemahan yang bisa dinyalakan atau dimatikan.
 - **Tag dan artwork**: editor tag, pencarian di MusicBrainz, cover dari Cover Art Archive, dan keterangan artis dari
   MusicBrainz, Wikidata, dan Wikipedia.
+  **Change Artwork** menampilkan resolusi asli, format, dan ukuran file cover sekarang dan cover yang dipilih, supaya
+  keduanya bisa dibandingkan sebelum disimpan.
+  **Change Artwork** juga dapat mengganti cover JPEG/PNG lama yang merusak panjang blok FLAC karena melewati batas 16 MiB,
+  jika batas gambar dan struktur file dapat diverifikasi. Pemulihan dilakukan pada salinan sementara tanpa encode ulang
+  audio; gambar lain tetap dipertahankan. Setelah artwork diganti atau dihapus, padding FLAC dibuang agar ruang bekas
+  cover tidak tertinggal dan ukuran file mengikuti isi barunya. Cover baru yang melebihi batas blok FLAC ditolak sebelum ditulis.
 - **Quality Check**: analisis bit depth dan spektrum untuk mendeteksi file hi-res palsu (hasil upsampling) atau file yang
   berasal dari sumber lossy.
+- **Library Health**: mencari yang tidak diperlukan lagi di folder musik tanpa mengubah lagu dan artwork-nya: ruang
+  kosong (padding) FLAC di atas 64 KB, gambar cover di folder yang semua lagunya sudah punya cover tertanam, file `.lrc`
+  yang namanya tidak cocok dengan lagunya (diganti namanya sesuai nomor track), dan file backup atau salinan sementara
+  yang tertinggal. Gambar dan file yang dibuang dipindah ke Recycle Bin. Padding dibuang lewat salinan yang dibandingkan
+  byte per byte dengan aslinya (selain padding) sebelum menggantikannya.
 - **Playlist dan favorit.**
 
 ## Kebutuhan

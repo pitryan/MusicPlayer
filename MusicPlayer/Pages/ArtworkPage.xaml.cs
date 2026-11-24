@@ -39,6 +39,9 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
     private TagPicture? _newCover;
     // Cover yang terakhir berhasil disimpan, supaya cover itu tidak lagi dihitung sebagai perubahan
     private TagPicture? _savedCover;
+    // Resolusi asli, format, dan ukuran file cover sekarang; null kalau lagunya belum punya cover
+    private string? _currentQuality;
+    private string? _artworkProblem;
     private int _shapeVersion;
     private bool _settingShape;
     private CancellationTokenSource? _searchCts;
@@ -85,12 +88,44 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
 
     private async Task ShowCurrentAsync(Track track)
     {
-        var current = await CoverCache.GetAsync(track.FilePath, PreviewPixels);
+        // Dibaca langsung dari file, bukan lewat CoverCache: resolusi aslinya ada di file gambarnya, sedangkan pratinjau
+        // hanya didekode selebar PreviewPixels
+        var (data, problem) = await Task.Run(() =>
+        {
+            byte[]? bytes = CoverArt.TryRead(track.FilePath);
+            string? error = null;
+            if (bytes is null && System.IO.Path.GetExtension(track.FilePath).Equals(".flac", StringComparison.OrdinalIgnoreCase))
+            {
+                try { TagEditor.Read(track.FilePath); }
+                catch (Exception ex) { error = ex.Message; }
+            }
+            return (bytes, error);
+        });
+        var current = data is null ? null : await CoverImageLoader.FromBytesAsync(data, PreviewPixels);
+        _artworkProblem = problem;
+        _currentQuality = current is null ? null : Formatters.ImageQuality(data!);
         if (_newCover is not null)
-            return; // sudah ada cover baru yang dipilih selama cover lama dimuat
+        {
+            // Sudah ada cover baru yang dipilih selama cover lama dimuat: pratinjaunya tetap, hanya keterangannya ditambah
+            SetPreviewSize(PreviewSize.Text);
+            return;
+        }
         PreviewImage.Source = current;
-        PreviewCaption.Text = current is null ? "No artwork yet" : "Current artwork";
+        PreviewCaption.Text = problem is not null ? "Artwork unavailable" : (current is null ? "No artwork yet" : "Current artwork");
+        SetPreviewSize(_currentQuality ?? "", isCurrent: true);
         ShapePanel.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Baris ukuran di bawah pratinjau. Kualitas cover sekarang pindah ke barisnya sendiri begitu pratinjau menampilkan
+    /// gambar lain, supaya tetap bisa dibandingkan dengan cover barunya.
+    /// </summary>
+    private void SetPreviewSize(string text, bool isCurrent = false)
+    {
+        PreviewSize.Text = text;
+        CurrentInfo.Text = _artworkProblem ?? (_currentQuality is null ? "" : $"Current artwork: {_currentQuality}");
+        CurrentInfo.Visibility = _artworkProblem is not null || (_currentQuality is not null && !isCurrent)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ── Cover Art Archive ────────────────────────────────────
@@ -177,7 +212,7 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
         _downloadCts?.Cancel();
         var cts = _downloadCts = new CancellationTokenSource();
         PreviewCaption.Text = "Downloading artwork…";
-        PreviewSize.Text = "";
+        SetPreviewSize("");
         ShapePanel.Visibility = Visibility.Collapsed;
         SetBusy(PreviewRing, true);
         try
@@ -231,6 +266,9 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
         if (image is null)
         {
             PreviewCaption.Text = $"\"{file.Name}\" isn't an image this app can read. Choose a JPEG or PNG file.";
+            // Pratinjau masih cover sekarang: ukurannya pindah ke barisnya sendiri, supaya tidak terbaca sebagai ukuran file ini
+            if (_newCover is null)
+                SetPreviewSize("");
             return;
         }
 
@@ -257,12 +295,8 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
         SaveButton.IsEnabled = !_saving;
     }
 
-    /// <summary>Ukuran piksel (dari header gambarnya) dan ukuran file.</summary>
-    private void ShowSize(TagPicture cover)
-    {
-        string kilobytes = $"{cover.Data.Length / 1024.0:N0} KB";
-        PreviewSize.Text = ImageInfo.Dimensions(cover.Data) is { } s ? $"{s.Width} × {s.Height} px · {kilobytes}" : kilobytes;
-    }
+    /// <summary>Ukuran piksel dan format (dari header gambarnya) serta ukuran file cover yang dipilih.</summary>
+    private void ShowSize(TagPicture cover) => SetPreviewSize(Formatters.ImageQuality(cover.Data));
 
     /// <summary>Keep original, Crop to square, atau Fit in square: pratinjau dan yang akan ditanam ikut berganti.</summary>
     private async void ShapeChoice_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -336,6 +370,8 @@ public sealed partial class ArtworkPage : Page, IUnsavedChanges
 
             MessageText.Text = $"Couldn't save {result.Failed.Count} of {paths.Count} songs: "
                 + string.Join("; ", result.Failed.Select(f => $"{Path.GetFileName(f.Path)} ({f.Error})"));
+            // Sebagian lagu sudah tersimpan, jadi keterangan cover sekarang dibaca ulang
+            _ = ShowCurrentAsync(_request.Tracks[0]);
         }
         catch (Exception ex)
         {

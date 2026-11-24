@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Satu bagian di halaman Library Health: judul dan penjelasan, ringkasan dan tombol di kanan, daftar file (semua
+    tercentang; yang tidak mau dibersihkan bisa dihilangkan centangnya), dan hasil pembersihan terakhir.
+-->
+<UserControl
+    x:Class="MusicPlayer.Controls.HealthSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels">
+    <Border Padding="20,16" CornerRadius="8" Background="#0DFFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="1">
+        <StackPanel Spacing="12">
+            <Grid ColumnSpacing="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="4">
+                    <TextBlock x:Name="TitleText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Top">
+                    <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <Button
+                        x:Name="ActionButton"
+                        Style="{StaticResource AccentButtonStyle}"
+                        IsEnabled="False"
+                        Click="Action_Click" />
+                </StackPanel>
+            </Grid>
+
+            <ListView
+                x:Name="FileList"
+                SelectionMode="Multiple"
+                MaxHeight="300"
+                Visibility="Collapsed"
+                SelectionChanged="FileList_SelectionChanged">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="MinHeight" Value="48" />
+                        <Setter Property="CornerRadius" Value="4" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HealthRow">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                <TextBlock
+                                    Text="{x:Bind Folder}"
+                                    FontSize="12"
+                                    Foreground="{StaticResource SecondaryTextBrush}"
+                                    TextTrimming="CharacterEllipsis"
+                                    MaxLines="1" />
+                            </StackPanel>
+                            <TextBlock
+                                Grid.Column="1"
+                                Text="{x:Bind Detail}"
+                                VerticalAlignment="Center"
+                                Foreground="{StaticResource SecondaryTextBrush}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" IsTextSelectionEnabled="True" Visibility="Collapsed" />
+        </StackPanel>
+    </Border>
+</UserControl>

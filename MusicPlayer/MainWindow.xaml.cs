@@ -718,6 +718,9 @@ public sealed partial class MainWindow : Window
             case "quality":
                 ContentFrame.Navigate(typeof(QualityPage));
                 break;
+            case "health":
+                ContentFrame.Navigate(typeof(LibraryHealthPage));
+                break;
             case AllPlaylistsTag:
                 ContentFrame.Navigate(typeof(AllPlaylistsPage));
                 break;

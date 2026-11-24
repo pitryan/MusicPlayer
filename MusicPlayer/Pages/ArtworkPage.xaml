@@ -39,6 +39,8 @@
                 </Grid>
                 <TextBlock x:Name="PreviewCaption" TextWrapping="Wrap" />
                 <TextBlock x:Name="PreviewSize" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" />
+                <!-- Resolusi asli cover sekarang: tetap tampil setelah cover baru dipilih, supaya keduanya bisa dibandingkan -->
+                <TextBlock x:Name="CurrentInfo" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource SecondaryTextBrush}" Visibility="Collapsed" />
                 <!--
                     Cover yang tidak persegi: pilih cara menanamnya. Bawaannya apa adanya; Crop dan Fit membuat file-nya
                     sendiri persegi, jadi tampil benar juga di pemutar lain.

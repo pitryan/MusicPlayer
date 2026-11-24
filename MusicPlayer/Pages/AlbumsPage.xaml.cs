@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.ViewModels;
+using MusicPlayer.Library;
 
 namespace MusicPlayer.Pages;
 
@@ -22,21 +23,40 @@ public sealed partial class AlbumsPage : Page
     public AlbumsPage()
     {
         InitializeComponent();
+        Header.ViewMenu.Changed += (_, _) => LoadAlbums();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        App.Favourites.Changed += Favourites_Changed;
         string mode = e.Parameter as string ?? "albums";
 
         // Kembali dari detail album: isi dan posisi scroll dipertahankan (halaman ini di-cache), kecuali tag lagu
         // diedit selama di halaman lain
-        if (e.NavigationMode == NavigationMode.Back && mode == _mode && _libraryVersion == App.TagEdits.Version)
+        if (e.NavigationMode == NavigationMode.Back && mode == _mode && _libraryVersion == App.TagEdits.Version
+            && !Header.ViewMenu.Options.OnlyFavourites)
             return;
 
         _mode = mode;
         _libraryVersion = App.TagEdits.Version;
+        if (mode is "recent" or RecentlyPlayedMode)
+            Header.ViewMenu.Visibility = Visibility.Collapsed;
+        else
+            Header.ViewMenu.Configure(mode, [(BrowseSort.Title, "Album Title"), (BrowseSort.Artist, "Artist"),
+                (BrowseSort.ReleaseYear, "Release Year"), (BrowseSort.DateAdded, "Date Added")]);
         LoadAlbums();
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        App.Favourites.Changed -= Favourites_Changed;
+    }
+
+    private void Favourites_Changed(object? sender, EventArgs e)
+    {
+        if (_mode is not ("recent" or RecentlyPlayedMode) && Header.ViewMenu.Options.OnlyFavourites) LoadAlbums();
     }
 
     private const string GenrePrefix = "genre:";
@@ -62,7 +82,15 @@ public sealed partial class AlbumsPage : Page
             ? _mode[GenrePrefix.Length..]
             : null;
 
-        var albums = App.Database.GetAlbums(genre).Select(a => new AlbumItem(a)).ToList();
+        var sourceAlbums = App.Database.GetAlbums(genre);
+        var albums = (_mode == "recent" ? sourceAlbums : LibraryBrowse.Albums(sourceAlbums, Header.ViewMenu.Options,
+            Header.ViewMenu.Options.OnlyFavourites ? App.Database.GetFavouriteTracks() : []))
+            .Select(a => new AlbumItem(a)).ToList();
+        if (_mode != "recent" && Header.ViewMenu.Options.OnlyFavourites)
+        {
+            EmptyTitle.Text = "No albums with favourite songs";
+            EmptyDetail.Text = "Choose All Items to see every album.";
+        }
         Header.Detail = $"{albums.Count} albums";
         EmptyState.Visibility = albums.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 

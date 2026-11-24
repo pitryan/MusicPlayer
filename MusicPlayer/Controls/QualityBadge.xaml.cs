@@ -54,6 +54,11 @@ public sealed partial class QualityBadge : UserControl
         SourceProgress.IsActive = false;
         SourceProgress.Visibility = Visibility.Collapsed;
         var track = Playback.CurrentTrack;
+        // Bitrate rata-rata file dari library, bukan bitrate sesaat saat playback.
+        bool showBitrate = track is { BitrateKbps: > 0 }
+            && string.Equals(track.Codec, "FLAC", StringComparison.OrdinalIgnoreCase);
+        FileBitrateText.Text = showBitrate ? $"{track!.BitrateKbps:N0} kbps" : "";
+        FileBitrateText.Visibility = showBitrate ? Visibility.Visible : Visibility.Collapsed;
         if (track is not null && App.QualityChecks.Cached(track) is { } report)
         {
             ShowReport(track, report);

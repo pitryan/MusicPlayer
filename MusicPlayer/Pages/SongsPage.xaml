@@ -125,10 +125,12 @@
             Margin="0,48,0,0"
             HorizontalAlignment="Center">
             <TextBlock
+                x:Name="EmptyTitle"
                 Text="Your library is empty"
                 Style="{StaticResource SubtitleTextBlockStyle}"
                 HorizontalAlignment="Center" />
             <TextBlock
+                x:Name="EmptyDetail"
                 Text="Add a music folder in Settings (the gear icon at the bottom left)."
                 Foreground="{StaticResource SecondaryTextBrush}" />
         </StackPanel>
