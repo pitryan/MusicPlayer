@@ -75,9 +75,56 @@ public sealed class TagEditService
             }
         }));
 
-        // Data baru dibaca dari file yang sudah ditulis, jadi database sama persis dengan isi file
+        var saved = await ReloadAsync(paths, failed);
+
+        if (pictures is not null)
+            _invalidateCovers(saved.Select(t => t.FilePath));
+        // Data lama lagu yang sedang diputar diambil sebelum diganti, untuk dibandingkan dengan data barunya
+        var playing = _playback.CurrentTrack;
+        _playback.UpdateTrackInfo(saved);
+        if (playing is not null && LyricsNeedReload(playing, edits, saved))
+            _reloadLyrics();
+
+        if (saved.Count > 0)
+            MarkLibraryChanged();
+        return new TagSaveResult(saved, failed);
+    }
+
+    /// <summary>
+    /// Menulis ulang file tanpa mengubah tag-nya, misalnya membuang padding FLAC dari Library Health. Sama seperti
+    /// menyimpan tag: lagu yang sedang diputar dilepas sebentar, lalu ukuran dan stempel file barunya dibaca ke database.
+    /// </summary>
+    public async Task<TagSaveResult> RewriteAsync(IReadOnlyList<string> paths, Action<string> rewrite)
+    {
+        var failed = new List<(string Path, string Error)>();
+        await _playback.WithFilesReleasedAsync(paths, () => Task.Run(() =>
+        {
+            foreach (string path in paths)
+            {
+                try
+                {
+                    rewrite(path);
+                }
+                catch (Exception ex)
+                {
+                    lock (failed)
+                        failed.Add((path, Describe(ex)));
+                }
+            }
+        }));
+
+        var saved = await ReloadAsync(paths, failed);
+        _playback.UpdateTrackInfo(saved);
+        if (saved.Count > 0)
+            MarkLibraryChanged();
+        return new TagSaveResult(saved, failed);
+    }
+
+    /// <summary>Data baru dibaca dari file yang sudah ditulis, jadi database sama persis dengan isi file.</summary>
+    private Task<List<Track>> ReloadAsync(IReadOnlyList<string> paths, IReadOnlyList<(string Path, string Error)> failed)
+    {
         var failedPaths = new HashSet<string>(failed.Select(f => f.Path), StringComparer.OrdinalIgnoreCase);
-        var saved = await Task.Run(() =>
+        return Task.Run(() =>
         {
             // Tag yang gagal dibaca ulang (misalnya file langsung dibuka aplikasi lain) tidak disimpan, supaya data lama
             // tidak tertimpa data kosong. Stempel data lama sudah beda dengan file, jadi scan berikutnya membaca tag
@@ -91,18 +138,6 @@ public sealed class TagEditService
             _database.UpsertTracks(tracks);
             return tracks;
         });
-
-        if (pictures is not null)
-            _invalidateCovers(saved.Select(t => t.FilePath));
-        // Data lama lagu yang sedang diputar diambil sebelum diganti, untuk dibandingkan dengan data barunya
-        var playing = _playback.CurrentTrack;
-        _playback.UpdateTrackInfo(saved);
-        if (playing is not null && LyricsNeedReload(playing, edits, saved))
-            _reloadLyrics();
-
-        if (saved.Count > 0)
-            MarkLibraryChanged();
-        return new TagSaveResult(saved, failed);
     }
 
     /// <summary>

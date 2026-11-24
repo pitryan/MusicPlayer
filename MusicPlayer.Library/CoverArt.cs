@@ -7,10 +7,31 @@ namespace MusicPlayer.Library;
 public static class CoverArt
 {
     private static readonly string[] FolderImageNames = ["cover", "folder", "front", "album"];
-    private static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+    internal static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".webp"];
 
     /// <summary>Mengembalikan isi file gambar, atau null kalau lagu ini tidak punya cover.</summary>
     public static byte[]? TryRead(string trackPath)
+    {
+        if (ReadEmbedded(trackPath) is { } embedded)
+            return embedded;
+
+        try
+        {
+            return ReadFolderImage(Path.GetDirectoryName(trackPath));
+        }
+        catch (Exception)
+        {
+            return null; // folder tidak bisa dibaca
+        }
+    }
+
+    /// <summary>
+    /// Lagu ini punya cover di tag-nya sendiri, jadi gambar di folder albumnya tidak pernah dipakai untuk lagu ini
+    /// (aturan yang sama dengan <see cref="TryRead"/>). Tag yang tidak bisa dibaca dihitung tidak punya.
+    /// </summary>
+    internal static bool HasEmbedded(string trackPath) => ReadEmbedded(trackPath) is not null;
+
+    private static byte[]? ReadEmbedded(string trackPath)
     {
         try
         {
@@ -26,15 +47,7 @@ public static class CoverArt
         {
             // Tag tidak bisa dibaca: lanjut mencari gambar di folder
         }
-
-        try
-        {
-            return ReadFolderImage(Path.GetDirectoryName(trackPath));
-        }
-        catch (Exception)
-        {
-            return null; // folder tidak bisa dibaca
-        }
+        return null;
     }
 
     private static byte[]? ReadFolderImage(string? folder)

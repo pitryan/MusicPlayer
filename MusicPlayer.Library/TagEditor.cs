@@ -87,16 +87,9 @@ public static class TagEditor
             throw new InvalidDataException(
                 $"\"{Path.GetFileName(path)}\" is an M4A file with a .{extension} extension. Rename it to .m4a to edit its tags.");
 
-        // Ditulis ke salinan di folder yang sama (supaya penggantian akhirnya atomik), bernama tersembunyi dan
-        // berakhiran .tmp, jadi tidak ikut terbaca scan library kalau sampai tertinggal. Namanya pendek dan tidak memuat
-        // nama lagu: nama file di NTFS paling panjang 255 karakter, dan lagu yang namanya hampir sepanjang itu juga
-        // harus bisa disimpan.
-        string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
-        string temporary = Path.Combine(folder, $".{Guid.NewGuid():N}.tmp");
-        System.IO.File.Copy(path, temporary);
-        bool complete = false;
-        try
+        ReplaceViaTemporary(path, temporary =>
         {
+            System.IO.File.Copy(path, temporary);
             if (OperatingSystem.IsWindows())
                 System.IO.File.SetAttributes(temporary, System.IO.File.GetAttributes(temporary) | FileAttributes.Hidden);
 
@@ -121,7 +114,24 @@ public static class TagEditor
                     FlacArtwork.RemovePadding(temporary);
                 FlacArtwork.CheckReadable(temporary);
             }
+        });
+    }
 
+    /// <summary>
+    /// Mengganti <paramref name="path"/> dengan salinan yang ditulis <paramref name="write"/>. Salinannya ada di folder
+    /// yang sama (supaya penggantian akhirnya atomik), bernama tersembunyi dan berakhiran .tmp, jadi tidak ikut terbaca
+    /// scan library kalau sampai tertinggal. Namanya pendek dan tidak memuat nama lagu: nama file di NTFS paling panjang
+    /// 255 karakter, dan lagu yang namanya hampir sepanjang itu juga harus bisa disimpan. Kalau <paramref name="write"/>
+    /// melempar exception, file asli tidak disentuh.
+    /// </summary>
+    internal static void ReplaceViaTemporary(string path, Action<string> write)
+    {
+        string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        string temporary = Path.Combine(folder, $".{Guid.NewGuid():N}.tmp");
+        bool complete = false;
+        try
+        {
+            write(temporary);
             if (OperatingSystem.IsWindows())
                 System.IO.File.SetAttributes(temporary, System.IO.File.GetAttributes(temporary) & ~FileAttributes.Hidden);
             System.IO.File.Replace(temporary, path, null);

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Library Health: hal-hal di folder musik yang tidak diperlukan lagi, dikelompokkan dalam empat bagian. Lagu dan
+    artwork-nya tidak diubah; yang dibuang dipindah ke Recycle Bin, kecuali padding FLAC yang dibuang dari file-nya.
+-->
+<Page
+    x:Class="MusicPlayer.Pages.LibraryHealthPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:MusicPlayer.Controls">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <controls:PageHeader Title="Library Health" />
+            <Grid ColumnSpacing="16" Margin="24,12,24,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Text="Finds files in your music folders that aren't needed anymore. Your songs and their artwork stay as they are."
+                    Foreground="{StaticResource SecondaryTextBrush}"
+                    TextWrapping="Wrap"
+                    VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <ProgressRing x:Name="ScanRing" Width="20" Height="20" IsActive="False" Visibility="Collapsed" />
+                    <TextBlock x:Name="ScanText" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                    <Button x:Name="ScanButton" Content="Scan Again" Click="Scan_Click" />
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" Padding="24,16,24,24">
+            <StackPanel Spacing="16">
+                <controls:HealthSection
+                    x:Name="PaddingSection"
+                    Title="Empty space in FLAC files"
+                    Description="Space left inside these files' metadata, usually by artwork that was replaced or removed. Removing it doesn't touch the audio, tags, or artwork. Small amounts (up to 64 KB) are normal and stay."
+                    ActionText="Remove Empty Space" />
+                <controls:HealthSection
+                    x:Name="ImagesSection"
+                    Title="Extra cover images in album folders"
+                    Description="Every song in these folders already has its own artwork, so the app never uses these image files. They move to the Recycle Bin."
+                    ActionText="Move to Recycle Bin" />
+                <controls:HealthSection
+                    x:Name="LyricsSection"
+                    Title="Lyric files that don't match a song"
+                    Description="A lyric file is only used when its name matches the song. These are renamed to match the song with the same track number. Lyric files with no song of that number in their folder move to the Recycle Bin."
+                    ActionText="Fix Lyric Files" />
+                <controls:HealthSection
+                    x:Name="LeftoversSection"
+                    Title="Leftover backup files"
+                    Description="Backup (.bak) files, and temporary copies left behind when saving tags was interrupted. They move to the Recycle Bin."
+                    ActionText="Move to Recycle Bin" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

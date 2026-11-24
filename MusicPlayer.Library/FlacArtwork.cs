@@ -63,6 +63,101 @@ internal static class FlacArtwork
             RetainBlocks(stream, blocks, kept);
     }
 
+    /// <summary>
+    /// Ukuran blok padding di file ini (beserta header blok, jadi sama dengan yang dihemat kalau dibuang). 0 untuk file
+    /// yang bukan FLAC dan FLAC dengan artwork yang melewati batas blok: yang itu diperbaiki lewat Change Artwork.
+    /// </summary>
+    public static long PaddingBytes(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var blocks = Inspect(stream);
+        return blocks.Any(b => b.Overflow) ? 0 : blocks.Where(b => b.Type == 1).Sum(b => b.Length + 4);
+    }
+
+    /// <summary>
+    /// Menulis <paramref name="destination"/> berisi <paramref name="source"/> tanpa blok padding: awalan (ID3 dan
+    /// "fLaC"), blok metadata lain, dan audio disalin apa adanya. Sekali baca dan sekali tulis, tanpa menggeser isi file.
+    /// </summary>
+    public static void CopyWithoutPadding(string source, string destination)
+    {
+        using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var blocks = Inspect(input);
+        if (blocks.Count == 0 || blocks.Any(b => b.Overflow)) throw Invalid();
+        var kept = blocks.Where(b => b.Type != 1).ToList();
+        long audioStart = blocks[^1].Offset + 4 + blocks[^1].Length;
+
+        using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        byte[] buffer = new byte[256 * 1024];
+        CopyRange(input, 0, blocks[0].Offset, output, buffer);
+        for (int i = 0; i < kept.Count; i++)
+        {
+            var block = kept[i];
+            input.Position = block.Offset;
+            int header = input.ReadByte();
+            output.WriteByte((byte)((header & 0x7F) | (i == kept.Count - 1 ? 0x80 : 0)));
+            CopyRange(input, block.Offset + 1, block.Length + 3, output, buffer);
+        }
+        CopyRange(input, audioStart, input.Length - audioStart, output, buffer);
+    }
+
+    /// <summary>
+    /// Isi kedua file sama kalau padding-nya diabaikan: awalan, setiap blok metadata selain padding (jenis dan isinya),
+    /// dan audio sampai byte terakhir. Dipakai untuk memastikan salinan tanpa padding tidak mengubah apa pun.
+    /// </summary>
+    public static bool SameExceptPadding(string first, string second)
+    {
+        using var a = new FileStream(first, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var b = new FileStream(second, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var blocksA = Inspect(a);
+        var blocksB = Inspect(b);
+        if (blocksA.Count == 0 || blocksB.Count == 0 || blocksA.Any(x => x.Overflow) || blocksB.Any(x => x.Overflow))
+            return false;
+        var keptA = blocksA.Where(x => x.Type != 1).ToList();
+        var keptB = blocksB.Where(x => x.Type != 1).ToList();
+        if (keptA.Count != keptB.Count || blocksA[0].Offset != blocksB[0].Offset
+            || !RangesEqual(a, 0, b, 0, blocksA[0].Offset))
+            return false;
+        for (int i = 0; i < keptA.Count; i++)
+        {
+            if (keptA[i].Type != keptB[i].Type || keptA[i].Length != keptB[i].Length
+                || !RangesEqual(a, keptA[i].Offset + 4, b, keptB[i].Offset + 4, keptA[i].Length))
+                return false;
+        }
+        long audioA = blocksA[^1].Offset + 4 + blocksA[^1].Length;
+        long audioB = blocksB[^1].Offset + 4 + blocksB[^1].Length;
+        return a.Length - audioA == b.Length - audioB && RangesEqual(a, audioA, b, audioB, a.Length - audioA);
+    }
+
+    private static void CopyRange(Stream input, long start, long length, Stream output, byte[] buffer)
+    {
+        input.Position = start;
+        while (length > 0)
+        {
+            int count = (int)Math.Min(length, buffer.Length);
+            input.ReadExactly(buffer.AsSpan(0, count));
+            output.Write(buffer.AsSpan(0, count));
+            length -= count;
+        }
+    }
+
+    private static bool RangesEqual(Stream a, long startA, Stream b, long startB, long length)
+    {
+        byte[] bufferA = new byte[256 * 1024];
+        byte[] bufferB = new byte[256 * 1024];
+        a.Position = startA;
+        b.Position = startB;
+        while (length > 0)
+        {
+            int count = (int)Math.Min(length, bufferA.Length);
+            a.ReadExactly(bufferA.AsSpan(0, count));
+            b.ReadExactly(bufferB.AsSpan(0, count));
+            if (!bufferA.AsSpan(0, count).SequenceEqual(bufferB.AsSpan(0, count)))
+                return false;
+            length -= count;
+        }
+        return true;
+    }
+
     private static void RetainBlocks(Stream stream, IReadOnlyList<Block> blocks, IReadOnlyList<Block> kept)
     {
         long audioStart = blocks[^1].Offset + 4 + blocks[^1].Length;
