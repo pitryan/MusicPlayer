@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.ViewModels;
+using MusicPlayer.Controls;
 using Windows.Foundation;
 
 namespace MusicPlayer.Pages;
@@ -29,6 +30,8 @@ public sealed partial class FolderPage : Page
     public FolderPage()
     {
         InitializeComponent();
+        ViewMenu.Configure("Folders", LibraryViewMenu.TrackSorts("Folder Order"));
+        ViewMenu.Changed += (_, _) => ApplyView();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -40,24 +43,35 @@ public sealed partial class FolderPage : Page
         _folder = LibraryPaths.WithoutTrailingSeparator(folder);
         FolderNameText.Text = LibraryPaths.DisplayName(_folder);
         PathBar.ItemsSource = BuildCrumbs(_folder);
+        ApplyView();
 
-        var subfolders = App.Database.GetSubfolders(_folder).Select(f => new FolderItem(f)).ToList();
+        App.Playback.PropertyChanged += Playback_PropertyChanged;
+        App.Favourites.Changed += Favourites_Changed;
+    }
+
+    private void ApplyView()
+    {
+        var favourites = App.Favourites.Paths;
+        var subfolders = App.Database.GetSubfolders(_folder)
+            .Where(f => !ViewMenu.Options.OnlyFavourites || favourites.Any(p => LibraryPaths.IsUnder(p, f.Path)))
+            .Select(f => new FolderItem(f)).ToList();
         SubfolderGrid.ItemsSource = subfolders;
         SubfolderGrid.Visibility = subfolders.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var subfolder in subfolders)
             subfolder.EnsureCover();
 
-        _tracks = App.Database.GetFolderTracks(_folder, includeSubfolders: false).ToList();
+        _tracks = LibraryBrowse.Tracks(App.Database.GetFolderTracks(_folder, includeSubfolders: false),
+            t => t, ViewMenu.Options, App.Favourites.IsFavourite).ToList();
         _rows = _tracks.Select((track, index) => new TrackRow(track, index)).ToList();
         TrackList.ItemsSource = _rows;
         SongsHeader.Visibility = _tracks.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        int totalSongs = App.Database.CountTracks(_folder);
+        int totalSongs = ViewMenu.Options.OnlyFavourites ? favourites.Count(p => LibraryPaths.IsUnder(p, _folder))
+            : App.Database.CountTracks(_folder);
         FolderCountText.Text =
             $"{Formatters.Count(subfolders.Count, "folder")}, {Formatters.Count(totalSongs, "song")}";
 
-        App.Playback.PropertyChanged += Playback_PropertyChanged;
-        App.Favourites.Changed += Favourites_Changed;
+        FilterEmptyText.Visibility = ViewMenu.Options.OnlyFavourites && totalSongs == 0 ? Visibility.Visible : Visibility.Collapsed;
         MarkNowPlaying();
     }
 
@@ -69,7 +83,11 @@ public sealed partial class FolderPage : Page
     }
 
     // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
-    private void Favourites_Changed(object? sender, EventArgs e) => TrackRow.RefreshFavourites(_rows);
+    private void Favourites_Changed(object? sender, EventArgs e)
+    {
+        if (ViewMenu.Options.OnlyFavourites) ApplyView();
+        else TrackRow.RefreshFavourites(_rows);
+    }
 
     /// <summary>Jalur dari folder library sampai folder ini, misalnya "music" › "Japan" › "YOASOBI".</summary>
     private static List<FolderCrumb> BuildCrumbs(string folder)
@@ -110,14 +128,16 @@ public sealed partial class FolderPage : Page
     private void Play_Click(object sender, RoutedEventArgs e)
     {
         // Putar semua lagu di folder ini, termasuk yang ada di subfolder, urut path
-        var tracks = App.Database.GetFolderTracks(_folder, includeSubfolders: true);
+        var tracks = LibraryBrowse.Tracks(App.Database.GetFolderTracks(_folder, includeSubfolders: true),
+            t => t, ViewMenu.Options, App.Favourites.IsFavourite).ToList();
         if (tracks.Count > 0)
             App.Playback.PlayQueue(tracks, 0);
     }
 
     private void Shuffle_Click(object sender, RoutedEventArgs e)
     {
-        App.Playback.PlayShuffled(App.Database.GetFolderTracks(_folder, includeSubfolders: true));
+        App.Playback.PlayShuffled(LibraryBrowse.Tracks(App.Database.GetFolderTracks(_folder, includeSubfolders: true),
+            t => t, ViewMenu.Options, App.Favourites.IsFavourite).ToList());
     }
 
     /// <summary>

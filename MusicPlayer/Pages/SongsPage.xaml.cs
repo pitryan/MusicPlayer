@@ -10,32 +10,44 @@ using MusicPlayer.Helpers;
 using MusicPlayer.Library;
 using MusicPlayer.Services;
 using MusicPlayer.ViewModels;
+using MusicPlayer.Controls;
 
 namespace MusicPlayer.Pages;
 
 public sealed partial class SongsPage : Page
 {
     private List<Track> _tracks = [];
+    private List<Track> _allTracks = [];
     private List<TrackRow> _rows = [];
 
     public SongsPage()
     {
         InitializeComponent();
+        Header.ViewMenu.Configure("Songs", LibraryViewMenu.TrackSorts("Library Order"));
+        Header.ViewMenu.Changed += (_, _) => ApplyView();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
 
-        _tracks = App.Database.GetTracks().ToList();
+        _allTracks = App.Database.GetTracks().ToList();
+        ApplyView();
+        App.Favourites.Changed += Favourites_Changed;
+        App.Playback.PropertyChanged += Playback_PropertyChanged;
+    }
+
+    private void ApplyView()
+    {
+        _tracks = LibraryBrowse.Tracks(_allTracks, t => t, Header.ViewMenu.Options, App.Favourites.IsFavourite).ToList();
         _rows = _tracks.Select((track, index) => new TrackRow(track, index)).ToList();
         SongsList.ItemsSource = _rows;
         Header.Detail = $"{_tracks.Count} songs";
         EmptyState.Visibility = _tracks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        App.Favourites.Changed += Favourites_Changed;
-
-        // Tandai lagu yang sedang diputar, dan ikuti terus saat lagunya berganti
-        App.Playback.PropertyChanged += Playback_PropertyChanged;
+        EmptyTitle.Text = Header.ViewMenu.Options.OnlyFavourites ? "No favourite songs here" : "Your library is empty";
+        EmptyDetail.Text = Header.ViewMenu.Options.OnlyFavourites
+            ? "Choose All Items to see all songs, or mark a song as a favourite."
+            : "Add a music folder in Settings.";
         MarkNowPlaying();
     }
 
@@ -60,7 +72,11 @@ public sealed partial class SongsPage : Page
     }
 
     // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
-    private void Favourites_Changed(object? sender, EventArgs e) => TrackRow.RefreshFavourites(_rows);
+    private void Favourites_Changed(object? sender, EventArgs e)
+    {
+        if (Header.ViewMenu.Options.OnlyFavourites) ApplyView();
+        else TrackRow.RefreshFavourites(_rows);
+    }
 
     private void SongsList_RightTapped(object sender, RightTappedRoutedEventArgs e)
     {

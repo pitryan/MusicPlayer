@@ -10,6 +10,8 @@ public sealed partial class PageHeader : UserControl
         InitializeComponent();
     }
 
+    public LibraryViewMenu ViewMenu => ViewOptions;
+
     public string Title
     {
         get => TitleBlock.Text;

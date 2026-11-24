@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using MusicPlayer.Helpers;
 using MusicPlayer.ViewModels;
+using MusicPlayer.Library;
 using Windows.Foundation;
 
 namespace MusicPlayer.Pages;
@@ -27,6 +28,8 @@ public sealed partial class ArtistsPage : Page
     public ArtistsPage()
     {
         InitializeComponent();
+        Header.ViewMenu.Configure("Artists", [(BrowseSort.Artist, "Artist Name")]);
+        Header.ViewMenu.Changed += (_, _) => LoadArtistList(_shownArtist);
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -37,7 +40,8 @@ public sealed partial class ArtistsPage : Page
 
         // Kembali dari halaman album: artis yang dipilih dan posisi scroll dipertahankan. Favorit bisa saja berubah
         // selama di halaman lain, jadi bintangnya disamakan lagi.
-        if (e.NavigationMode == NavigationMode.Back && _artists.Count > 0 && _libraryVersion == App.TagEdits.Version)
+        if (e.NavigationMode == NavigationMode.Back && _artists.Count > 0 && _libraryVersion == App.TagEdits.Version
+            && !Header.ViewMenu.Options.OnlyFavourites)
         {
             MarkNowPlaying();
             TrackRow.RefreshFavourites(_blocks.SelectMany(b => b.Rows));
@@ -46,13 +50,23 @@ public sealed partial class ArtistsPage : Page
 
         // Tag lagu diedit selama di halaman lain: daftar artis dan albumnya dimuat ulang
         _libraryVersion = App.TagEdits.Version;
-        _artists = App.Database.GetArtists().Select(a => new ArtistItem(a)).ToList();
+        LoadArtistList(e.Parameter as string ?? AppSettings.Get(SelectedArtistSetting, ""));
+    }
+
+    private void LoadArtistList(string requested)
+    {
+        _artists = LibraryBrowse.Artists(App.Database.GetArtists(), Header.ViewMenu.Options,
+                Header.ViewMenu.Options.OnlyFavourites ? App.Database.GetFavouriteTracks() : [])
+            .Select(a => new ArtistItem(a)).ToList();
         ArtistList.ItemsSource = _artists;
+        Header.Detail = Formatters.Count(_artists.Count, "artist");
         EmptyState.Visibility = _artists.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        DetailScroller.Visibility = _artists.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        EmptyTitle.Text = Header.ViewMenu.Options.OnlyFavourites ? "No artists with favourite songs" : "No artists yet";
+        EmptyDetail.Text = Header.ViewMenu.Options.OnlyFavourites ? "Choose All Items to see every artist." : "Add a music folder in Settings.";
 
         // Artis yang diminta (Go to Artist), atau artis terakhir yang dipilih: membuka Artists dari sidebar kembali ke
         // artis yang tadi dilihat, bukan ke artis paling atas. Diingat juga setelah aplikasi ditutup.
-        string? requested = e.Parameter as string ?? AppSettings.Get(SelectedArtistSetting, "");
         var selected = _artists.FirstOrDefault(a =>
                            requested.Length > 0
                            && string.Equals(a.Summary.Name, requested, StringComparison.OrdinalIgnoreCase))
@@ -73,8 +87,11 @@ public sealed partial class ArtistsPage : Page
     }
 
     // Favorit diubah dari tempat lain (LCD, menu, halaman lain): bintang di baris ikut berubah
-    private void Favourites_Changed(object? sender, EventArgs e) =>
+    private void Favourites_Changed(object? sender, EventArgs e)
+    {
+        if (Header.ViewMenu.Options.OnlyFavourites) LoadArtistList(_shownArtist);
         TrackRow.RefreshFavourites(_blocks.SelectMany(b => b.Rows));
+    }
 
     private void ArtistList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
@@ -181,7 +198,12 @@ public sealed partial class ArtistsPage : Page
 
     private void Tile_PointerExited(object sender, PointerRoutedEventArgs e) => Animations.Hover((UIElement)sender, false);
 
-    private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e)
+    private void AlbumCover_Tapped(object sender, TappedRoutedEventArgs e) => OpenAlbum(sender);
+
+    private void AlbumTitle_Click(object sender, RoutedEventArgs e) => OpenAlbum(sender);
+
+    /// <summary>Cover dan judul album sama-sama membuka halaman albumnya; itemnya dibawa lewat Tag.</summary>
+    private void OpenAlbum(object sender)
     {
         if ((sender as FrameworkElement)?.Tag is AlbumBlock block)
             Frame.Navigate(typeof(AlbumDetailPage), block.Summary, Animations.DrillIn);
