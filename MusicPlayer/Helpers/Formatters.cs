@@ -74,6 +74,17 @@ public static class Formatters
         _ => $"{bytes} bytes",
     };
 
+    /// <summary>
+    /// Kualitas gambar dari header file-nya (resolusi asli, bukan ukuran tampilnya): "600 × 600 px · JPEG · 92 KB".
+    /// Ukuran piksel dan format yang tidak dikenal dilewati.
+    /// </summary>
+    public static string ImageQuality(byte[] data)
+    {
+        string size = ImageInfo.Dimensions(data) is { Width: > 0, Height: > 0 } s ? $"{s.Width:N0} × {s.Height:N0} px · " : "";
+        string format = ImageInfo.Format(data) is { Length: > 0 } f ? $"{f} · " : "";
+        return size + format + FileSize(data.Length);
+    }
+
     /// <summary>Tampil kalau true. Dipakai x:Bind untuk menukar dua ikon, misalnya Play dan Pause.</summary>
     public static Visibility VisibleIf(bool value) => value ? Visibility.Visible : Visibility.Collapsed;
 

@@ -32,6 +32,8 @@ public static class TagEditor
     /// <summary>Isi tag sebuah file. Field yang kosong tidak ada di <see cref="TagValues.Fields"/>.</summary>
     public static TagValues Read(string path)
     {
+        if (Path.GetExtension(path).Equals(".flac", StringComparison.OrdinalIgnoreCase))
+            FlacArtwork.CheckReadable(path);
         using var file = TagLib.File.Create(path);
         var format = FormatOf(file);
         var fields = new Dictionary<string, string>();
@@ -79,6 +81,8 @@ public static class TagEditor
         // diputar. Jadi ditolak tanpa diubah, dengan pesan yang jelas.
         string extension = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
         bool mp4 = extension is "m4a" or "mp4" or "m4b";
+        if (extension == "flac")
+            FlacArtwork.ValidatePictures(pictures);
         if (!mp4 && StartsWithFtyp(path))
             throw new InvalidDataException(
                 $"\"{Path.GetFileName(path)}\" is an M4A file with a .{extension} extension. Rename it to .m4a to edit its tags.");
@@ -96,6 +100,9 @@ public static class TagEditor
             if (OperatingSystem.IsWindows())
                 System.IO.File.SetAttributes(temporary, System.IO.File.GetAttributes(temporary) | FileAttributes.Hidden);
 
+            if (extension == "flac")
+                FlacArtwork.PrepareForWrite(temporary, pictures, frontCoverOnly);
+
             // TagLib memilih pembaca dari ekstensi, jadi jenis file asli diberikan langsung (.aac adalah AAC mentah/ADTS,
             // yang dibaca TagLib seperti MP3). File MP4 dibuka lewat turunan kelasnya sendiri, supaya atom freeform bisa
             // ditulis dengan struktur yang benar (lihat Mp4File).
@@ -105,6 +112,14 @@ public static class TagEditor
             {
                 Apply(file, changes, pictures, frontCoverOnly);
                 file.Save();
+            }
+
+            // TagLib juga dapat meluapkan blok padding; hasil yang tidak valid tidak boleh mengganti file asli.
+            if (extension == "flac")
+            {
+                if (pictures is not null)
+                    FlacArtwork.RemovePadding(temporary);
+                FlacArtwork.CheckReadable(temporary);
             }
 
             if (OperatingSystem.IsWindows())
