@@ -111,10 +111,23 @@ public sealed partial class MainWindow : Window
         // Menutup jendela saat editor punya perubahan yang belum disimpan: ditanya dulu
         AppWindow.Closing += AppWindow_Closing;
 
+        // Tombol Previous/Play/Next di thumbnail taskbar, dan ikon di notification area (lihat TraySettings)
+        IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        _taskbarButtons = new TaskbarButtons(hwnd, Playback);
+        _tray = new TrayIcon(hwnd, Playback) { IsVisible = TraySettings.ShowIcon };
+        _tray.ShowRequested += (_, _) => BringToFront();
+        _tray.ExitRequested += (_, _) => Exit();
+        TraySettings.Changed += TraySettings_Changed;
+        _windowMessages = new WindowSubclass(hwnd, OnWindowMessage);
+
         Closed += (_, _) =>
         {
             // Aplikasi ditutup: MiniPlayer atau layar penuh ikut ditutup, supaya tidak ada jendela yang tertinggal
             _isClosing = true;
+            TraySettings.Changed -= TraySettings_Changed;
+            _windowMessages.Dispose();
+            _tray.Dispose();
+            _taskbarButtons.Dispose();
             _replacement?.Close();
             App.Session.SaveNow(); // posisi terakhir, selagi lagunya masih terbuka
             App.LibraryWatcher.Dispose();
@@ -459,9 +472,69 @@ public sealed partial class MainWindow : Window
     public void BringToFront()
     {
         Window window = _replacement ?? this;
+        // Tersembunyi di notification area (HideToTray), mungkin sambil di-minimize
+        if (!window.AppWindow.IsVisible)
+            window.AppWindow.Show();
         if (window.AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
             presenter.Restore();
         window.Activate();
+    }
+
+    // ── Taskbar dan notification area ────────────────────────
+
+    private const string TrayNoticeSetting = "TrayNoticeShown";
+    private const uint WM_SIZE = 0x0005;
+    private const uint WM_ENDSESSION = 0x0016;
+    private const nint SIZE_MINIMIZED = 1;
+
+    private readonly TaskbarButtons _taskbarButtons;
+    private readonly TrayIcon _tray;
+    private readonly WindowSubclass _windowMessages;
+
+    // Exit dari menu ikon di notification area: jendela benar-benar ditutup, bukan disembunyikan
+    private bool _exitRequested;
+
+    private void TraySettings_Changed(object? sender, EventArgs e) => _tray.IsVisible = TraySettings.ShowIcon;
+
+    private IntPtr? OnWindowMessage(uint message, IntPtr wParam, IntPtr lParam)
+    {
+        // Di-minimize: ke notification area kalau pengaturannya aktif. Setelah pesan ini selesai, bukan di dalamnya.
+        if (message == WM_SIZE && wParam == SIZE_MINIMIZED && TraySettings.MinimizeToTray && _replacement is null)
+            DispatcherQueue.TryEnqueue(HideToTray);
+
+        // Windows dimatikan atau logoff selagi aplikasi tersembunyi: jendelanya tidak pernah ditutup, jadi posisi
+        // terakhir disimpan sekarang
+        if (message == WM_ENDSESSION && wParam != 0)
+            App.Session.SaveNow();
+        return null;
+    }
+
+    /// <summary>
+    /// Jendela disembunyikan dan lagu tetap diputar; jendela muncul lagi dari ikon di notification area, atau saat
+    /// aplikasi dibuka lagi dari Start. Pertama kali, Windows memberi tahu bahwa aplikasinya masih berjalan.
+    /// </summary>
+    private void HideToTray()
+    {
+        AppWindow.Hide();
+        if (!AppSettings.Get(TrayNoticeSetting, false))
+        {
+            AppSettings.Set(TrayNoticeSetting, true);
+            _tray.ShowNotice("MusicPlayer is still running",
+                "Your music keeps playing. Click the icon to open MusicPlayer, or right-click it to exit.");
+        }
+    }
+
+    /// <summary>Exit di menu ikon notification area. Editor dengan perubahan yang belum disimpan tetap ditanya dulu.</summary>
+    private void Exit()
+    {
+        _exitRequested = true;
+        if (_replacement is null && PendingEditor is not null)
+        {
+            _ = ConfirmCloseAsync();
+            return;
+        }
+        _closeConfirmed = true;
+        Close();
     }
 
     /// <summary>
@@ -923,7 +996,19 @@ public sealed partial class MainWindow : Window
     {
         // Selama MiniPlayer atau layar penuh menggantikan jendela ini, jendela ini tersembunyi dan dialognya tidak
         // akan terlihat, jadi ditutup seperti biasa
-        if (_closeConfirmed || _replacement is not null || PendingEditor is null)
+        if (_closeConfirmed || _replacement is not null)
+            return;
+
+        // Tombol tutup menyembunyikan jendela ke notification area; lagu tetap diputar. Perubahan di editor ikut
+        // tersimpan di jendela yang tersembunyi itu, jadi tidak perlu ditanya sekarang.
+        if (!_exitRequested && TraySettings.CloseToTray)
+        {
+            args.Cancel = true;
+            HideToTray();
+            return;
+        }
+
+        if (PendingEditor is null)
             return;
 
         args.Cancel = true;
@@ -932,7 +1017,10 @@ public sealed partial class MainWindow : Window
 
     private async Task ConfirmCloseAsync()
     {
-        // Ditutup dari taskbar saat di-minimize atau di belakang jendela lain: dimunculkan dulu supaya dialognya terlihat
+        // Ditutup dari taskbar saat di-minimize atau di belakang jendela lain, atau lewat Exit selagi tersembunyi di
+        // notification area: dimunculkan dulu supaya dialognya terlihat
+        if (!AppWindow.IsVisible)
+            AppWindow.Show();
         if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
             presenter.Restore();
         Activate();
@@ -940,7 +1028,10 @@ public sealed partial class MainWindow : Window
         // "Still saving" hanya punya OK: kalau penyimpanannya selesai selama dialog terbuka, tidak ada lagi yang
         // ditunggu, jadi jendela langsung ditutup tanpa menekan X lagi. Keep Editing atau gagal menyimpan tetap di sini.
         if (!await ConfirmLeaveAsync() && PendingEditor is not null)
+        {
+            _exitRequested = false; // tombol tutup berikutnya kembali menyembunyikan jendela
             return;
+        }
 
         _closeConfirmed = true;
         Close();

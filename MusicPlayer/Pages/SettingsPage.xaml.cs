@@ -34,6 +34,8 @@ public sealed partial class SettingsPage : Page
             SyncLyricsToggles();
             LyricsDisplay.Changed += OnLyricsDisplayChanged;
         };
+        CloseToTrayToggle.IsOn = TraySettings.CloseToTray;
+        MinimizeToTrayToggle.IsOn = TraySettings.MinimizeToTray;
         Unloaded += (_, _) => LyricsDisplay.Changed -= OnLyricsDisplayChanged;
 
         // Scan bisa masih berjalan dari halaman Settings sebelumnya, karena halaman ini dibuat baru setiap kali dibuka
@@ -116,6 +118,12 @@ public sealed partial class SettingsPage : Page
         if (LyricsDisplay.ShowTranslation != ShowTranslationToggle.IsOn)
             LyricsDisplay.ShowTranslation = ShowTranslationToggle.IsOn;
     }
+
+    private void CloseToTrayToggle_Toggled(object sender, RoutedEventArgs e) =>
+        TraySettings.CloseToTray = CloseToTrayToggle.IsOn;
+
+    private void MinimizeToTrayToggle_Toggled(object sender, RoutedEventArgs e) =>
+        TraySettings.MinimizeToTray = MinimizeToTrayToggle.IsOn;
 
     private async void OpenCrashLogFolder_Click(object sender, RoutedEventArgs e)
     {
