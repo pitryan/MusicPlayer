@@ -221,7 +221,62 @@
                     Text="Applies to songs whose lyrics include a reading or translation, written in the lyrics editor or in a three-line .lrc file."
                     Style="{StaticResource FootnoteTextStyle}" />
 
-                <!-- 4. Keyboard & mouse: hanya daftar baca, harus sama dengan PlaybackShortcuts -->
+                <!-- 4. Window: tutup dan minimize ke notification area (TraySettings) -->
+                <TextBlock Text="Window" Style="{StaticResource SectionHeaderStyle}" />
+                <Border Style="{StaticResource SettingsCardStyle}">
+                    <StackPanel>
+                        <Grid Style="{StaticResource SettingsRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Keep playing when the window is closed" TextWrapping="Wrap" />
+                                <TextBlock
+                                    Text="MusicPlayer stays in the notification area next to the clock. Click its icon to open it again, or right-click it to exit."
+                                    FontSize="12"
+                                    TextWrapping="Wrap"
+                                    Foreground="{StaticResource SecondaryTextBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch
+                                x:Name="CloseToTrayToggle"
+                                Grid.Column="1"
+                                OnContent=""
+                                OffContent=""
+                                MinWidth="0"
+                                AutomationProperties.Name="Keep playing when the window is closed"
+                                Toggled="CloseToTrayToggle_Toggled" />
+                        </Grid>
+                        <Border Style="{StaticResource RowSeparatorStyle}" />
+                        <Grid Style="{StaticResource SettingsRowStyle}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="Minimize to the notification area" TextWrapping="Wrap" />
+                                <TextBlock
+                                    Text="Minimizing hides MusicPlayer from the taskbar, along with its Previous, Play/Pause, and Next buttons."
+                                    FontSize="12"
+                                    TextWrapping="Wrap"
+                                    Foreground="{StaticResource SecondaryTextBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch
+                                x:Name="MinimizeToTrayToggle"
+                                Grid.Column="1"
+                                OnContent=""
+                                OffContent=""
+                                MinWidth="0"
+                                AutomationProperties.Name="Minimize to the notification area"
+                                Toggled="MinimizeToTrayToggle_Toggled" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+                <TextBlock
+                    Text="Hover over MusicPlayer in the taskbar for Previous, Play/Pause, and Next buttons."
+                    Style="{StaticResource FootnoteTextStyle}" />
+
+                <!-- 5. Keyboard & mouse: hanya daftar baca, harus sama dengan PlaybackShortcuts -->
                 <TextBlock Text="Keyboard &amp; mouse" Style="{StaticResource SectionHeaderStyle}" />
                 <Border Style="{StaticResource SettingsCardStyle}">
                     <StackPanel>
@@ -304,7 +359,7 @@
                     Text="Playback and search shortcuts don't apply while you're typing in a text box."
                     Style="{StaticResource FootnoteTextStyle}" />
 
-                <!-- 5. About -->
+                <!-- 6. About -->
                 <TextBlock Text="About" Style="{StaticResource SectionHeaderStyle}" />
                 <Border Style="{StaticResource SettingsCardStyle}">
                     <StackPanel>
