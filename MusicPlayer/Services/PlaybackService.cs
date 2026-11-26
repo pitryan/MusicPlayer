@@ -156,6 +156,16 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         _engine.NextStarted += OnNextStarted;
         UpNext.CollectionChanged += (_, _) => QueueNextCheck(); // lagu berikutnya bisa berubah (lihat PrepareNextIfDue)
 
+        // Sleep timer: waktunya habis → pause. Mode yang berubah bisa membatalkan lagu berikutnya yang sudah disiapkan
+        // untuk gapless, atau menyiapkannya lagi kalau timer-nya dimatikan.
+        SleepTimer = new SleepTimer(dispatcherQueue);
+        SleepTimer.Expired += (_, _) => PauseForSleep();
+        SleepTimer.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SleepTimer.Mode))
+                QueueNextCheck();
+        };
+
         // Perbarui posisi lagu di tampilan 4 kali per detik
         _timer = dispatcherQueue.CreateTimer();
         _timer.Interval = TimeSpan.FromMilliseconds(250);
@@ -717,6 +727,19 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
     public void ClearQueue() => _queue.Clear();
 
+    /// <summary>Pause setelah sekian menit, atau berhenti setelah lagu atau album ini (tombol bulan di kanan atas).</summary>
+    public SleepTimer SleepTimer { get; }
+
+    /// <summary>Waktu sleep timer habis: lagu di-pause di posisinya, seperti tombol Pause.</summary>
+    private void PauseForSleep()
+    {
+        if (_editRelease is { } release)
+            release.Resume = false;
+        else if (_engine.State == PlaybackState.Playing)
+            Pause();
+        RefreshPosition();
+    }
+
     public void TogglePlayPause()
     {
         if (CurrentTrack is null)
@@ -1262,6 +1285,44 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Sleep timer di batas lagu: lagu berikutnya menjadi lagu sekarang, di-pause di awal tanpa membuka perangkat audio
+    /// (seperti sesi yang dipulihkan), jadi tidak ada sepotong suara pun yang sempat terdengar. Play memutarnya dari awal.
+    /// </summary>
+    private bool LoadPaused(Track track, bool keepHistory, out string error)
+    {
+        error = "";
+        _releaseTimer.Stop();
+        _outputChangePending = false;
+        _interruptedByDevice = false;
+
+        // File-nya sedang ditulis (edit tag): dimuat setelah penyimpanan selesai, tanpa lanjut berbunyi
+        if (FindRelease(track.FilePath) is { } release)
+        {
+            PlayAfterEdit(track, keepHistory, release);
+            release.Resume = false;
+            return true;
+        }
+        _editRelease = null;
+
+        try
+        {
+            // Perangkat lagu sebelumnya ikut dilepas di sini; Resume membukanya lagi (lihat ReopenDevice)
+            _engine.OpenWithoutDevice(track.FilePath);
+        }
+        catch (Exception ex)
+        {
+            return Unplayable(track, ex, out error);
+        }
+
+        _queue.Unplayable.Remove(track.FilePath);
+        ShowTrack(track, keepHistory);
+        StatusText = "";
+        ShowTrackQuality(track); // keterangan output diperbarui saat perangkatnya dibuka lagi
+        RefreshPosition();
+        return true;
+    }
+
     /// <summary>File lagu tidak bisa dibuka: dicatat supaya Autoplay tidak memilihnya, dan alasannya untuk pesan.</summary>
     private bool Unplayable(Track track, Exception ex, out string error)
     {
@@ -1660,6 +1721,16 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// jadi volume perangkat lagu itu tidak boleh terus tampil sebagai nilai slider, dan volume aplikasi tidak dikirim ke
     /// perangkat itu (lihat ApplyVolume).
     /// </summary>
+    /// <summary>Format file lagu ini di badge kualitas ("Hi-Res", "24-bit 48 kHz FLAC").</summary>
+    private void ShowTrackQuality(Track track)
+    {
+        var quality = AudioQuality.Describe(track);
+        QualityBadgeText = quality.Label;
+        QualityShortText = quality.ShortBadge;
+        QualityDetailText = quality.Detail;
+        QualityKind = quality.Kind;
+    }
+
     private void ShowAppVolume()
     {
         DetachDeviceVolume();
@@ -1691,11 +1762,7 @@ public sealed class PlaybackService : ObservableObject, IDisposable
     /// </summary>
     private void UpdateQualityInfo(Track track, MMDevice? device, string? deviceError = null)
     {
-        var quality = AudioQuality.Describe(track);
-        QualityBadgeText = quality.Label;
-        QualityShortText = quality.ShortBadge;
-        QualityDetailText = quality.Detail;
-        QualityKind = quality.Kind;
+        ShowTrackQuality(track);
         DeviceText = device?.FriendlyName ?? "";
 
         if (deviceError is { Length: > 0 })
@@ -1793,6 +1860,18 @@ public sealed class PlaybackService : ObservableObject, IDisposable
 
         // Lagu selesai dengan normal: ulangi kalau Repeat One, selain itu lanjut ke lagu berikutnya
         _queue.ResetFailures();
+
+        // Sleep timer "setelah lagu ini" atau "setelah album ini": lagu berikutnya dimuat tapi tidak diputar
+        if (CurrentTrack is { } ended && SleepTimerRules.StopsAfter(SleepTimer.Mode, ended, NextAfter(ended)))
+        {
+            SleepTimer.Cancel();
+            if (RepeatMode == RepeatMode.One)
+                LoadPaused(ended, keepHistory: false, out _);
+            else
+                Advance(tryPlay: LoadPaused);
+            return;
+        }
+
         if (RepeatMode == RepeatMode.One && CurrentTrack is { } track)
             PlayChosen(track, keepHistory: false);
         else
@@ -1844,12 +1923,19 @@ public sealed class PlaybackService : ObservableObject, IDisposable
         if (CurrentTrack is not { } current)
             return null;
 
-        var next = RepeatMode == RepeatMode.One ? current : _queue.PeekNext();
+        var next = NextAfter(current);
         if (next is null || FindRelease(next.FilePath) is not null
             || _writing.Exists(paths => paths.Contains(next.FilePath, StringComparer.OrdinalIgnoreCase)))
             return null;
+
+        // Sleep timer berhenti di batas ini: lagu berikutnya tidak boleh menyambung sendiri
+        if (SleepTimerRules.StopsAfter(SleepTimer.Mode, current, next))
+            return null;
         return next.FilePath;
     }
+
+    /// <summary>Lagu setelah <paramref name="current"/> selesai: lagu ini lagi untuk Repeat One, selain itu Playing Next.</summary>
+    private Track? NextAfter(Track current) => RepeatMode == RepeatMode.One ? current : _queue.PeekNext();
 
     /// <summary>
     /// Lagu berikutnya yang disiapkan sudah menyambung tanpa jeda di engine: antrean maju seperti lagu yang selesai dengan

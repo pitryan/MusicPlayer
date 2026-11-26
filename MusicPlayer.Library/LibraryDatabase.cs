@@ -833,6 +833,27 @@ public sealed class LibraryDatabase
     }
 
     /// <summary>
+    /// Seluruh riwayat putar, yang terlama lebih dulu, untuk Wrapped. Putaran lagu yang sudah tidak ada di library
+    /// dilewati, seperti <see cref="GetRecentPlays"/>.
+    /// </summary>
+    public IReadOnlyList<PlayRecord> GetAllPlays()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {TrackColumnsT}, p.played_utc
+            FROM plays p JOIN tracks t ON t.path = p.path
+            ORDER BY p.played_utc, p.id
+            """;
+        using var r = command.ExecuteReader();
+
+        var plays = new List<PlayRecord>();
+        while (r.Read())
+            plays.Add(new PlayRecord(ReadTrack(r), new DateTime(r.GetInt64(TrackColumnCount), DateTimeKind.Utc)));
+        return plays;
+    }
+
+    /// <summary>
     /// Lagu yang paling sering diputar. Kalau jumlahnya sama, yang terakhir diputar lebih dulu. Dengan
     /// <paramref name="sinceUtc"/>, hanya putaran sejak waktu itu yang dihitung (misalnya 30 hari terakhir).
     /// </summary>

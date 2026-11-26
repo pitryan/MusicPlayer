@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Wrapped: setahun mendengarkan dari riwayat putar. Kartu besar di atas (waktu dengar dan tombol Top Songs), lagu dan
+    artis nomor satu, peringkat lagu, artis, dan album, lalu genre, kebiasaan mendengarkan, kualitas audio, dan fakta kecil.
+-->
+<Page
+    x:Class="MusicPlayer.Pages.WrappedPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:MusicPlayer.ViewModels"
+    xmlns:controls="using:MusicPlayer.Controls">
+
+    <Page.Resources>
+        <Style x:Key="WrappedCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="#0DFFFFFF" />
+            <Setter Property="BorderBrush" Value="#1FFFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="20" />
+        </Style>
+        <Style x:Key="WrappedHeadingStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="WrappedLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="CharacterSpacing" Value="60" />
+            <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+        </Style>
+        <Style x:Key="WrappedListItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="MinHeight" Value="56" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <!-- Tombol putih di atas kartu merah, seperti tombol di banner Apple Music -->
+        <Style x:Key="HeroButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="Background" Value="#F2FFFFFF" />
+            <Setter Property="Foreground" Value="#FF1E1E1E" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="16,7" />
+        </Style>
+    </Page.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <controls:PageHeader Title="Wrapped" />
+
+        <ScrollViewer x:Name="ContentScroller" Grid.Row="1" Visibility="Collapsed">
+            <StackPanel Padding="32,24,32,48" Spacing="32">
+
+                <!-- Kartu besar: waktu dengar, jumlah, tombol Top Songs, dan pilihan tahun -->
+                <Grid CornerRadius="16" Padding="36,32">
+                    <Grid.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#FFFA2D48" Offset="0" />
+                            <GradientStop Color="#FFB0175E" Offset="0.5" />
+                            <GradientStop Color="#FF3C1C78" Offset="1" />
+                        </LinearGradientBrush>
+                    </Grid.Background>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="KickerText" FontSize="13" FontWeight="SemiBold" CharacterSpacing="100" Opacity="0.9" />
+                        <TextBlock x:Name="MinutesText" FontSize="64" FontWeight="Bold" Margin="0,4,0,-6" />
+                        <TextBlock Text="minutes of music" FontSize="22" FontWeight="SemiBold" />
+                        <TextBlock x:Name="CountsText" Opacity="0.9" Margin="0,10,0,0" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,20,0,0">
+                            <Button x:Name="PlayTopButton" Style="{StaticResource HeroButtonStyle}" Click="PlayTop_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                    <TextBlock Text="Play Top Songs" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="SaveButton" Style="{StaticResource HeroButtonStyle}" Click="Save_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE710;" FontSize="14" />
+                                    <TextBlock x:Name="SaveText" Text="Save as Playlist" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                    <ComboBox
+                        x:Name="YearBox"
+                        Grid.Column="1"
+                        VerticalAlignment="Top"
+                        MinWidth="110"
+                        AutomationProperties.Name="Year"
+                        SelectionChanged="YearBox_SelectionChanged" />
+                </Grid>
+
+                <!-- Lagu dan artis nomor satu -->
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource WrappedCardStyle}">
+                        <Grid ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTipService.ToolTip="Play"
+                                Click="TopSong_Click">
+                                <Grid Width="140" Height="140" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                                    <Image x:Name="TopSongCover" Stretch="UniformToFill" />
+                                </Grid>
+                            </Button>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                <TextBlock Text="YOUR TOP SONG" Style="{StaticResource WrappedLabelStyle}" />
+                                <TextBlock x:Name="TopSongTitle" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="TopSongArtist" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="TopSongPlays" Foreground="{StaticResource AccentRedBrush}" FontWeight="SemiBold" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource WrappedCardStyle}">
+                        <Grid ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                CornerRadius="70"
+                                ToolTipService.ToolTip="Go to Artist"
+                                Click="TopArtist_Click">
+                                <Grid Width="140" Height="140">
+                                    <Ellipse Fill="{StaticResource CoverPlaceholderBrush}" />
+                                    <Ellipse>
+                                        <Ellipse.Fill>
+                                            <ImageBrush x:Name="TopArtistCover" Stretch="UniformToFill" />
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                </Grid>
+                            </Button>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                <TextBlock Text="YOUR TOP ARTIST" Style="{StaticResource WrappedLabelStyle}" />
+                                <TextBlock x:Name="TopArtistName" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="TopArtistPlays" Foreground="{StaticResource AccentRedBrush}" FontWeight="SemiBold" Margin="0,6,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- Peringkat lagu dan artis -->
+                <Grid ColumnSpacing="32">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Top Songs" Style="{StaticResource WrappedHeadingStyle}" />
+                        <ListView
+                            x:Name="SongsList"
+                            SelectionMode="None"
+                            IsItemClickEnabled="True"
+                            ItemClick="SongsList_ItemClick"
+                            ItemContainerStyle="{StaticResource WrappedListItemStyle}"
+                            ContainerContentChanging="List_ContainerContentChanging">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WrappedItem">
+                                    <Grid ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="28" />
+                                            <ColumnDefinition Width="44" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{x:Bind RankText}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource SecondaryTextBrush}" />
+                                        <Border Grid.Column="1" Width="44" Height="44" CornerRadius="4" Background="{StaticResource CoverPlaceholderBrush}">
+                                            <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                        </Border>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                            <TextBlock Text="{x:Bind Subtitle}" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="3" Text="{x:Bind Detail}" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="8">
+                        <TextBlock Text="Top Artists" Style="{StaticResource WrappedHeadingStyle}" />
+                        <ListView
+                            x:Name="ArtistsList"
+                            SelectionMode="None"
+                            IsItemClickEnabled="True"
+                            ItemClick="ArtistsList_ItemClick"
+                            ItemContainerStyle="{StaticResource WrappedListItemStyle}"
+                            ContainerContentChanging="List_ContainerContentChanging">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:WrappedItem">
+                                    <Grid ColumnSpacing="14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="28" />
+                                            <ColumnDefinition Width="44" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{x:Bind RankText}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Foreground="{StaticResource SecondaryTextBrush}" />
+                                        <Grid Grid.Column="1" Width="44" Height="44">
+                                            <Ellipse Fill="{StaticResource CoverPlaceholderBrush}" />
+                                            <Ellipse>
+                                                <Ellipse.Fill>
+                                                    <ImageBrush ImageSource="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+                                        </Grid>
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Title}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                        <TextBlock Grid.Column="3" Text="{x:Bind Detail}" FontSize="12" VerticalAlignment="Center" Foreground="{StaticResource SecondaryTextBrush}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Album -->
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Top Albums" Style="{StaticResource WrappedHeadingStyle}" />
+                    <GridView
+                        x:Name="AlbumsGrid"
+                        SelectionMode="None"
+                        IsItemClickEnabled="True"
+                        ItemClick="AlbumsGrid_ItemClick"
+                        ContainerContentChanging="List_ContainerContentChanging">
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WrappedItem">
+                                <StackPanel Width="160" Spacing="6" Margin="0,0,8,8">
+                                    <Grid Width="160" Height="160" CornerRadius="8" Background="{StaticResource CoverPlaceholderBrush}">
+                                        <Image Source="{x:Bind Cover, Mode=OneWay}" Stretch="UniformToFill" />
+                                        <Border
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Top"
+                                            Margin="8"
+                                            Padding="8,2"
+                                            CornerRadius="10"
+                                            Background="#B3000000">
+                                            <TextBlock Text="{x:Bind RankText}" FontSize="12" FontWeight="SemiBold" />
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                    <TextBlock Text="{x:Bind Subtitle}" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+                </StackPanel>
+
+                <!-- Genre, kebiasaan, dan kualitas -->
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource WrappedCardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="TOP GENRES" Style="{StaticResource WrappedLabelStyle}" />
+                            <StackPanel x:Name="GenresPanel" Spacing="10" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource WrappedCardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="WHEN YOU LISTEN" Style="{StaticResource WrappedLabelStyle}" />
+                            <TextBlock x:Name="DayPartText" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <Grid x:Name="MonthsChart" Height="110" ColumnSpacing="4" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource WrappedCardStyle}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="SOUND QUALITY" Style="{StaticResource WrappedLabelStyle}" />
+                            <TextBlock x:Name="QualityText" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <Grid x:Name="QualityBar" Height="10" CornerRadius="5" />
+                            <TextBlock x:Name="QualityLegend" FontSize="12" Foreground="{StaticResource SecondaryTextBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Fakta kecil -->
+                <Grid x:Name="FactsGrid" ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel
+            x:Name="EmptyState"
+            Grid.Row="1"
+            Spacing="8"
+            Margin="0,64,0,0"
+            HorizontalAlignment="Center"
+            Visibility="Collapsed">
+            <TextBlock Text="Your Wrapped is on its way" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock
+                Text="Play some music. Songs you listen to at least halfway count toward your Wrapped."
+                Foreground="{StaticResource SecondaryTextBrush}"
+                HorizontalAlignment="Center" />
+        </StackPanel>
+        <ProgressRing x:Name="LoadingRing" Grid.Row="1" Width="32" Height="32" IsActive="True" />
+    </Grid>
+</Page>
