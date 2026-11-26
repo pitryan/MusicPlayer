@@ -16,6 +16,9 @@ terjemahannya.
   dimatikan, dan minimize ke notification area bisa dinyalakan, di Settings → Window). Sleep timer (ikon bulan di kanan
   atas) mem-pause lagu setelah 15 menit sampai 2 jam, atau berhenti setelah lagu atau album ini selesai tanpa lagu
   berikutnya sempat berbunyi.
+- **Wrapped**: ringkasan setahun mendengarkan dari riwayat putar: waktu dengar, lagu, artis, album, dan genre teratas,
+  bulan dan waktu mendengarkan, porsi Hi-Res/lossless/lossy, serta beberapa fakta kecil. Lagu teratasnya bisa langsung
+  diputar atau disimpan sebagai playlist.
 - **Lirik**: dari tag, file `.lrc`, atau [LRCLIB](https://lrclib.net). Ada editor lirik, dan lapisan cara baca
   (romaji, pinyin) serta terjemahan yang bisa dinyalakan atau dimatikan.
 - **Tag dan artwork**: editor tag, pencarian di MusicBrainz, cover dari Cover Art Archive, dan keterangan artis dari

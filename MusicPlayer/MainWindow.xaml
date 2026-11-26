@@ -110,6 +110,12 @@
                     <FontIcon Glyph="&#xE8E1;" />
                 </NavigationViewItem.Icon>
             </NavigationViewItem>
+            <!-- Ringkasan setahun mendengarkan -->
+            <NavigationViewItem Content="Wrapped" Tag="wrapped">
+                <NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE787;" />
+                </NavigationViewItem.Icon>
+            </NavigationViewItem>
             <NavigationViewItem Content="Artists" Tag="artists">
                 <NavigationViewItem.Icon>
                     <SymbolIcon Symbol="Contact" />
