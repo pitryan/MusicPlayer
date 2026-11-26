@@ -55,6 +55,8 @@ public sealed partial class MainWindow : Window
 
         // Hitung ulang area yang bisa diklik setiap kali ukuran LCD berubah atau skala layar diganti
         LcdBorder.SizeChanged += (_, _) => UpdateTitleBarRegions();
+        // Sisa waktu sleep timer melebarkan tombol-tombol kanan
+        RightButtonsPanel.SizeChanged += (_, _) => UpdateTitleBarRegions();
         TopBar.Loaded += (_, _) =>
         {
             if (Content?.XamlRoot is { } xamlRoot)

@@ -423,6 +423,7 @@
                         Orientation="Horizontal"
                         Spacing="4"
                         VerticalAlignment="Center">
+                        <controls:SleepTimerButton />
                         <controls:VolumeButton />
                         <!-- Panel lirik dan panel Playing Next berbagi tempat di kanan; tombol yang menyala menunjukkan
                              panel mana yang terbuka. Ikon: comment_quote dari Fluent UI System Icons (MIT). -->
